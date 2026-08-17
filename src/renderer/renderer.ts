@@ -5,6 +5,7 @@ import { EditorView, type ViewUpdate } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { basicSetup } from "codemirror";
 import { splitMarkdownDestinationTarget } from "../kernel/markdown-links";
+import { rendererEditorCompatibilityFields } from "../runtime/obsidian-editor-compat";
 import {
   type AccessibilityAccent,
   type AccessibilityOverride,
@@ -1629,6 +1630,10 @@ function updateEditorTextRepresentation(update: ViewUpdate): void {
 function editorExtensions(paneId: WorkspacePaneId) {
   return [
     basicSetup,
+    rendererEditorCompatibilityFields.editorEditorField,
+    rendererEditorCompatibilityFields.editorInfoField,
+    rendererEditorCompatibilityFields.editorLivePreviewField,
+    rendererEditorCompatibilityFields.livePreviewState,
     markdown({ base: markdownLanguage }),
     EditorView.lineWrapping,
     EditorView.cspNonce.of(editorStyleNonce),
@@ -1691,6 +1696,15 @@ function editorExtensions(paneId: WorkspacePaneId) {
   ];
 }
 
+function initializeEditorCompatibilityFields(editorView: EditorView): void {
+  editorView.dispatch({
+    effects: rendererEditorCompatibilityFields.setFieldValue(
+      rendererEditorCompatibilityFields.editorEditorField,
+      editorView,
+    ),
+  });
+}
+
 function createEditorState(
   content: string,
   selection: { anchor: number; head?: number } = { anchor: 0 },
@@ -1711,10 +1725,12 @@ for (const paneId of ["primary", "secondary"] as const) {
   if (!pane) {
     throw new Error(`Missing workspace pane editor host: ${paneId}`);
   }
-  paneSession(paneId).editor = new EditorView({
+  const editorView = new EditorView({
     state: createEditorState("", { anchor: 0 }, paneId),
     parent: pane.noteEditor,
   });
+  paneSession(paneId).editor = editorView;
+  initializeEditorCompatibilityFields(editorView);
 }
 editor = paneSession("primary").editor as EditorView;
 editorsReady = true;
@@ -1839,7 +1855,13 @@ function syncEditorAccess(): void {
 
 function syncEditorPresentation(): void {
   editor.dispatch({
-    effects: editorPresentation.reconfigure(editorPresentationExtension(activePaneContextId)),
+    effects: [
+      editorPresentation.reconfigure(editorPresentationExtension(activePaneContextId)),
+      rendererEditorCompatibilityFields.setFieldValue(
+        rendererEditorCompatibilityFields.editorLivePreviewField,
+        editingViewMode === "live",
+      ),
+    ],
   });
   elements.noteEditorShell.dataset.editorMode = editingViewMode;
 }

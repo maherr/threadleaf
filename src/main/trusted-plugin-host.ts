@@ -1,5 +1,6 @@
 import type { VaultReadPort } from "../kernel/ports";
 import type { CompatibilityVaultWritePort } from "../runtime/obsidian-compat";
+import type { EditorCompatibilityFields } from "../runtime/obsidian-editor-compat";
 import {
   PluginHost,
   type PluginHostOptions,
@@ -7,6 +8,7 @@ import {
 } from "../runtime/plugin-host";
 
 export interface TrustedPluginHostFactoryOptions {
+  editorFields?: EditorCompatibilityFields;
   onEditorExtensionsChange?(extensions: readonly unknown[]): void;
   pluginModuleResolver: PluginModuleResolver;
   reader?: VaultReadPort;
@@ -16,6 +18,7 @@ export interface TrustedPluginHostFactoryOptions {
 
 export function createTrustedPluginHost(options: TrustedPluginHostFactoryOptions): PluginHost {
   const hostOptions: PluginHostOptions = {
+    ...(options.editorFields ? { compatibilityEditorFields: options.editorFields } : {}),
     ...(options.onEditorExtensionsChange
       ? { onEditorExtensionsChange: options.onEditorExtensionsChange }
       : {}),

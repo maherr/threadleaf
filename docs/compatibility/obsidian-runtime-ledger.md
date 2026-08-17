@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 137 (136 public, 1 internal extra)
+- Factory keys: 154 (153 public, 1 internal extra)
 
 ## Export status
 
@@ -25,14 +25,14 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | arrayBufferToHex | function | implemented | b08fc77997d83ccd |
 | base64ToArrayBuffer | function | implemented | 62e0d860d41c4011 |
 | BaseComponent | class | implemented | d5ca1a2d7335232a |
-| BasesEntry | class | missing | c2adff844b8f99f5 |
-| BasesEntryGroup | class | missing | 1593d0338da949ce |
-| BasesQueryResult | class | missing | b2e46230415278ba |
-| BasesView | class | missing | 64c9be20c2cc3198 |
-| BasesViewConfig | class | missing | 430e1421ac6a4cb4 |
+| BasesEntry | class | implemented | c2adff844b8f99f5 |
+| BasesEntryGroup | class | implemented | 1593d0338da949ce |
+| BasesQueryResult | class | implemented | b2e46230415278ba |
+| BasesView | class | implemented | 64c9be20c2cc3198 |
+| BasesViewConfig | class | implemented | 430e1421ac6a4cb4 |
 | BooleanValue | class | implemented | fdd077f4df28f630 |
 | ButtonComponent | class | implemented | 3329c8e457d23c16 |
-| CapacitorAdapter | class | missing | b468049f7adeaf0c |
+| CapacitorAdapter | class | unsupported | b468049f7adeaf0c |
 | ColorComponent | class | implemented | aa471211ee3a3891 |
 | Component | class | implemented | 66c65c8e55598f6c |
 | ConfirmationButton | class | implemented | b3100e2fe15dddf0 |
@@ -43,13 +43,13 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | DisplayValueComponent | class | implemented | 8eadc4fafb416556 |
 | DropdownComponent | class | implemented | 563d13fef3a6b00c |
 | DurationValue | class | implemented | 1b6e3eccbd6b278b |
-| EditableFileView | class | missing | c32178dc1207763b |
+| EditableFileView | class | partial | c32178dc1207763b |
 | Editor | class | implemented | 31acadd4b10e478b |
-| editorEditorField | variable | missing | 916f430eb29e5f68 |
-| editorInfoField | variable | missing | 3b001a5075d8b718 |
-| editorLivePreviewField | variable | missing | 9dc2e8d15892552f |
+| editorEditorField | variable | implemented | 916f430eb29e5f68 |
+| editorInfoField | variable | implemented | 3b001a5075d8b718 |
+| editorLivePreviewField | variable | implemented | 9dc2e8d15892552f |
 | EditorSuggest | class | implemented | b03c36d2fa50ced5 |
-| editorViewField | variable | missing | 576bc7a8290cb120 |
+| editorViewField | variable | implemented | 576bc7a8290cb120 |
 | Events | class | implemented | 69b49be903499033 |
 | ExtraButtonComponent | class | implemented | 60577a4b3a5c4ed2 |
 | FileManager | class | partial | f131be3eb6de3df2 |
@@ -66,7 +66,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | getLanguage | function | implemented | bb51d9b13d4bc56f |
 | getLinkpath | function | implemented | a0344dabcbd756f0 |
 | hexToArrayBuffer | function | implemented | dd08182366ea08da |
-| HoverPopover | class | missing | d8787e67d7235c2c |
+| HoverPopover | class | implemented | d8787e67d7235c2c |
 | htmlToMarkdown | function | implemented | 22ec65ef974aafbe |
 | HTMLValue | class | partial | 2f7862bd0bf0879d |
 | IconValue | class | partial | 16f7cb525be03222 |
@@ -77,11 +77,11 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | Keymap | class | implemented | f1db66e779392942 |
 | LinkValue | class | implemented | 9b8b264f5a8cf96c |
 | ListValue | class | implemented | 22393019e553322f |
-| livePreviewState | variable | missing | 33974b4ed1375f2b |
-| loadMathJax | function | missing | b98165b8c369b4a5 |
-| loadMermaid | function | missing | b7baf683b29b12b1 |
-| loadPdfJs | function | missing | 2cba001982743bde |
-| loadPrism | function | missing | fe01ee67b414289a |
+| livePreviewState | variable | implemented | 33974b4ed1375f2b |
+| loadMathJax | function | unsupported | b98165b8c369b4a5 |
+| loadMermaid | function | unsupported | b7baf683b29b12b1 |
+| loadPdfJs | function | unsupported | 2cba001982743bde |
+| loadPrism | function | unsupported | fe01ee67b414289a |
 | MarkdownEditView | class | implemented | b641199f259b1459 |
 | MarkdownPreviewRenderer | class | implemented | c2230cc5f92f968f |
 | MarkdownPreviewView | class | implemented | d2b4b65cecca9dfd |
@@ -111,13 +111,13 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | Platform | variable | implemented | ce92658397c816fa |
 | Plugin | class | implemented | e771e8ff5a3f8cba |
 | PluginSettingTab | class | implemented | 0afb03b5ff995364 |
-| PopoverState | enum | missing | 1994d816d82c6a0c |
+| PopoverState | enum | implemented | 1994d816d82c6a0c |
 | PopoverSuggest | class | implemented | 380470a80b007a51 |
 | prepareFuzzySearch | function | implemented | 8ef6a695db24bdb3 |
 | prepareSimpleSearch | function | implemented | 81341d6edc8ec6fa |
 | PrimitiveValue | class | implemented | 8a6cb580619668a6 |
 | ProgressBarComponent | class | implemented | 765be3f5a5d3693b |
-| QueryController | class | missing | 8687a7aa105e69dd |
+| QueryController | class | partial | 8687a7aa105e69dd |
 | RegExpValue | class | implemented | edb0177eb288015b |
 | RelativeDateValue | class | partial | 3d0594b4e5ab24e2 |
 | removeIcon | function | implemented | 1b1690db3c4ed092 |
@@ -125,8 +125,8 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | renderMatches | function | implemented | f868e63e141ad46b |
 | renderMath | function | partial | bdf8f2074b169c02 |
 | renderResults | function | implemented | 4dfb992b9bec08fd |
-| request | function | missing | bbd290f3567bac5f |
-| requestUrl | function | missing | e0c2b7ee43b9a78d |
+| request | function | implemented | bbd290f3567bac5f |
+| requestUrl | function | implemented | e0c2b7ee43b9a78d |
 | requireApiVersion | function | implemented | 0686387471c2904a |
 | resolveSubpath | function | implemented | 46690fc4ac8ecb44 |
 | sanitizeHTMLToDom | function | implemented | 1bdf091e2ab0377e |
@@ -163,7 +163,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | View | class | implemented | b8f2d48cb007660e |
 | Workspace | class | partial | 678ad5eacec977ed |
 | WorkspaceContainer | class | implemented | 111dc7e1f6366fe3 |
-| WorkspaceFloating | class | missing | e7ce5a480a9e4cc1 |
+| WorkspaceFloating | class | implemented | e7ce5a480a9e4cc1 |
 | WorkspaceItem | class | implemented | 792134b77a9c1bb5 |
 | WorkspaceLeaf | class | implemented | ba2f830d93cd9670 |
 | WorkspaceMobileDrawer | class | implemented | d18a5e362fc9f67a |

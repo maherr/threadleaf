@@ -184,6 +184,15 @@ export class WorkspaceWindow extends WorkspaceContainer {
   doc = workspaceDocument();
 }
 
+export class WorkspaceFloating extends WorkspaceParent {
+  parent: WorkspaceParent;
+
+  constructor(parent: WorkspaceParent = new WorkspaceParent()) {
+    super();
+    this.parent = parent;
+  }
+}
+
 export class Workspace extends Events {
   private activeEditorState: MarkdownFileInfo | null = null;
   activeLeaf: WorkspaceLeaf | null = null;

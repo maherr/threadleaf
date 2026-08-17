@@ -58,6 +58,7 @@ import {
   Vault,
 } from "./obsidian-compat";
 import { Component } from "./obsidian-components";
+import type { EditorCompatibilityFields } from "./obsidian-editor-compat";
 import { FileView, MarkdownView, WorkspaceLeaf } from "./obsidian-ui-compat";
 import type { CompatibilitySettingTab } from "./obsidian-workspace-compat";
 import type { PluginRuntimePort } from "./plugin-runtime-port";
@@ -108,6 +109,7 @@ const compatibilityHostModuleRoots = [
 export type PluginModuleResolver = NodeJS.Require;
 
 export interface PluginHostOptions {
+  compatibilityEditorFields?: EditorCompatibilityFields;
   onEditorExtensionsChange?(extensions: readonly unknown[]): void;
 }
 
@@ -165,6 +167,7 @@ export class PluginHost implements PluginRuntimePort {
   private nativeMarkdownView: MarkdownView | null = null;
   private readonly pluginModuleResolver: PluginModuleResolver | undefined;
   private readonly consumedConstructionAttempts = new Set<string>();
+  private readonly compatibilityEditorFields: EditorCompatibilityFields | undefined;
   private readonly onEditorExtensionsChange: ((extensions: readonly unknown[]) => void) | undefined;
   private editorExtensionNoticeRecorded = false;
 
@@ -178,6 +181,7 @@ export class PluginHost implements PluginRuntimePort {
   ) {
     this.vault = new Vault(vaultPath, reader, writer);
     this.pluginModuleResolver = pluginModuleResolver;
+    this.compatibilityEditorFields = options?.compatibilityEditorFields;
     this.onEditorExtensionsChange = options?.onEditorExtensionsChange;
     const commands = new CommandRegistry(actions);
     const notices = new NoticeBus((message) => this.record("notice", message));
@@ -777,7 +781,10 @@ export class PluginHost implements PluginRuntimePort {
       verifiedFiles,
       packageBytes,
     );
-    const compatibilityModule = createObsidianCompatibilityModule(this.app);
+    const compatibilityModule = createObsidianCompatibilityModule(
+      this.app,
+      this.compatibilityEditorFields,
+    );
     const moduleCache = new Map<string, CommonJsModuleRecord>();
     const loadSealedModule = (modulePath: string, knownBytes?: Uint8Array): unknown => {
       const cached = moduleCache.get(modulePath);

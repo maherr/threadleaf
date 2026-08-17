@@ -2079,7 +2079,153 @@ export class FileView extends ItemView {
   }
 }
 
-export class TextFileView extends FileView {
+export interface HoverParent {
+  hoverPopover: HoverPopover | null;
+}
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+export enum PopoverState {
+  Showing,
+  Shown,
+  Hiding,
+  Hidden,
+}
+
+export class HoverPopover extends Component {
+  readonly hoverEl: HTMLElement;
+  state = PopoverState.Showing;
+  private readonly parent: HoverParent;
+  private readonly targetEl: HTMLElement | null;
+  private readonly waitTime: number;
+  private readonly staticPos: Point | null;
+  private timer: ReturnType<typeof globalThis.setTimeout> | null = null;
+  private onTarget = true;
+  private onHover = false;
+  private isFocused = false;
+
+  constructor(
+    parent: HoverParent,
+    targetEl: HTMLElement | null,
+    waitTime = 300,
+    staticPos: Point | null = null,
+  ) {
+    super();
+    this.parent = parent;
+    this.targetEl = targetEl;
+    this.waitTime = Math.max(0, waitTime);
+    this.staticPos = staticPos;
+    const ownerDocument = targetEl?.ownerDocument ?? currentDocument();
+    this.hoverEl = ownerDocument.createElement("div");
+    this.hoverEl.className = "popover hover-popover";
+    this.hoverEl.addEventListener("mouseover", () => {
+      this.onHover = true;
+      this.transition();
+    });
+    this.hoverEl.addEventListener("mouseout", () => {
+      this.onHover = false;
+      this.transition();
+    });
+    if (targetEl) {
+      targetEl.addEventListener("mouseover", this.handleTargetIn);
+      targetEl.addEventListener("mouseout", this.handleTargetOut);
+    }
+    this.timer = globalThis.setTimeout(() => this.show(), this.waitTime);
+  }
+
+  show(): void {
+    if (this.state === PopoverState.Hidden) return;
+    if (this.targetEl && !this.targetEl.ownerDocument.body.contains(this.targetEl)) {
+      this.hide();
+      return;
+    }
+    this.clearTimer();
+    this.state = PopoverState.Shown;
+    this.parent.hoverPopover?.hide();
+    this.parent.hoverPopover = this;
+    const body = this.hoverEl.ownerDocument.body;
+    if (body && !body.contains(this.hoverEl)) body.append(this.hoverEl);
+    this.position();
+    this.onShow();
+    this.load();
+  }
+
+  hide(): void {
+    if (this.state === PopoverState.Hidden) return;
+    this.clearTimer();
+    this.state = PopoverState.Hidden;
+    this.onTarget = false;
+    this.onHover = false;
+    this.hoverEl.remove();
+    if (this.targetEl) {
+      this.targetEl.removeEventListener("mouseover", this.handleTargetIn);
+      this.targetEl.removeEventListener("mouseout", this.handleTargetOut);
+    }
+    if (this.parent.hoverPopover === this) this.parent.hoverPopover = null;
+    this.onHide();
+    this.unload();
+  }
+
+  setIsFocused(focused: boolean): void {
+    this.isFocused = focused;
+    this.transition();
+  }
+
+  protected onShow(): void {}
+
+  protected onHide(): void {}
+
+  private readonly handleTargetIn = (): void => {
+    this.onTarget = true;
+    this.transition();
+  };
+
+  private readonly handleTargetOut = (): void => {
+    this.onTarget = false;
+    this.transition();
+  };
+
+  private transition(): void {
+    if (this.onTarget || this.onHover || this.isFocused) {
+      if (this.state === PopoverState.Hiding) this.state = PopoverState.Shown;
+      return;
+    }
+    if (this.state === PopoverState.Showing) {
+      this.hide();
+      return;
+    }
+    if (this.state === PopoverState.Shown) {
+      this.state = PopoverState.Hiding;
+      this.timer = globalThis.setTimeout(() => {
+        if (!this.onTarget && !this.onHover && !this.isFocused) this.hide();
+        else this.transition();
+      }, this.waitTime);
+    }
+  }
+
+  private position(): void {
+    const position = this.staticPos ?? this.targetEl?.getBoundingClientRect();
+    if (!position) return;
+    const top = "top" in position ? position.top : position.y;
+    const left = "left" in position ? position.left : position.x;
+    this.hoverEl.style.position = "fixed";
+    this.hoverEl.style.top = `${top}px`;
+    this.hoverEl.style.left = `${left}px`;
+  }
+
+  private clearTimer(): void {
+    if (this.timer === null) return;
+    globalThis.clearTimeout(this.timer);
+    this.timer = null;
+  }
+}
+
+export abstract class EditableFileView extends FileView {}
+
+export class TextFileView extends EditableFileView {
   data = "";
   requestSave = (): void => {};
 

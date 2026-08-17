@@ -44,6 +44,12 @@
       "status": "positive"
     },
     {
+      "id": "obsidian-runtime.desktop-unsupported.v1",
+      "path": "src/runtime/obsidian-runtime-ledger-next-slice.test.ts",
+      "line": 242,
+      "status": "unsupported"
+    },
+    {
       "id": "obsidian-runtime.editor-core.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
       "line": 1859,
@@ -94,19 +100,25 @@
     {
       "id": "obsidian-runtime.marker-negative-adjacent.v1",
       "path": "scripts/obsidian-runtime-ledger.test.mjs",
-      "line": 212,
+      "line": 234,
       "status": "unsupported"
     },
     {
       "id": "obsidian-runtime.marker-positive-adjacent.v1",
       "path": "scripts/obsidian-runtime-ledger.test.mjs",
-      "line": 211,
+      "line": 233,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.modal-notice-keymap.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
       "line": 1399,
+      "status": "positive"
+    },
+    {
+      "id": "obsidian-runtime.next-public-surface.v1",
+      "path": "src/runtime/obsidian-runtime-ledger-next-slice.test.ts",
+      "line": 65,
       "status": "positive"
     },
     {

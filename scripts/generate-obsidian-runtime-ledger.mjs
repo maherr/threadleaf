@@ -306,6 +306,11 @@ function implementationBindings(sourcePath, sourceText) {
           kind: "class",
           members: new Set(statement.members.map((member) => classMemberName(member, sourceFile))),
         });
+      } else if (ts.isEnumDeclaration(statement) && statement.name) {
+        bindings.set(statement.name.text, {
+          kind: "enum",
+          members: new Set(statement.members.map((member) => member.name.getText(sourceFile))),
+        });
       } else if (ts.isFunctionDeclaration(statement) && statement.name) {
         bindings.set(statement.name.text, { kind: "function", members: new Set() });
       } else if (ts.isVariableStatement(statement)) {
@@ -790,7 +795,7 @@ function main() {
     .filter((entry) => entry.kind === "class")
     .reduce((total, entry) => total + entry.obligations.length, 0);
   if (ownMembers !== 700) fail(`own-member census is ${ownMembers}, expected 700`);
-  if (factoryKeys.length !== 137) fail(`factory census is ${factoryKeys.length}, expected 137`);
+  if (factoryKeys.length !== 154) fail(`factory census is ${factoryKeys.length}, expected 154`);
   if (
     factoryKeys.filter((key) => !runtimeExports.some((entry) => entry.name === key)).join(",") !==
     "sleep"

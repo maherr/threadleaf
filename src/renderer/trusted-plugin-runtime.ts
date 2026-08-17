@@ -2,6 +2,8 @@ import moment from "moment";
 import type { VaultReadPort, VaultTextSnapshot } from "../kernel/ports";
 import type { CompatibilityVaultWritePort } from "../runtime/obsidian-compat";
 import { installObsidianDomCompatibility } from "../runtime/obsidian-dom";
+import type { EditorCompatibilityFields } from "../runtime/obsidian-editor-compat";
+import { rendererEditorCompatibilityFields } from "../runtime/obsidian-editor-compat";
 import type { PluginHost } from "../runtime/plugin-host";
 import type { RuntimeSnapshot } from "../shared/contracts";
 import {
@@ -42,6 +44,7 @@ interface TrustedRuntimeBridge {
 
 interface TrustedPluginHostFactory {
   createTrustedPluginHost(options: {
+    editorFields: EditorCompatibilityFields;
     onEditorExtensionsChange(extensions: readonly unknown[]): void;
     pluginModuleResolver: NodeJS.Require;
     reader?: VaultReadPort;
@@ -218,6 +221,7 @@ class TrustedPluginRendererService {
         const packageRequire = nodeRequire;
         const factory = this.evaluateHostFactory() as TrustedPluginHostFactory;
         this.host = factory.createTrustedPluginHost({
+          editorFields: rendererEditorCompatibilityFields,
           onEditorExtensionsChange: (extensions) => editorExtensionSink?.(extensions),
           pluginModuleResolver: createModuleResolver(packageRequire, trustedHostModules),
           reader: this.createVaultReader(vaultPath),

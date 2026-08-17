@@ -27,10 +27,23 @@ import type {
 import { createSafeMathElement } from "../renderer/markdown-extensions";
 import type { CommandSummary, NoteCreateOutcome } from "../shared/contracts";
 import type { PluginMutationWaitOptions } from "../shared/plugin-runtime-protocol";
+import {
+  BasesEntry,
+  BasesEntryGroup,
+  BasesQueryResult,
+  BasesView,
+  BasesViewConfig,
+  QueryController,
+} from "./obsidian-bases-compat";
 import { Component } from "./obsidian-components";
+import {
+  type EditorCompatibilityFields,
+  rendererEditorCompatibilityFields,
+} from "./obsidian-editor-compat";
 import { Events, VaultEventRef } from "./obsidian-events";
 import { createCompatibleIcon } from "./obsidian-icons";
 import { Menu, MenuItem, MenuSeparator } from "./obsidian-menu-compat";
+import { request, requestUrl } from "./obsidian-network-compat";
 import {
   AbstractInputSuggest,
   AbstractTextComponent,
@@ -42,11 +55,13 @@ import {
   ConfirmationModal,
   DisplayValueComponent,
   DropdownComponent,
+  EditableFileView,
   Editor,
   EditorSuggest,
   ExtraButtonComponent,
   FileView,
   FuzzySuggestModal,
+  HoverPopover,
   ItemView,
   MarkdownEditView,
   MarkdownView,
@@ -54,6 +69,7 @@ import {
   type Modifier,
   MomentFormatComponent,
   PluginSettingTab,
+  PopoverState,
   PopoverSuggest,
   ProgressBarComponent,
   Scope,
@@ -105,6 +121,7 @@ import {
   type CompatibilityObsidianProtocolHandler,
   Workspace,
   WorkspaceContainer,
+  WorkspaceFloating,
   WorkspaceItem,
   WorkspaceMobileDrawer,
   WorkspaceParent,
@@ -3432,6 +3449,11 @@ export interface ObsidianCompatibilityModule {
   AbstractInputSuggest: typeof AbstractInputSuggest;
   AbstractTextComponent: typeof AbstractTextComponent;
   App: typeof App;
+  BasesEntry: typeof BasesEntry;
+  BasesEntryGroup: typeof BasesEntryGroup;
+  BasesQueryResult: typeof BasesQueryResult;
+  BasesView: typeof BasesView;
+  BasesViewConfig: typeof BasesViewConfig;
   apiVersion: string;
   arrayBufferToBase64: typeof arrayBufferToBase64;
   arrayBufferToHex: typeof arrayBufferToHex;
@@ -3448,6 +3470,11 @@ export interface ObsidianCompatibilityModule {
   DisplayValueComponent: typeof DisplayValueComponent;
   Editor: typeof Editor;
   EditorSuggest: typeof EditorSuggest;
+  EditableFileView: typeof EditableFileView;
+  editorEditorField: EditorCompatibilityFields["editorEditorField"];
+  editorInfoField: EditorCompatibilityFields["editorInfoField"];
+  editorLivePreviewField: EditorCompatibilityFields["editorLivePreviewField"];
+  editorViewField: EditorCompatibilityFields["editorViewField"];
   Events: typeof Events;
   ExtraButtonComponent: typeof ExtraButtonComponent;
   FileValue: typeof FileValue;
@@ -3485,8 +3512,12 @@ export interface ObsidianCompatibilityModule {
   Notice: typeof Notice;
   Plugin: typeof Plugin;
   PluginSettingTab: typeof PluginSettingTab;
+  HoverPopover: typeof HoverPopover;
+  livePreviewState: EditorCompatibilityFields["livePreviewState"];
+  PopoverState: typeof PopoverState;
   PopoverSuggest: typeof PopoverSuggest;
   ProgressBarComponent: typeof ProgressBarComponent;
+  QueryController: typeof QueryController;
   RegExpValue: typeof RegExpValue;
   RelativeDateValue: typeof RelativeDateValue;
   RenderContext: typeof RenderContext;
@@ -3532,6 +3563,7 @@ export interface ObsidianCompatibilityModule {
   WorkspaceSidedock: typeof WorkspaceSidedock;
   WorkspaceSplit: typeof WorkspaceSplit;
   WorkspaceTabs: typeof WorkspaceTabs;
+  WorkspaceFloating: typeof WorkspaceFloating;
   WorkspaceWindow: typeof WorkspaceWindow;
   addIcon(id: string, svgContent: string): void;
   debounce: typeof debounce;
@@ -3560,6 +3592,8 @@ export interface ObsidianCompatibilityModule {
   ): void;
   renderResults(element: HTMLElement, text: string, result: SearchResult, offset?: number): void;
   requireApiVersion(version: string): boolean;
+  request: typeof request;
+  requestUrl: typeof requestUrl;
   resolveSubpath: typeof resolveSubpath;
   removeIcon(id: string): void;
   renderMath: typeof renderMath;
@@ -4150,7 +4184,10 @@ export function normalizePath(filePath: string): string {
   return normalized.replace(/^\.\//, "").replace(/^\/+/, "");
 }
 
-export function createObsidianCompatibilityModule(app: App): ObsidianCompatibilityModule {
+export function createObsidianCompatibilityModule(
+  app: App,
+  editorFields: EditorCompatibilityFields = rendererEditorCompatibilityFields,
+): ObsidianCompatibilityModule {
   class BoundNotice extends Notice {
     constructor(message: string | DocumentFragment, duration?: number) {
       super(message, duration, (text) => app.notices.show(text));
@@ -4184,6 +4221,11 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     AbstractInputSuggest,
     AbstractTextComponent,
     App,
+    BasesEntry,
+    BasesEntryGroup,
+    BasesQueryResult,
+    BasesView,
+    BasesViewConfig,
     apiVersion,
     arrayBufferToBase64,
     arrayBufferToHex,
@@ -4202,6 +4244,11 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     DisplayValueComponent,
     Editor,
     EditorSuggest,
+    EditableFileView,
+    editorEditorField: editorFields.editorEditorField,
+    editorInfoField: editorFields.editorInfoField,
+    editorLivePreviewField: editorFields.editorLivePreviewField,
+    editorViewField: editorFields.editorViewField,
     Events,
     ExtraButtonComponent,
     finishRenderMath,
@@ -4244,8 +4291,12 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     parseYaml,
     Plugin,
     PluginSettingTab,
+    HoverPopover,
+    livePreviewState: editorFields.livePreviewState,
+    PopoverState,
     PopoverSuggest,
     ProgressBarComponent,
+    QueryController,
     RegExpValue,
     RelativeDateValue,
     RenderContext,
@@ -4291,6 +4342,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     WorkspaceSidedock,
     WorkspaceSplit,
     WorkspaceTabs,
+    WorkspaceFloating,
     WorkspaceWindow,
     addIcon,
     getIcon,
@@ -4307,6 +4359,8 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     renderMatches,
     renderResults,
     requireApiVersion,
+    request,
+    requestUrl,
     resolveSubpath,
     removeIcon,
     renderMath,
