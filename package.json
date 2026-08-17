@@ -100,6 +100,8 @@
     "test:tasks": "pnpm run build && node scripts/check-tasks.mjs",
     "test:tags": "pnpm run build && node scripts/check-tags.mjs",
     "test:excalidraw-roundtrip": "pnpm run build && node scripts/check-excalidraw-roundtrip.mjs",
+    "test:style-settings-snippet-control": "pnpm run build && pnpm run test:style-settings-snippet-control:built",
+    "test:style-settings-snippet-control:built": "node scripts/check-style-settings-snippet-control.mjs",
     "test:note-bookmarks": "pnpm run build && node scripts/check-note-bookmarks.mjs",
     "test:publish-export": "pnpm run build && node scripts/check-publish-export.mjs",
     "test:note-workflows": "pnpm run build && node scripts/check-note-workflows.mjs",

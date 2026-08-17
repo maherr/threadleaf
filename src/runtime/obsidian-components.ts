@@ -9,7 +9,7 @@ type DisposableEventRef =
 
 export class Component {
   _loaded = false;
-  private readonly children: Component[] = [];
+  private readonly componentChildren: Component[] = [];
   private readonly registrations: Array<() => void> = [];
 
   load(): void {
@@ -18,7 +18,7 @@ export class Component {
     }
     this._loaded = true;
     this.onload();
-    for (const child of this.children) {
+    for (const child of this.componentChildren) {
       child.load();
     }
   }
@@ -26,7 +26,11 @@ export class Component {
   onload(): void {}
 
   unload(): void {
-    if (!this._loaded && this.children.length === 0 && this.registrations.length === 0) {
+    if (
+      !this._loaded &&
+      this.componentChildren.length === 0 &&
+      this.registrations.length === 0
+    ) {
       return;
     }
 
@@ -47,10 +51,10 @@ export class Component {
   onunload(): void {}
 
   addChild<T extends Component>(component: T): T {
-    if (this.children.includes(component)) {
+    if (this.componentChildren.includes(component)) {
       return component;
     }
-    this.children.push(component);
+    this.componentChildren.push(component);
     if (this._loaded) {
       component.load();
     }
@@ -58,9 +62,9 @@ export class Component {
   }
 
   removeChild<T extends Component>(component: T): T {
-    const index = this.children.indexOf(component);
+    const index = this.componentChildren.indexOf(component);
     if (index >= 0) {
-      this.children.splice(index, 1);
+      this.componentChildren.splice(index, 1);
       component.unload();
     }
     return component;
@@ -103,14 +107,14 @@ export class Component {
 
   protected releaseComponentResources(): unknown | null {
     let failure: unknown = null;
-    for (const child of [...this.children].reverse()) {
+    for (const child of [...this.componentChildren].reverse()) {
       try {
         child.unload();
       } catch (error) {
         failure ??= error;
       }
     }
-    this.children.length = 0;
+    this.componentChildren.length = 0;
 
     for (const dispose of [...this.registrations].reverse()) {
       try {

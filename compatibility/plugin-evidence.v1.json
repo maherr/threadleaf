@@ -259,6 +259,67 @@
         "This repository-owned fixture intentionally exercises a narrow API surface.",
         "It is not listed in the external community package directory."
       ]
+    },
+    {
+      "plugin": {
+        "id": "obsidian-style-settings",
+        "name": "Style Settings",
+        "version": "1.0.9",
+        "repository": "https://github.com/mgmeyers/obsidian-style-settings",
+        "license": "Unspecified in manifest",
+        "bundleSha256": "1828abaacdab4c5578b705a625c585b30512f8efad4c7cfc5a18e70cc3557468"
+      },
+      "threadleafVersion": "0.1.0-beta.7",
+      "lastTested": "2026-08-17",
+      "compatibilityLevel": 3,
+      "summary": "The exact reviewed obsidian-style-settings 1.0.9 package passed direct Linux Electron evidence for source-bearing appearance discovery, the immutable isolated activeWindow, the real Community plugins Options route, live class and variable controls, snippet disable and re-enable, computed-style changes, renderer replacement, application restart reconstruction, realm locality, and dark and light visual capture. This is supporting behavior evidence at Level 3 (Integrated), not Level 4.",
+      "evidenceMode": "direct",
+      "requiredCapabilities": ["workspace-ui", "dynamic-code"],
+      "platforms": [
+        {
+          "id": "linux-x64-electron",
+          "status": "verified",
+          "limits": [
+            "Verified in an isolated Linux X11 and Xvfb Electron run with the exact package identity and disposable vault and private state.",
+            "The runtime is a trusted same-user Node renderer, not a sandbox."
+          ]
+        },
+        {
+          "id": "macos-electron",
+          "status": "unverified",
+          "limits": ["This exact package workflow is not verified on macOS."]
+        },
+        {
+          "id": "windows-x64-electron",
+          "status": "unverified",
+          "limits": ["This exact package workflow is not verified on Windows."]
+        }
+      ],
+      "workflows": [
+        {
+          "id": "style-settings.snippet-control-live-reload.v1",
+          "name": "Discover snippet controls, apply live changes, recover the renderer, and reconstruct after restart",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "scripts/check-style-settings-snippet-control.mjs",
+              "command": "pnpm run test:style-settings-snippet-control"
+            },
+            {
+              "path": "src/plugin-renderer/plugin-renderer-service.test.ts",
+              "command": "pnpm exec vitest run src/shared/plugin-runtime-protocol.test.ts src/plugin-renderer/plugin-renderer-service.test.ts src/runtime/isolated-plugin-runtime.test.ts src/runtime/recovering-plugin-runtime.test.ts"
+            }
+          ]
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The controls style only the isolated plugin surface.",
+        "Threadleaf native editor, file tree, settings shell, and unrelated plugin views are outside the claim.",
+        "The runtime is a trusted same-user Node renderer, not a sandbox.",
+        "This is supporting behavior evidence, not Level 4 evidence.",
+        "No controller-finalized signed production receipt exists for this tuple."
+      ]
     }
   ]
 }

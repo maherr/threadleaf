@@ -60,8 +60,26 @@ interface ObsidianDomElement extends Element {
   setCssStyles(styles: Partial<CSSStyleDeclaration>): void;
 }
 
+interface ObsidianDomFragment extends DocumentFragment {
+  appendText(value: string): Text;
+  createEl<K extends keyof HTMLElementTagNameMap>(
+    tagName: K,
+    options?: DomElementOptions | string | null,
+    callback?: (element: HTMLElementTagNameMap[K]) => void,
+  ): HTMLElementTagNameMap[K];
+  createDiv(
+    options?: DomElementOptions | string | null,
+    callback?: (element: HTMLDivElement) => void,
+  ): HTMLDivElement;
+  createSpan(
+    options?: DomElementOptions | string | null,
+    callback?: (element: HTMLSpanElement) => void,
+  ): HTMLSpanElement;
+}
+
 interface DomCompatibilityWindow {
   Element: typeof Element;
+  DocumentFragment: typeof DocumentFragment;
   document: Document;
 }
 
@@ -225,6 +243,61 @@ export function installObsidianDomCompatibility(
   installJavaScriptCompatibility(targetWindow);
   installJavaScriptCompatibility(executionGlobal);
   const prototype = targetWindow.Element.prototype as unknown as ObsidianDomElement;
+  const fragmentPrototype = targetWindow.DocumentFragment.prototype as ObsidianDomFragment;
+
+  if (typeof fragmentPrototype.appendText !== "function") {
+    Object.defineProperty(fragmentPrototype, "appendText", {
+      configurable: true,
+      writable: true,
+      value(value: string) {
+        const text = this.ownerDocument.createTextNode(value);
+        this.append(text);
+        return text;
+      },
+    });
+  }
+
+  defineMethod(
+    fragmentPrototype as unknown as ObsidianDomElement,
+    "createEl",
+    function <K extends keyof HTMLElementTagNameMap>(
+      this: ObsidianDomFragment,
+      tagName: K,
+      options?: DomElementOptions | string | null,
+      callback?: (element: HTMLElementTagNameMap[K]) => void,
+    ) {
+      const element = this.ownerDocument.createElement(tagName) as HTMLElementTagNameMap[K] &
+        ObsidianDomElement;
+      if (options) {
+        applyElementOptions(element, options);
+      }
+      this.appendChild(element);
+      callback?.(element);
+      return element;
+    },
+  );
+  defineMethod(
+    fragmentPrototype as unknown as ObsidianDomElement,
+    "createDiv",
+    function (
+      this: ObsidianDomFragment,
+      options?: DomElementOptions | string | null,
+      callback?: (element: HTMLDivElement) => void,
+    ) {
+      return this.createEl("div", options, callback);
+    },
+  );
+  defineMethod(
+    fragmentPrototype as unknown as ObsidianDomElement,
+    "createSpan",
+    function (
+      this: ObsidianDomFragment,
+      options?: DomElementOptions | string | null,
+      callback?: (element: HTMLSpanElement) => void,
+    ) {
+      return this.createEl("span", options, callback);
+    },
+  );
 
   defineMethod(prototype, "addClass", function (this: Element, ...classes: string[]) {
     this.classList.add(...normalizedClasses(classes));

@@ -562,15 +562,12 @@ function setPluginSurfacePresentationVisible(visible: boolean): void {
 
 async function registerCompatibilityPluginView(
   runtime: ElectronPluginRuntime,
-  identity: { vaultId: string; vaultGeneration: number },
 ): Promise<void> {
   const view = runtime.view;
   const webContents = view.webContents;
-  const targetId = `webcontents:${webContents.id}`;
   compatibilityPluginViews.add(view);
   webContents.once("destroyed", () => {
     compatibilityPluginViews.delete(view);
-    pluginSurfaceEnvironmentBridge.unregister(targetId);
     visiblePluginViews.delete(view);
     if (attachedPluginView === view) {
       detachPluginView();
@@ -589,14 +586,6 @@ async function registerCompatibilityPluginView(
         .catch((error) => console.error("Could not persist unloaded plugin reattachment:", error));
     }
   });
-  await pluginSurfaceEnvironmentBridge.register(
-    {
-      id: targetId,
-      isDestroyed: () => webContents.isDestroyed(),
-      applyEnvironment: (environment) => runtime.applyEnvironment(environment),
-    },
-    identity,
-  );
 }
 
 function workspaceDisplayAreas(): Array<{ x: number; y: number; width: number; height: number }> {
@@ -1914,7 +1903,7 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
         appearanceCss: appearance.css,
         pluginCss: surfaceCatalog.css,
       });
-      return IsolatedPluginRuntime.open({
+      const isolatedRuntime = await IsolatedPluginRuntime.open({
         create: () =>
           RecoveringPluginRuntime.open({
             create: () =>
@@ -1940,13 +1929,23 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
                   }
                 : null;
             },
-            onRuntimeChange: async (runtime) =>
-              registerCompatibilityPluginView(runtime, {
-                vaultId,
-                vaultGeneration: authoritySession.vaultGeneration,
-              }),
+            onRuntimeChange: async (runtime) => registerCompatibilityPluginView(runtime),
           }),
       });
+      try {
+        await pluginSurfaceEnvironmentBridge.register(
+          {
+            id: `runtime:${vaultId}`,
+            isDestroyed: () => isolatedRuntime.isClosed(),
+            applyEnvironment: (environment) => isolatedRuntime.applyEnvironment(environment),
+          },
+          { vaultId, vaultGeneration: authoritySession.vaultGeneration },
+        );
+      } catch (error) {
+        await isolatedRuntime.close().catch(() => undefined);
+        throw error;
+      }
+      return isolatedRuntime;
     },
     deferInitialVault: true,
     ...(configuredPath ? { configuredVaultPath: configuredPath } : {}),

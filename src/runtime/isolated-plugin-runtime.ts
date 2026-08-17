@@ -72,6 +72,7 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
   private readonly slots = new Map<string, PluginRuntimeSlot<T>>();
   private closed = false;
   private closePromise: Promise<void> | null = null;
+  private environment: PluginRendererEnvironment | null = null;
   private environmentSnapshot: RuntimeSnapshot["pluginEnvironment"];
 
   private constructor(
@@ -101,6 +102,10 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
     return this.enqueue(async () => this.mergeSnapshot());
   }
 
+  isClosed(): boolean {
+    return this.closed;
+  }
+
   applyEnvironment(environment: PluginRendererEnvironment): Promise<RuntimeSnapshot> {
     return this.enqueue(async () => {
       let operationSnapshot: RuntimeSnapshot | undefined;
@@ -119,7 +124,15 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
         operationSnapshot ??= snapshot;
         return snapshot;
       });
-      this.environmentSnapshot = operationSnapshot?.pluginEnvironment;
+      this.environment = structuredClone(environment);
+      this.environmentSnapshot =
+        operationSnapshot?.pluginEnvironment ?? {
+          status: "applied",
+          vaultId: environment.vaultId,
+          vaultGeneration: environment.vaultGeneration,
+          sequence: environment.sequence,
+          cssChangeTriggered: false,
+        };
       return this.mergeSnapshot(this.lastPluginId, operationSnapshot);
     });
   }
@@ -332,7 +345,23 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
     }
     const runtime = await this.options.create();
     try {
-      return { runtime, snapshot: await runtime.getSnapshot() };
+      let snapshot = await runtime.getSnapshot();
+      if (this.environment) {
+        if (!runtime.applyEnvironment) {
+          throw new Error("A fresh isolated plugin runtime does not support environment replacement.");
+        }
+        snapshot = await runtime.applyEnvironment(this.environment);
+        const applied = snapshot.pluginEnvironment;
+        if (
+          applied?.status !== "applied" ||
+          applied.vaultId !== this.environment.vaultId ||
+          applied.vaultGeneration !== this.environment.vaultGeneration ||
+          applied.sequence !== this.environment.sequence
+        ) {
+          throw new Error("A fresh isolated plugin runtime did not acknowledge its environment.");
+        }
+      }
+      return { runtime, snapshot };
     } catch (error) {
       await runtime.close().catch(() => undefined);
       throw error;

@@ -4,12 +4,13 @@ This document is generated from the versioned receipt-aware source [`compatibili
 Discovery in the external community package directory is separate from Threadleaf compatibility evidence.
 A row applies only to the exact plugin and Threadleaf versions shown.
 
-Registry schema: 2. Threadleaf version: 0.1.0-beta.7. Generation: 1eac9d5437e12847d4464f3983ff5e64b8473e5c3522b79e85d0861d3c7cf2f9.
+Registry schema: 2. Threadleaf version: 0.1.0-beta.7. Generation: 89a46bb94a2dedf2e3d7bb85442401877b2bce2306792bc3e4f3048fe6bb9388.
 
 | Plugin | Plugin version | Threadleaf | Level | Evidence | Last tested |
 | --- | --- | --- | ---: | --- | --- |
 | [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) | 2.25.3 | 0.1.0-beta.7 | 0 | composed | 2026-08-16 |
 | [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) | 2.26.4 | 0.1.0-beta.7 | 2 | direct | 2026-08-16 |
+| [Style Settings](https://github.com/mgmeyers/obsidian-style-settings) | 1.0.9 | 0.1.0-beta.7 | 3 | direct | 2026-08-17 |
 | [Threadleaf Compatibility Fixture](https://github.com/maherr/threadleaf) | 0.1.0 | 0.1.0-beta.7 | 0 | direct | 2026-08-15 |
 
 ## Excalidraw 2.25.3
@@ -82,6 +83,38 @@ Required static authority review: `vault-read`, `vault-write`, `network`, `clipb
 - Inline wiki-embed rendering and export formats beyond SVG and PNG remain unverified for 2.26.4.
 - The optional compatibility-renderer crash probe was not safely inducible by CDP on the tested Electron build; mandatory pop-out crash recovery passed.
 - This is trusted same-user desktop construction evidence, not a sandbox or hostile-plugin attestation.
+
+## Style Settings 1.0.9
+
+The exact reviewed obsidian-style-settings 1.0.9 package passed direct Linux Electron evidence for source-bearing appearance discovery, the immutable isolated activeWindow, the real Community plugins Options route, live class and variable controls, snippet disable and re-enable, computed-style changes, renderer replacement, application restart reconstruction, realm locality, and dark and light visual capture. This is supporting behavior evidence at Level 3 (Integrated), not Level 4.
+
+Bundle SHA-256: `1828abaacdab4c5578b705a625c585b30512f8efad4c7cfc5a18e70cc3557468`. License: Unspecified in manifest.
+
+Required static authority review: `workspace-ui`, `dynamic-code`.
+
+### Supported workflows
+
+- **Discover snippet controls, apply live changes, recover the renderer, and reconstruct after restart** (passed)
+  - `pnpm run test:style-settings-snippet-control` via [scripts/check-style-settings-snippet-control.mjs](../../scripts/check-style-settings-snippet-control.mjs)
+  - `pnpm exec vitest run src/shared/plugin-runtime-protocol.test.ts src/plugin-renderer/plugin-renderer-service.test.ts src/runtime/isolated-plugin-runtime.test.ts src/runtime/recovering-plugin-runtime.test.ts` via [src/plugin-renderer/plugin-renderer-service.test.ts](../../src/plugin-renderer/plugin-renderer-service.test.ts)
+
+### Platform limits
+
+- **linux-x64-electron**: verified. Verified in an isolated Linux X11 and Xvfb Electron run with the exact package identity and disposable vault and private state. The runtime is a trusted same-user Node renderer, not a sandbox.
+- **macos-electron**: unverified. This exact package workflow is not verified on macOS.
+- **windows-x64-electron**: unverified. This exact package workflow is not verified on Windows.
+
+### Known failures
+
+- No reproducible failure is recorded for the supported workflows above.
+
+### Limitations
+
+- The controls style only the isolated plugin surface.
+- Threadleaf native editor, file tree, settings shell, and unrelated plugin views are outside the claim.
+- The runtime is a trusted same-user Node renderer, not a sandbox.
+- This is supporting behavior evidence, not Level 4 evidence.
+- No controller-finalized signed production receipt exists for this tuple.
 
 ## Threadleaf Compatibility Fixture 0.1.0
 

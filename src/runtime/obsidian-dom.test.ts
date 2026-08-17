@@ -37,7 +37,14 @@ describe("Obsidian DOM compatibility", () => {
     const root = dom.window.document.querySelector<TestElement>("#root");
     const globals = dom.window as unknown as {
       createDiv(options?: { text?: string }): HTMLDivElement;
-      createFragment(callback?: (fragment: DocumentFragment) => void): DocumentFragment;
+      createFragment(
+        callback?: (
+          fragment: DocumentFragment & {
+            appendText(value: string): Text;
+            createEl(tagName: "strong", options?: { text?: string }): HTMLElement;
+          },
+        ) => void,
+      ): DocumentFragment;
     };
     const runtimeGlobals = executionGlobal as typeof globals;
     expect(root).not.toBeNull();
@@ -61,8 +68,12 @@ describe("Obsidian DOM compatibility", () => {
     expect(root?.getText()).toBe("firstexistingcard");
     expect(appended?.className).toBe("card active");
     expect(globals.createDiv({ text: "global" }).textContent).toBe("global");
-    const fragment = globals.createFragment((value) => value.append("fragment"));
-    expect(fragment.textContent).toBe("fragment");
+    const fragment = globals.createFragment((value) => {
+      value.appendText("fragment");
+      value.createEl("strong", { text: " element" });
+      value.append(" tail");
+    });
+    expect(fragment.textContent).toBe("fragment element tail");
     expect(runtimeGlobals.createDiv({ text: "runtime global" }).textContent).toBe("runtime global");
     expect(runtimeGlobals.createFragment((value) => value.append("runtime")).textContent).toBe(
       "runtime",

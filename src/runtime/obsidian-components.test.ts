@@ -66,6 +66,29 @@ describe("Obsidian component compatibility", () => {
     expect(dispose).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps component bookkeeping separate from a plugin-owned children field", () => {
+    class CollidingComponent extends Component {
+      children = ["plugin-owned state"];
+      loadedChildren = 0;
+
+      override onload(): void {
+        this.loadedChildren += 1;
+      }
+    }
+
+    const parent = new CollidingComponent();
+    const child = new CollidingComponent();
+    parent.addChild(child);
+    parent.load();
+
+    expect(parent.children).toEqual(["plugin-owned state"]);
+    expect(parent.loadedChildren).toBe(1);
+    expect(child.loadedChildren).toBe(1);
+
+    parent.unload();
+    expect(child._loaded).toBe(false);
+  });
+
   it("supports the public BaseComponent chaining contract", () => {
     const component = new BaseComponent();
     const callback = vi.fn((value: BaseComponent) => value.setDisabled(true));

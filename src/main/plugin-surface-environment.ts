@@ -82,6 +82,11 @@ export class PluginSurfaceEnvironmentBridge {
     identity: PluginSurfaceEnvironmentIdentity,
   ): Promise<void> {
     await this.enqueue(async () => {
+      for (const [targetId, existing] of this.targets) {
+        if (existing.isDestroyed()) {
+          this.targets.delete(targetId);
+        }
+      }
       const hadOtherTargets = this.targets.size > 0;
       this.targets.set(target.id, target);
       try {

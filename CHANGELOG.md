@@ -7,6 +7,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Added the exact reviewed Style Settings 1.0.9 appearance bridge and
+  `style-settings.snippet-control-live-reload.v1` Linux workflow. The unchanged package can
+  discover source-bearing appearance CSS, use the isolated renderer's immutable `activeWindow`,
+  update class and variable controls live, and reconstruct saved state after snippet toggles,
+  renderer replacement, and application restart. The registry records this as Level 3 supporting
+  evidence; no Level 4 receipt or production issuer key was added.
+
 ## [0.1.0-beta.7]
 
 ### Added

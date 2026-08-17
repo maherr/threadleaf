@@ -86,11 +86,19 @@ function realizeEnvironmentStyles(documentRef: Document): void {
 
 async function settleEnvironmentStyles(documentRef: Document): Promise<void> {
   const animationFrame = documentRef.defaultView?.requestAnimationFrame;
-  if (typeof animationFrame === "function") {
-    await new Promise<void>((resolve) => animationFrame(() => resolve()));
-    return;
-  }
-  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const settle = (): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(fallback);
+      resolve();
+    };
+    const fallback = setTimeout(settle, 50);
+    if (typeof animationFrame === "function") {
+      animationFrame(settle);
+    }
+  });
 }
 
 function applyAccessibilityState(
@@ -355,13 +363,19 @@ export class PluginRendererService {
     return this.host;
   }
 
-  private async snapshot(): Promise<RuntimeSnapshot> {
-    return this.withEnvironment(await this.requireHost().getSnapshot());
+  private async snapshot(
+    acknowledgementOverride?: PluginEnvironmentSnapshot,
+  ): Promise<RuntimeSnapshot> {
+    return this.withEnvironment(await this.requireHost().getSnapshot(), acknowledgementOverride);
   }
 
-  private withEnvironment(snapshot: RuntimeSnapshot): RuntimeSnapshot {
-    return this.environmentAcknowledgement
-      ? { ...snapshot, pluginEnvironment: { ...this.environmentAcknowledgement } }
+  private withEnvironment(
+    snapshot: RuntimeSnapshot,
+    acknowledgementOverride?: PluginEnvironmentSnapshot,
+  ): RuntimeSnapshot {
+    const environmentAcknowledgement = acknowledgementOverride ?? this.environmentAcknowledgement;
+    return environmentAcknowledgement
+      ? { ...snapshot, pluginEnvironment: { ...environmentAcknowledgement } }
       : snapshot;
   }
 
@@ -375,14 +389,14 @@ export class PluginRendererService {
       throw new Error("Plugin renderer environment identity changed while the renderer was bound.");
     }
     if (this.environment && environment.sequence <= this.environment.sequence) {
-      this.environmentAcknowledgement = {
+      const staleAcknowledgement: PluginEnvironmentSnapshot = {
         status: "stale",
         vaultId: environment.vaultId,
         vaultGeneration: environment.vaultGeneration,
         sequence: environment.sequence,
         cssChangeTriggered: false,
       };
-      return this.snapshot();
+      return this.snapshot(staleAcknowledgement);
     }
 
     const initial = this.environment === null;
@@ -441,10 +455,11 @@ export class PluginRendererService {
   }
 
   private installAccessibilityOrderObserver(documentRef: Document): void {
-    if (this.accessibilityOrderObserver || typeof MutationObserver === "undefined") {
+    const MutationObserverConstructor = documentRef.defaultView?.MutationObserver;
+    if (this.accessibilityOrderObserver || !MutationObserverConstructor) {
       return;
     }
-    this.accessibilityOrderObserver = new MutationObserver(() => {
+    this.accessibilityOrderObserver = new MutationObserverConstructor(() => {
       void this.ensureAccessibilityLast();
     });
     this.accessibilityOrderObserver.observe(documentRef.head, { childList: true });

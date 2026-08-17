@@ -1,6 +1,6 @@
 # Level 4 Plugin Bridges
 
-**Status:** Phase 0 receipt substrate implemented; production bridges and workflows not started
+**Status:** Phase 0 receipt substrate implemented; Phase 1 Style Settings bridge and supporting behavior evidence implemented; Phase 6 production receipt publication pending
 **Scope:** Style Settings 1.0.9, Calendar release `2.0.0-beta.2` with manifest `2.0.0`, and Templater 2.25.0  
 **Last updated:** 2026-08-17
 
@@ -14,7 +14,7 @@ Threadleaf should implement three narrow compatibility bridges around the existi
 
 Level 4 is an evidence state, not a side effect of invoking a command. It is awarded only to an exact package identity whose named production workflow reaches an asserted terminal state and still works after the compatibility renderer and application state have been reconstructed.
 
-The Phase 0 evidence-integrity substrate is now implemented in the script-only controller, verifier, strict receipt boundary, artifact builders, replay index, and registry publication path. The production trust policy has no issuer key, so no current real plugin can receive Level 4 from this milestone. The hermetic fixture workflow proves the path with an ephemeral key in a private temporary directory; its isolated Level 4 row never enters the checked-in registry. Style Settings, Calendar, and Templater behavior remain later work.
+The Phase 0 evidence-integrity substrate is now implemented in the script-only controller, verifier, strict receipt boundary, artifact builders, replay index, and registry publication path. The production trust policy has no issuer key, so no current real plugin can receive Level 4 from this milestone. The hermetic fixture workflow proves the path with an ephemeral key in a private temporary directory; its isolated Level 4 row never enters the checked-in registry. Style Settings Phase 1 behavior and direct supporting evidence are implemented; Calendar and Templater behavior remain later work. The Style Settings registry row is Level 3 (Integrated), not Level 4, and carries no production receipt.
 
 ## Inputs and current architecture
 
@@ -1020,7 +1020,9 @@ This is an implementation order, not an instruction to implement as part of this
 
 Within the declared non-malicious receipt model, this phase rejects stale, partial, divergent, or replayed evidence. For malicious-plugin risk, it prevents every later bridge from executing through a stale, hash-only, unprofiled, or scan-selected construction path before authority is granted.
 
-### Phase 1: Complete Lane 4, then build Style Settings
+### Phase 1: Complete Lane 4, then build Style Settings (implemented; supporting evidence only)
+
+Phase 1 is implemented for the exact reviewed `obsidian-style-settings` 1.0.9 package. The bridge uses a typed full-replacement environment snapshot, source-bearing renderer-owned style nodes, the isolated renderer's immutable `activeWindow`, serialized live acknowledgements, and recovery and restart reconstruction. The direct supporting workflow is `style-settings.snippet-control-live-reload.v1`: it runs the unchanged exact package through the real Community plugins Options route, live snippet controls, disable and re-enable, renderer replacement, application restart, realm-locality checks, and dark and light visual proof. This evidence does not create a Level 4 row or receipt; Phase 6 remains pending.
 
 1. Activate and consume the already checked-in Style Settings identity-bound authority profile; do not create or infer a profile in this phase.
 2. Complete command removal and snapshot reconciliation in `src/runtime/obsidian-workspace-compat.ts`, `src/runtime/obsidian-compat.ts`, and the plugin-runtime protocol.
@@ -1029,7 +1031,7 @@ Within the declared non-malicious receipt model, this phase rejects stale, parti
 5. Materialize source-bearing style nodes and `activeWindow` in `src/plugin-renderer/plugin-renderer-service.ts` and `src/plugin-renderer/renderer.ts`.
 6. Add live update, stale-sequence, reload, cascade-order, and production workflow tests.
 
-This is the smallest bridge and proves the environment-sync and reload-reconstruction patterns used later.
+The bridge and workflow above are the smallest Phase 1 implementation and prove the environment-sync and reload-reconstruction patterns used later. The package's controls style only its isolated plugin surface; native editor, file tree, settings shell, and unrelated plugin views remain outside the claim. The runtime is a trusted same-user Node renderer, not a sandbox.
 
 ### Phase 2: Build Calendar's shared prerequisites and identity divergence support
 

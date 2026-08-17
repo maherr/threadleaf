@@ -7,6 +7,7 @@ import type {
   RuntimeSnapshot,
 } from "../shared/contracts";
 import type { PluginConstructionRequest } from "../shared/plugins";
+import type { PluginRendererEnvironment } from "../shared/plugin-runtime-protocol";
 import { IsolatedPluginRuntime } from "./isolated-plugin-runtime";
 import type { PluginRuntimePort } from "./plugin-runtime-port";
 
@@ -66,6 +67,8 @@ class FakeIsolatedRuntime implements PluginRuntimePort {
   readonly markLayoutReady = vi.fn(async () => this.snapshot());
   readonly renderCalls: string[] = [];
   readonly runCalls: string[] = [];
+  readonly environmentSequences: number[] = [];
+  readonly trace: string[] = [];
   readonly waitForPluginMutations = vi.fn(async () => this.snapshot());
   readonly instanceId: number;
   pluginId: string | null = null;
@@ -84,12 +87,28 @@ class FakeIsolatedRuntime implements PluginRuntimePort {
     const pluginDirectory = request.pluginDirectory;
     this.pluginId = path.basename(pluginDirectory);
     this.pluginState = "loaded";
+    this.trace.push(`load:${this.pluginId}`);
     this.loadCalls.push({
       constructionPath: request.constructionPath,
       directory: pluginDirectory,
       hash: request.packageIdentity.mainSha256,
     });
     return this.snapshot();
+  }
+
+  async applyEnvironment(environment: PluginRendererEnvironment): Promise<RuntimeSnapshot> {
+    this.environmentSequences.push(environment.sequence);
+    this.trace.push(`environment:${environment.sequence}`);
+    return {
+      ...this.snapshot(),
+      pluginEnvironment: {
+        status: "applied",
+        vaultId: environment.vaultId,
+        vaultGeneration: environment.vaultGeneration,
+        sequence: environment.sequence,
+        cssChangeTriggered: false,
+      },
+    };
   }
 
   reloadPlugin(): Promise<RuntimeSnapshot> {
@@ -200,6 +219,50 @@ class FakeIsolatedRuntime implements PluginRuntimePort {
 }
 
 describe("IsolatedPluginRuntime", () => {
+  it("acknowledges the environment before each fresh slot evaluates a plugin", async () => {
+    const environment: PluginRendererEnvironment = {
+      vaultId: "e".repeat(64),
+      vaultGeneration: 3,
+      sequence: 8,
+      theme: "dark",
+      appearanceCss: ".appearance {}",
+      pluginCss: ".plugin {}",
+      accessibilityCss: ":root {}",
+      accessibility: {
+        highContrast: false,
+        accent: "blue",
+        uiFontScale: 1,
+        textFontScale: 1,
+        editorFontSize: 15,
+        editorLineHeight: 1.6,
+        reducedMotion: false,
+        reducedTransparency: false,
+      },
+    };
+    const created: FakeIsolatedRuntime[] = [];
+    const runtime = await IsolatedPluginRuntime.open({
+      create: async () => {
+        const instance = new FakeIsolatedRuntime(created.length + 1);
+        created.push(instance);
+        return instance;
+      },
+    });
+
+    await runtime.applyEnvironment(environment);
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/alpha"));
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/beta", "b".repeat(64)));
+
+    expect(created[0]?.trace).toEqual(["environment:8", "load:alpha"]);
+    expect(created[1]?.trace).toEqual(["environment:8", "load:beta"]);
+    expect((await runtime.getSnapshot()).pluginEnvironment).toMatchObject({
+      status: "applied",
+      vaultId: environment.vaultId,
+      vaultGeneration: environment.vaultGeneration,
+      sequence: environment.sequence,
+    });
+    await runtime.close();
+  });
+
   it("gives each plugin its own replaceable runtime and aggregates user-facing state", async () => {
     const created: FakeIsolatedRuntime[] = [];
     const runtime = await IsolatedPluginRuntime.open({

@@ -273,6 +273,10 @@ normal external vault backup and the privacy-safe feedback workflow.
       bounded local image decoding, and renderer/main memory with event, correctness, warm/cold,
       environment, relative-budget, machine-readable, and cleanup guards. Windows and macOS remain
       explicitly unsupported until equivalent non-X11 probes exist.
+- [x] Implement the exact reviewed Style Settings 1.0.9 appearance bridge and the
+      `style-settings.snippet-control-live-reload.v1` Linux workflow, including source-bearing
+      CSS discovery, live snippet controls, renderer and application restart reconstruction, and
+      isolated-surface evidence. This is Level 3 supporting evidence, not a Level 4 receipt.
 - [ ] Run plugin bundles through automated compatibility and security checks before distribution.
 - [ ] Verify representative open plugins for queries, tasks, templates, Git, citations, calendars,
       tables, and databases through named end-to-end workflows.

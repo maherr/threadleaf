@@ -387,6 +387,12 @@
       "compatibilityLevel": 2
     },
     {
+      "id": "obsidian-style-settings",
+      "version": "1.0.9",
+      "threadleafVersion": "0.1.0-beta.7",
+      "compatibilityLevel": 3
+    },
+    {
       "id": "threadleaf-fixture",
       "version": "0.1.0",
       "threadleafVersion": "0.1.0-beta.7",
