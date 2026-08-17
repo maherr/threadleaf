@@ -31,15 +31,15 @@ assert.deepEqual(ledger.counts, {
   functions: 47,
   enums: 1,
   variables: 8,
-  implemented: 85,
-  partial: 9,
+  implemented: 86,
+  partial: 8,
   unsupported: 0,
   missing: 64,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
-  implementedObligations: 433,
+  implementedObligations: 439,
 });
 assert.equal(ledger.factory.keys.length, 99);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
@@ -142,7 +142,7 @@ assert.deepEqual(
     ["TFolder", "implemented"],
     ["ToggleComponent", "implemented"],
     ["Vault", "partial"],
-    ["View", "partial"],
+    ["View", "implemented"],
     ["Workspace", "partial"],
     ["WorkspaceItem", "implemented"],
     ["WorkspaceLeaf", "implemented"],

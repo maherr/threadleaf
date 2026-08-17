@@ -160,7 +160,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | Value | class | missing | 7c58c01f8b955627 |
 | ValueComponent | class | missing | 529ce7aae6a57c84 |
 | Vault | class | partial | 8041bc89ef9d718b |
-| View | class | partial | b8f2d48cb007660e |
+| View | class | implemented | b8f2d48cb007660e |
 | Workspace | class | partial | 678ad5eacec977ed |
 | WorkspaceContainer | class | missing | 111dc7e1f6366fe3 |
 | WorkspaceFloating | class | missing | e7ce5a480a9e4cc1 |

@@ -13,15 +13,15 @@
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 85,
-    "partial": 9,
+    "implemented": 86,
+    "partial": 8,
     "unsupported": 0,
     "missing": 64,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 433
+    "implementedObligations": 439
   },
   "factory": {
     "keys": [
@@ -5689,7 +5689,7 @@
       "exportId": "export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49",
       "name": "View",
       "kind": "class",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49",
       "location": {
         "line": 7600,
@@ -5698,6 +5698,10 @@
       "evidence": [
         {
           "id": "obsidian-runtime.render-views.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        },
+        {
+          "id": "obsidian-runtime.view-lifecycle.v1",
           "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
         }
       ],
@@ -5741,7 +5745,13 @@
         "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:7e5dd7e1e7ee8f75a050a964a9b5d75cbae3e5986af409e9266bd0f294f3393d",
         "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:d7d57057a934f9bcebabd5b32a61bd9786134779990577a76dbbdd9d801be8bf",
         "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:a44b1da69fd4013be8ae7dafc4719e8479827e784d3f0feb04bfc8bbf0cf967f",
-        "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:b434570e24f2971458199f710ac88e2cd612c501fa60fa884acd2a766a3f87eb"
+        "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:b434570e24f2971458199f710ac88e2cd612c501fa60fa884acd2a766a3f87eb",
+        "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:d5add7cc08c77c2105ab3c955fc49d3216e924785de4b4f93a1918a1af8a749e",
+        "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:6c67e0f00c9c805d7dcae8200afa0edb6a6bd7056a0787bba37b619c79801d8c",
+        "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:cb88eaf571f5fdccd0cfd562ad0303785be7af92ecb287ff6513879c9895d0ab",
+        "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:c89aef7c480a28ee793f811b1110f701e06f771339e6911b91b311b524492e9b",
+        "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:bca6aaf2ecc0746e7742d686163e6f7e3265a607c5642aa1ba98001b3c891290",
+        "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:28b8706c73ead20ce66d6698f19d981973a95ce08d487b05b16b7d68558cd09c"
       ],
       "coveredObligationSignatureHashes": [
         "1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
@@ -5755,7 +5765,13 @@
         "7e5dd7e1e7ee8f75a050a964a9b5d75cbae3e5986af409e9266bd0f294f3393d",
         "d7d57057a934f9bcebabd5b32a61bd9786134779990577a76dbbdd9d801be8bf",
         "a44b1da69fd4013be8ae7dafc4719e8479827e784d3f0feb04bfc8bbf0cf967f",
-        "b434570e24f2971458199f710ac88e2cd612c501fa60fa884acd2a766a3f87eb"
+        "b434570e24f2971458199f710ac88e2cd612c501fa60fa884acd2a766a3f87eb",
+        "d5add7cc08c77c2105ab3c955fc49d3216e924785de4b4f93a1918a1af8a749e",
+        "6c67e0f00c9c805d7dcae8200afa0edb6a6bd7056a0787bba37b619c79801d8c",
+        "cb88eaf571f5fdccd0cfd562ad0303785be7af92ecb287ff6513879c9895d0ab",
+        "c89aef7c480a28ee793f811b1110f701e06f771339e6911b91b311b524492e9b",
+        "bca6aaf2ecc0746e7742d686163e6f7e3265a607c5642aa1ba98001b3c891290",
+        "28b8706c73ead20ce66d6698f19d981973a95ce08d487b05b16b7d68558cd09c"
       ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
@@ -17730,7 +17746,7 @@
     {
       "exportId": "export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49",
       "name": "View",
-      "status": "partial",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
@@ -18035,7 +18051,13 @@
         "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:7e5dd7e1e7ee8f75a050a964a9b5d75cbae3e5986af409e9266bd0f294f3393d",
         "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:d7d57057a934f9bcebabd5b32a61bd9786134779990577a76dbbdd9d801be8bf",
         "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:a44b1da69fd4013be8ae7dafc4719e8479827e784d3f0feb04bfc8bbf0cf967f",
-        "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:b434570e24f2971458199f710ac88e2cd612c501fa60fa884acd2a766a3f87eb"
+        "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:b434570e24f2971458199f710ac88e2cd612c501fa60fa884acd2a766a3f87eb",
+        "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:d5add7cc08c77c2105ab3c955fc49d3216e924785de4b4f93a1918a1af8a749e",
+        "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:6c67e0f00c9c805d7dcae8200afa0edb6a6bd7056a0787bba37b619c79801d8c",
+        "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:cb88eaf571f5fdccd0cfd562ad0303785be7af92ecb287ff6513879c9895d0ab",
+        "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:c89aef7c480a28ee793f811b1110f701e06f771339e6911b91b311b524492e9b",
+        "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:bca6aaf2ecc0746e7742d686163e6f7e3265a607c5642aa1ba98001b3c891290",
+        "obligation:export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49:28b8706c73ead20ce66d6698f19d981973a95ce08d487b05b16b7d68558cd09c"
       ],
       "coveredObligationSignatureHashes": [
         "1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
@@ -18049,7 +18071,13 @@
         "7e5dd7e1e7ee8f75a050a964a9b5d75cbae3e5986af409e9266bd0f294f3393d",
         "d7d57057a934f9bcebabd5b32a61bd9786134779990577a76dbbdd9d801be8bf",
         "a44b1da69fd4013be8ae7dafc4719e8479827e784d3f0feb04bfc8bbf0cf967f",
-        "b434570e24f2971458199f710ac88e2cd612c501fa60fa884acd2a766a3f87eb"
+        "b434570e24f2971458199f710ac88e2cd612c501fa60fa884acd2a766a3f87eb",
+        "d5add7cc08c77c2105ab3c955fc49d3216e924785de4b4f93a1918a1af8a749e",
+        "6c67e0f00c9c805d7dcae8200afa0edb6a6bd7056a0787bba37b619c79801d8c",
+        "cb88eaf571f5fdccd0cfd562ad0303785be7af92ecb287ff6513879c9895d0ab",
+        "c89aef7c480a28ee793f811b1110f701e06f771339e6911b91b311b524492e9b",
+        "bca6aaf2ecc0746e7742d686163e6f7e3265a607c5642aa1ba98001b3c891290",
+        "28b8706c73ead20ce66d6698f19d981973a95ce08d487b05b16b7d68558cd09c"
       ]
     },
     {

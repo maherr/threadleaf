@@ -136,13 +136,13 @@
     {
       "id": "obsidian-runtime.setting-tabs.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 2161,
+      "line": 2308,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.settings-components.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1854,
+      "line": 2001,
       "status": "positive"
     },
     {
@@ -154,7 +154,7 @@
     {
       "id": "obsidian-runtime.suggest-components.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 2270,
+      "line": 2417,
       "status": "positive"
     },
     {
@@ -173,6 +173,12 @@
       "id": "obsidian-runtime.utility-functions.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
       "line": 372,
+      "status": "positive"
+    },
+    {
+      "id": "obsidian-runtime.view-lifecycle.v1",
+      "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
+      "line": 1854,
       "status": "positive"
     },
     {

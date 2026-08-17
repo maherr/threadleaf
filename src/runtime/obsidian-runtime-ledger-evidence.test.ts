@@ -1851,6 +1851,153 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
     }
   });
 
+  /** @compatibility-test-id obsidian-runtime.view-lifecycle.v1 */
+  it('proves the base View lifecycle, state, ephemeral state, and pane menu contract through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-runtime-ledger-view-lifecycle-"),
+    );
+    const pluginPath = path.join(sandboxPath, "view-lifecycle-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "view-lifecycle-ledger-fixture",
+          name: "View lifecycle ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { Menu, Plugin, View, WorkspaceLeaf } = require("obsidian");',
+          "class LedgerView extends View {",
+          "  constructor(leaf) {",
+          "    super(leaf);",
+          "    this.calls = [];",
+          '    this.state = { token: "initial" };',
+          "    this.ephemeral = {};",
+          "  }",
+          '  async onOpen() { await super.onOpen(); this.calls.push("open"); }',
+          '  async onClose() { await super.onClose(); this.calls.push("close"); }',
+          '  getViewType() { return "ledger-view"; }',
+          '  getDisplayText() { return "Ledger view"; }',
+          "  getState() {",
+          "    const base = super.getState();",
+          '    this.calls.push(["getState", Object.keys(base)]);',
+          "    return { ...base, token: this.state.token };",
+          "  }",
+          "  async setState(state, result) {",
+          "    await super.setState(state, result);",
+          '    this.calls.push(["setState", state, result]);',
+          '    if (state && typeof state === "object") this.state = { ...state };',
+          "  }",
+          "  getEphemeralState() {",
+          "    const base = super.getEphemeralState();",
+          '    this.calls.push(["getEphemeralState", Object.keys(base)]);',
+          "    return { ...base, ...this.ephemeral };",
+          "  }",
+          "  setEphemeralState(state) {",
+          "    super.setEphemeralState(state);",
+          '    this.calls.push(["setEphemeralState", state]);',
+          '    if (state && typeof state === "object") this.ephemeral = { ...state };',
+          "  }",
+          "  onPaneMenu(menu, source) {",
+          "    super.onPaneMenu(menu, source);",
+          '    this.calls.push(["pane", menu instanceof Menu, source]);',
+          "  }",
+          "}",
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          "    const leaf = this.app.workspace.getLeaf(false);",
+          "    const view = new LedgerView(leaf);",
+          "    const opened = await leaf.open(view);",
+          "    const initialState = leaf.getViewState();",
+          '    await view.setState({ token: "restored" }, { result: "accepted" });',
+          "    const state = view.getState();",
+          "    view.setEphemeralState({ cursor: { line: 2, ch: 3 } });",
+          "    const ephemeral = view.getEphemeralState();",
+          "    const menu = new Menu();",
+          '    view.onPaneMenu(menu, "tab-header");',
+          "    const callNamesBeforeClose = view.calls.map((call) => Array.isArray(call) ? call[0] : call);",
+          '    const stateBaseKeys = view.calls.filter((call) => Array.isArray(call) && call[0] === "getState").map((call) => call[1]);',
+          '    const ephemeralBaseKeys = view.calls.filter((call) => Array.isArray(call) && call[0] === "getEphemeralState").map((call) => call[1]);',
+          '    const paneCall = view.calls.find((call) => Array.isArray(call) && call[0] === "pane");',
+          "    const openState = {",
+          "      openedIsView: opened === view,",
+          "      leafIsWorkspaceLeaf: leaf instanceof WorkspaceLeaf,",
+          "      viewIsView: view instanceof View,",
+          "      leafContainerIsViewContainer: leaf.containerEl === view.containerEl,",
+          "      leafViewBeforeClose: leaf.view === view,",
+          "      viewType: view.getViewType(),",
+          "      displayText: view.getDisplayText(),",
+          "      initialState,",
+          "      state,",
+          "      ephemeral,",
+          "      callNamesBeforeClose,",
+          "      stateBaseKeys,",
+          "      ephemeralBaseKeys,",
+          "      paneCall,",
+          "    };",
+          "    await leaf.detach();",
+          "    globalThis.__threadleafRuntimeLedgerViewLifecycleProbe = {",
+          "      ...openState,",
+          '      lifecycle: view.calls.filter((call) => typeof call === "string"),',
+          "      leafViewAfterClose: leaf.view === null,",
+          "    };",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      await withTestDocument(async () => {
+        const host = new PluginHost(fixtureVault);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerViewLifecycleProbe?: unknown })
+              .__threadleafRuntimeLedgerViewLifecycleProbe,
+          ).toEqual({
+            openedIsView: true,
+            leafIsWorkspaceLeaf: true,
+            viewIsView: true,
+            leafContainerIsViewContainer: true,
+            leafViewBeforeClose: true,
+            viewType: "ledger-view",
+            displayText: "Ledger view",
+            initialState: {
+              type: "ledger-view",
+              state: { token: "initial" },
+            },
+            state: { token: "restored" },
+            ephemeral: { cursor: { line: 2, ch: 3 } },
+            callNamesBeforeClose: [
+              "open",
+              "getState",
+              "setState",
+              "setState",
+              "getState",
+              "setEphemeralState",
+              "getEphemeralState",
+              "pane",
+            ],
+            stateBaseKeys: [[], []],
+            ephemeralBaseKeys: [[]],
+            paneCall: ["pane", true, "tab-header"],
+            lifecycle: ["open", "close"],
+            leafViewAfterClose: true,
+          });
+        } finally {
+          await host.close();
+        }
+      });
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerViewLifecycleProbe");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   /** @compatibility-test-id obsidian-runtime.settings-components.v1 */
   it('proves DOM-backed settings components through require("obsidian")', async () => {
     const sandboxPath = await fs.mkdtemp(
