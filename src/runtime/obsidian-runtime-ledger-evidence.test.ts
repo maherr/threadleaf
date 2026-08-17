@@ -78,6 +78,9 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           "      pluginIsPlugin: this instanceof Plugin,",
           "      desktop: Platform.isDesktop === true,",
           '      normalized: normalizePath("\\\\Folder\\\\Note.md"),',
+          '      normalizedLeading: normalizePath("//Folder/Note.md"),',
+          '      normalizedEmpty: normalizePath(""),',
+          '      normalizedAlready: normalizePath("Folder/Note.md"),',
           "    };",
           "  }",
           "}",
@@ -98,12 +101,93 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           pluginIsPlugin: true,
           desktop: true,
           normalized: "Folder/Note.md",
+          normalizedLeading: "Folder/Note.md",
+          normalizedEmpty: "",
+          normalizedAlready: "Folder/Note.md",
         });
       } finally {
         await host.close();
       }
     } finally {
       Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerProbe");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
+  /** @compatibility-test-id obsidian-runtime.utility-functions.v1 */
+  it('proves public link and search utilities through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-runtime-ledger-utils-"),
+    );
+    const pluginPath = path.join(sandboxPath, "utility-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "utility-ledger-fixture",
+          name: "Utility ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { Plugin, getLinkpath, normalizePath, parseLinktext, prepareFuzzySearch, prepareSimpleSearch } = require("obsidian");',
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          '    const fuzzy = prepareFuzzySearch("dng");',
+          '    const simple = prepareSimpleSearch("alpha beta");',
+          "    globalThis.__threadleafRuntimeLedgerUtilityProbe = {",
+          '      pathOnly: parseLinktext("Folder/Note"),',
+          '      nestedSubpath: parseLinktext("Folder/Note#Heading#Nested"),',
+          '      blockOnly: parseLinktext("#^block-id"),',
+          '      linkpath: getLinkpath("Folder/Note#Heading"),',
+          '      normalized: normalizePath("\\\\Folder\\\\Note.md"),',
+          '      fuzzyMatches: fuzzy("Drawing").matches,',
+          '      fuzzyNoMatch: fuzzy("Diagram") === null,',
+          '      fuzzyEmpty: prepareFuzzySearch("")("Anything"),',
+          '      simpleMatches: simple("alpha beta alpha").matches,',
+          '      simpleNoMatch: simple("alpha only") === null,',
+          '      simpleEmpty: prepareSimpleSearch("")("Anything"),',
+          "    };",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      const host = new PluginHost(fixtureVault);
+      try {
+        await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+        expect(
+          (globalThis as { __threadleafRuntimeLedgerUtilityProbe?: unknown })
+            .__threadleafRuntimeLedgerUtilityProbe,
+        ).toEqual({
+          pathOnly: { path: "Folder/Note", subpath: "" },
+          nestedSubpath: { path: "Folder/Note", subpath: "#Heading#Nested" },
+          blockOnly: { path: "", subpath: "#^block-id" },
+          linkpath: "Folder/Note",
+          normalized: "Folder/Note.md",
+          fuzzyMatches: [
+            [0, 1],
+            [5, 7],
+          ],
+          fuzzyNoMatch: true,
+          fuzzyEmpty: { score: 0, matches: [] },
+          simpleMatches: [
+            [0, 5],
+            [6, 10],
+            [11, 16],
+          ],
+          simpleNoMatch: true,
+          simpleEmpty: { score: 0, matches: [] },
+        });
+      } finally {
+        await host.close();
+      }
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerUtilityProbe");
       await fs.rm(sandboxPath, { recursive: true, force: true });
     }
   });

@@ -64,7 +64,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | getIcon | function | missing | 68c885a5426e9933 |
 | getIconIds | function | missing | 1d6f1c811f777079 |
 | getLanguage | function | missing | bb51d9b13d4bc56f |
-| getLinkpath | function | missing | a0344dabcbd756f0 |
+| getLinkpath | function | implemented | a0344dabcbd756f0 |
 | hexToArrayBuffer | function | missing | dd08182366ea08da |
 | HoverPopover | class | missing | d8787e67d7235c2c |
 | htmlToMarkdown | function | missing | 22ec65ef974aafbe |
@@ -95,7 +95,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | Modal | class | missing | 0ecda97644af4e27 |
 | moment | variable | missing | 9ee051521ccd8991 |
 | MomentFormatComponent | class | implemented | b3a4fd344f8d82a1 |
-| normalizePath | function | partial | 9811227609eeb952 |
+| normalizePath | function | implemented | 9811227609eeb952 |
 | Notice | class | missing | 10560b31dc604864 |
 | NotNullValue | class | missing | c1ea1665f928693f |
 | NullValue | class | missing | 1324bf65b03915a3 |
@@ -105,7 +105,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | parseFrontMatterEntry | function | missing | 208d94491e23b5b6 |
 | parseFrontMatterStringArray | function | missing | deb327a55cd9c91f |
 | parseFrontMatterTags | function | missing | c9dcb6788b1937d3 |
-| parseLinktext | function | missing | fd10e8b7ba73e829 |
+| parseLinktext | function | implemented | fd10e8b7ba73e829 |
 | parsePropertyId | function | missing | 260ec28552701cc8 |
 | parseYaml | function | missing | 48af828ae472e2e3 |
 | Platform | variable | partial | ce92658397c816fa |
@@ -113,8 +113,8 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | PluginSettingTab | class | missing | 0afb03b5ff995364 |
 | PopoverState | enum | missing | 1994d816d82c6a0c |
 | PopoverSuggest | class | missing | 380470a80b007a51 |
-| prepareFuzzySearch | function | missing | 8ef6a695db24bdb3 |
-| prepareSimpleSearch | function | missing | 81341d6edc8ec6fa |
+| prepareFuzzySearch | function | implemented | 8ef6a695db24bdb3 |
+| prepareSimpleSearch | function | implemented | 81341d6edc8ec6fa |
 | PrimitiveValue | class | missing | 8a6cb580619668a6 |
 | ProgressBarComponent | class | implemented | 765be3f5a5d3693b |
 | QueryController | class | missing | 8687a7aa105e69dd |

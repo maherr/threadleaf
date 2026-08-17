@@ -2414,6 +2414,205 @@
                 "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
               }
             ]
+          },
+          {
+            "id": "normalize.leading-slash",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.normalize-path.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "normalize.empty",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.normalize-path.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "normalize.already-normalized",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.normalize-path.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "getLinkpath": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "getLinkpath"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": [
+          "linkpath.strips-subpath"
+        ],
+        "behaviors": [
+          {
+            "id": "linkpath.strips-subpath",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-functions.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "parseLinktext": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "parseLinktext"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": [
+          "linktext.path-only",
+          "linktext.first-subpath",
+          "linktext.block-only"
+        ],
+        "behaviors": [
+          {
+            "id": "linktext.path-only",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-functions.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "linktext.first-subpath",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-functions.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "linktext.block-only",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-functions.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "prepareFuzzySearch": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "prepareFuzzySearch"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": [
+          "fuzzy.match-ranges",
+          "fuzzy.no-match",
+          "fuzzy.empty-query"
+        ],
+        "behaviors": [
+          {
+            "id": "fuzzy.match-ranges",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-functions.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "fuzzy.no-match",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-functions.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "fuzzy.empty-query",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-functions.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "prepareSimpleSearch": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "prepareSimpleSearch"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": [
+          "simple.match-ranges",
+          "simple.no-match",
+          "simple.empty-query"
+        ],
+        "behaviors": [
+          {
+            "id": "simple.match-ranges",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-functions.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "simple.no-match",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-functions.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "simple.empty-query",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-functions.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
           }
         ]
       }

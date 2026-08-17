@@ -13,10 +13,10 @@
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 12,
-    "partial": 20,
+    "implemented": 17,
+    "partial": 19,
     "unsupported": 0,
-    "missing": 126,
+    "missing": 122,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
@@ -1689,21 +1689,33 @@
       "exportId": "export:function:getLinkpath:a0344dabcbd756f0444cff7b95e0dd970359ab7a394884bbba73802d554eeec5",
       "name": "getLinkpath",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "a0344dabcbd756f0444cff7b95e0dd970359ab7a394884bbba73802d554eeec5",
       "location": {
         "line": 3373,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "getLinkpath"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "linkpath.strips-subpath"
+      ],
+      "coveredBehaviorIds": [
+        "linkpath.strips-subpath"
+      ]
     },
     {
       "exportId": "export:function:hexToArrayBuffer:dd08182366ea08da09e515ce0c1690adf9caf57ccc9cc5983c7bd93dd28076b2",
@@ -2559,7 +2571,7 @@
       "exportId": "export:function:normalizePath:9811227609eeb952a314a406437297900614254808fa498dd825e06cdfaaff4f",
       "name": "normalizePath",
       "kind": "function",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "9811227609eeb952a314a406437297900614254808fa498dd825e06cdfaaff4f",
       "location": {
         "line": 4606,
@@ -2587,7 +2599,10 @@
         "normalize.already-normalized"
       ],
       "coveredBehaviorIds": [
-        "normalize.backslashes"
+        "normalize.backslashes",
+        "normalize.leading-slash",
+        "normalize.empty",
+        "normalize.already-normalized"
       ]
     },
     {
@@ -2801,21 +2816,37 @@
       "exportId": "export:function:parseLinktext:fd10e8b7ba73e829355a39b5b63d2ad04869fc7e3ad68075d8ec04b7b5e7cf97",
       "name": "parseLinktext",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "fd10e8b7ba73e829355a39b5b63d2ad04869fc7e3ad68075d8ec04b7b5e7cf97",
       "location": {
         "line": 4798,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "parseLinktext"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "linktext.path-only",
+        "linktext.first-subpath",
+        "linktext.block-only"
+      ],
+      "coveredBehaviorIds": [
+        "linktext.path-only",
+        "linktext.first-subpath",
+        "linktext.block-only"
+      ]
     },
     {
       "exportId": "export:function:parsePropertyId:260ec28552701cc81f3ccf4046084cd5d90acbd7c19bbec60240a4c9118f4d46",
@@ -3033,41 +3064,73 @@
       "exportId": "export:function:prepareFuzzySearch:8ef6a695db24bdb3038f5096fd59f6645ebff097c799e4dee162de5b903373df",
       "name": "prepareFuzzySearch",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "8ef6a695db24bdb3038f5096fd59f6645ebff097c799e4dee162de5b903373df",
       "location": {
         "line": 5252,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "prepareFuzzySearch"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "fuzzy.match-ranges",
+        "fuzzy.no-match",
+        "fuzzy.empty-query"
+      ],
+      "coveredBehaviorIds": [
+        "fuzzy.match-ranges",
+        "fuzzy.no-match",
+        "fuzzy.empty-query"
+      ]
     },
     {
       "exportId": "export:function:prepareSimpleSearch:81341d6edc8ec6fa746b2b9f673707f42b76815df174302ea41cc3995c956f82",
       "name": "prepareSimpleSearch",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "81341d6edc8ec6fa746b2b9f673707f42b76815df174302ea41cc3995c956f82",
       "location": {
         "line": 5260,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "prepareSimpleSearch"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "simple.match-ranges",
+        "simple.no-match",
+        "simple.empty-query"
+      ],
+      "coveredBehaviorIds": [
+        "simple.match-ranges",
+        "simple.no-match",
+        "simple.empty-query"
+      ]
     },
     {
       "exportId": "export:class:PrimitiveValue:8a6cb580619668a61d674f73fee72fdf8e5a379c2577f1d76fbc685999a562ec",
