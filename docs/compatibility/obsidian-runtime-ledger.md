@@ -33,7 +33,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | BooleanValue | class | missing | fdd077f4df28f630 |
 | ButtonComponent | class | partial | 3329c8e457d23c16 |
 | CapacitorAdapter | class | missing | b468049f7adeaf0c |
-| ColorComponent | class | missing | aa471211ee3a3891 |
+| ColorComponent | class | partial | aa471211ee3a3891 |
 | Component | class | partial | 66c65c8e55598f6c |
 | ConfirmationButton | class | missing | b3100e2fe15dddf0 |
 | ConfirmationModal | class | missing | 16d786038936266a |
@@ -51,7 +51,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | EditorSuggest | class | missing | b03c36d2fa50ced5 |
 | editorViewField | variable | missing | 576bc7a8290cb120 |
 | Events | class | implemented | 69b49be903499033 |
-| ExtraButtonComponent | class | missing | 60577a4b3a5c4ed2 |
+| ExtraButtonComponent | class | implemented | 60577a4b3a5c4ed2 |
 | FileManager | class | missing | f131be3eb6de3df2 |
 | FileSystemAdapter | class | missing | a11e4e56f43d1ba4 |
 | FileValue | class | missing | 90a3b3e1fcd40461 |
@@ -94,7 +94,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | MetadataCache | class | partial | 4f2d6786f29d03b5 |
 | Modal | class | missing | 0ecda97644af4e27 |
 | moment | variable | missing | 9ee051521ccd8991 |
-| MomentFormatComponent | class | missing | b3a4fd344f8d82a1 |
+| MomentFormatComponent | class | implemented | b3a4fd344f8d82a1 |
 | normalizePath | function | partial | 9811227609eeb952 |
 | Notice | class | missing | 10560b31dc604864 |
 | NotNullValue | class | missing | c1ea1665f928693f |
@@ -116,7 +116,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | prepareFuzzySearch | function | missing | 8ef6a695db24bdb3 |
 | prepareSimpleSearch | function | missing | 81341d6edc8ec6fa |
 | PrimitiveValue | class | missing | 8a6cb580619668a6 |
-| ProgressBarComponent | class | missing | 765be3f5a5d3693b |
+| ProgressBarComponent | class | implemented | 765be3f5a5d3693b |
 | QueryController | class | missing | 8687a7aa105e69dd |
 | RegExpValue | class | missing | edb0177eb288015b |
 | RelativeDateValue | class | missing | 3d0594b4e5ab24e2 |
@@ -131,7 +131,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | resolveSubpath | function | missing | 46690fc4ac8ecb44 |
 | sanitizeHTMLToDom | function | missing | 1bdf091e2ab0377e |
 | Scope | class | missing | cd031d650ae6bd69 |
-| SearchComponent | class | missing | 72938e4f2898847d |
+| SearchComponent | class | partial | 72938e4f2898847d |
 | SecretComponent | class | missing | f3133f6f9328e3cb |
 | SecretStorage | class | missing | cd03c227b70ca8e0 |
 | setIcon | function | missing | 74dab0a196e4515a |
@@ -150,7 +150,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | TAbstractFile | class | implemented | 33e1dba7bf6c6e2f |
 | TagValue | class | missing | c6c6bafd2fd50797 |
 | Tasks | class | missing | 7471c3f0a015a76d |
-| TextAreaComponent | class | missing | 82022a25c1d9b869 |
+| TextAreaComponent | class | implemented | 82022a25c1d9b869 |
 | TextComponent | class | implemented | 4f2a68c9738f82e5 |
 | TextFileView | class | partial | 0a4a4ba88dddacf0 |
 | TFile | class | implemented | 059690fe62a6783f |
