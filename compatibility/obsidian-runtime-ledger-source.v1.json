@@ -627,6 +627,42 @@
                 "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
               }
             ]
+          },
+          {
+            "signatureHash": "503a344de780c98d8d5128299f96df9caf169278425498733e0cc72777e17a82",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.core-events-files-vault.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "ce1620ac69812c2c77a10ce1f5b14fe5c18a3c623d6773ce5b7a4a15fc2767fc",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.core-events-files-vault.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "74952062f890dbd11e423f1d98edaea9253c29fa0d9916b342afc053be08b0d9",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.core-events-files-vault.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "67644aa03e3e1c16ce76bc38c9e41f18f5e907f49914bd1769b34c79b5ab3e00",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.core-events-files-vault.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
           }
         ]
       }

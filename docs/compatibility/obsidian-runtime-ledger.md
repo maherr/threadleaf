@@ -91,7 +91,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | Menu | class | missing | 0a7cec2e1715d55b |
 | MenuItem | class | missing | 4b0f05262839c353 |
 | MenuSeparator | class | missing | 8d76cd93d0b4b14a |
-| MetadataCache | class | partial | 4f2d6786f29d03b5 |
+| MetadataCache | class | implemented | 4f2d6786f29d03b5 |
 | Modal | class | missing | 0ecda97644af4e27 |
 | moment | variable | missing | 9ee051521ccd8991 |
 | MomentFormatComponent | class | implemented | b3a4fd344f8d82a1 |

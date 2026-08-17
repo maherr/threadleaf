@@ -14,15 +14,15 @@ export const obsidianRuntimeLedger = {
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 29,
-    "partial": 13,
+    "implemented": 30,
+    "partial": 12,
     "unsupported": 0,
     "missing": 116,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 296
+    "implementedObligations": 300
   },
   "factory": {
     "keys": [
@@ -2540,7 +2540,7 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605",
       "name": "MetadataCache",
       "kind": "class",
-      "status": "partial",
+      "status": "implemented",
       "signatureHash": "4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605",
       "location": {
         "line": 4404,
@@ -2578,7 +2578,11 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:936f493fb482582f94a295ff56a590318827dc2a6fbb8bec43a436ab160c546b",
         "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:796bdb0cfc8866e857990609c0d35d7ec1e8058fe95dff3bd47e7db2a4ef705c",
         "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:9a94e0242b5867d3338cd4b81a6123de88c1be6ff1f6b44c47105a6044741e84",
-        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:833ca2bc0a384c40ba34c2190b942c57067a49f660736c42ea6cc2b1b44eb920"
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:833ca2bc0a384c40ba34c2190b942c57067a49f660736c42ea6cc2b1b44eb920",
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:503a344de780c98d8d5128299f96df9caf169278425498733e0cc72777e17a82",
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:ce1620ac69812c2c77a10ce1f5b14fe5c18a3c623d6773ce5b7a4a15fc2767fc",
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:74952062f890dbd11e423f1d98edaea9253c29fa0d9916b342afc053be08b0d9",
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:67644aa03e3e1c16ce76bc38c9e41f18f5e907f49914bd1769b34c79b5ab3e00"
       ],
       "coveredObligationSignatureHashes": [
         "1da3bb4a4c65eb85384d99da378a63507905097964cb68b320783cad9927e762",
@@ -2586,7 +2590,11 @@ export const obsidianRuntimeLedger = {
         "936f493fb482582f94a295ff56a590318827dc2a6fbb8bec43a436ab160c546b",
         "796bdb0cfc8866e857990609c0d35d7ec1e8058fe95dff3bd47e7db2a4ef705c",
         "9a94e0242b5867d3338cd4b81a6123de88c1be6ff1f6b44c47105a6044741e84",
-        "833ca2bc0a384c40ba34c2190b942c57067a49f660736c42ea6cc2b1b44eb920"
+        "833ca2bc0a384c40ba34c2190b942c57067a49f660736c42ea6cc2b1b44eb920",
+        "503a344de780c98d8d5128299f96df9caf169278425498733e0cc72777e17a82",
+        "ce1620ac69812c2c77a10ce1f5b14fe5c18a3c623d6773ce5b7a4a15fc2767fc",
+        "74952062f890dbd11e423f1d98edaea9253c29fa0d9916b342afc053be08b0d9",
+        "67644aa03e3e1c16ce76bc38c9e41f18f5e907f49914bd1769b34c79b5ab3e00"
       ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
@@ -11507,7 +11515,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605",
       "name": "MetadataCache",
-      "status": "partial",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:1da3bb4a4c65eb85384d99da378a63507905097964cb68b320783cad9927e762",
@@ -11678,7 +11686,11 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:936f493fb482582f94a295ff56a590318827dc2a6fbb8bec43a436ab160c546b",
         "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:796bdb0cfc8866e857990609c0d35d7ec1e8058fe95dff3bd47e7db2a4ef705c",
         "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:9a94e0242b5867d3338cd4b81a6123de88c1be6ff1f6b44c47105a6044741e84",
-        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:833ca2bc0a384c40ba34c2190b942c57067a49f660736c42ea6cc2b1b44eb920"
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:833ca2bc0a384c40ba34c2190b942c57067a49f660736c42ea6cc2b1b44eb920",
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:503a344de780c98d8d5128299f96df9caf169278425498733e0cc72777e17a82",
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:ce1620ac69812c2c77a10ce1f5b14fe5c18a3c623d6773ce5b7a4a15fc2767fc",
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:74952062f890dbd11e423f1d98edaea9253c29fa0d9916b342afc053be08b0d9",
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:67644aa03e3e1c16ce76bc38c9e41f18f5e907f49914bd1769b34c79b5ab3e00"
       ],
       "coveredObligationSignatureHashes": [
         "1da3bb4a4c65eb85384d99da378a63507905097964cb68b320783cad9927e762",
@@ -11686,7 +11698,11 @@ export const obsidianRuntimeLedger = {
         "936f493fb482582f94a295ff56a590318827dc2a6fbb8bec43a436ab160c546b",
         "796bdb0cfc8866e857990609c0d35d7ec1e8058fe95dff3bd47e7db2a4ef705c",
         "9a94e0242b5867d3338cd4b81a6123de88c1be6ff1f6b44c47105a6044741e84",
-        "833ca2bc0a384c40ba34c2190b942c57067a49f660736c42ea6cc2b1b44eb920"
+        "833ca2bc0a384c40ba34c2190b942c57067a49f660736c42ea6cc2b1b44eb920",
+        "503a344de780c98d8d5128299f96df9caf169278425498733e0cc72777e17a82",
+        "ce1620ac69812c2c77a10ce1f5b14fe5c18a3c623d6773ce5b7a4a15fc2767fc",
+        "74952062f890dbd11e423f1d98edaea9253c29fa0d9916b342afc053be08b0d9",
+        "67644aa03e3e1c16ce76bc38c9e41f18f5e907f49914bd1769b34c79b5ab3e00"
       ]
     },
     {

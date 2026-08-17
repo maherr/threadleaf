@@ -31,15 +31,15 @@ assert.deepEqual(ledger.counts, {
   functions: 47,
   enums: 1,
   variables: 8,
-  implemented: 29,
-  partial: 13,
+  implemented: 30,
+  partial: 12,
   unsupported: 0,
   missing: 116,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
-  implementedObligations: 296,
+  implementedObligations: 300,
 });
 assert.equal(ledger.factory.keys.length, 76);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
@@ -70,7 +70,7 @@ assert.deepEqual(
     ["getLinkpath", "implemented"],
     ["ItemView", "implemented"],
     ["MarkdownView", "partial"],
-    ["MetadataCache", "partial"],
+    ["MetadataCache", "implemented"],
     ["MomentFormatComponent", "implemented"],
     ["normalizePath", "implemented"],
     ["parseLinktext", "implemented"],
