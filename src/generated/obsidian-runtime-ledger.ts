@@ -22,7 +22,7 @@ export const obsidianRuntimeLedger = {
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 512
+    "implementedObligations": 513
   },
   "factory": {
     "keys": [
@@ -5979,7 +5979,8 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:3b95335d3523dcf4b48c6c12478f75c794d867063d21a98adf31413f2ace9569",
         "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:dabdaa4c916ea633c41114e3ffd969f73e368616a027a2db8d3a658c508a14e4",
         "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:67422c5b16556fbad825342d768436241eb010bd3b32375faf711570b73724eb",
-        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:051c102bf1edaf71e65b12b7c99519d43d52c04594a95dbd4f2733bdc4a8114e"
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:051c102bf1edaf71e65b12b7c99519d43d52c04594a95dbd4f2733bdc4a8114e",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:8735026dcef3b6eb0e397202314ed488e8cc1b79785855413fd8e755d7eb3ab7"
       ],
       "coveredObligationSignatureHashes": [
         "600e5d05323b4163e16a40b5b161e1dc4f41b492b7949340ec6ae7fae6e5591f",
@@ -6029,7 +6030,8 @@ export const obsidianRuntimeLedger = {
         "3b95335d3523dcf4b48c6c12478f75c794d867063d21a98adf31413f2ace9569",
         "dabdaa4c916ea633c41114e3ffd969f73e368616a027a2db8d3a658c508a14e4",
         "67422c5b16556fbad825342d768436241eb010bd3b32375faf711570b73724eb",
-        "051c102bf1edaf71e65b12b7c99519d43d52c04594a95dbd4f2733bdc4a8114e"
+        "051c102bf1edaf71e65b12b7c99519d43d52c04594a95dbd4f2733bdc4a8114e",
+        "8735026dcef3b6eb0e397202314ed488e8cc1b79785855413fd8e755d7eb3ab7"
       ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
@@ -19239,7 +19241,8 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:3b95335d3523dcf4b48c6c12478f75c794d867063d21a98adf31413f2ace9569",
         "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:dabdaa4c916ea633c41114e3ffd969f73e368616a027a2db8d3a658c508a14e4",
         "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:67422c5b16556fbad825342d768436241eb010bd3b32375faf711570b73724eb",
-        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:051c102bf1edaf71e65b12b7c99519d43d52c04594a95dbd4f2733bdc4a8114e"
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:051c102bf1edaf71e65b12b7c99519d43d52c04594a95dbd4f2733bdc4a8114e",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:8735026dcef3b6eb0e397202314ed488e8cc1b79785855413fd8e755d7eb3ab7"
       ],
       "coveredObligationSignatureHashes": [
         "600e5d05323b4163e16a40b5b161e1dc4f41b492b7949340ec6ae7fae6e5591f",
@@ -19289,7 +19292,8 @@ export const obsidianRuntimeLedger = {
         "3b95335d3523dcf4b48c6c12478f75c794d867063d21a98adf31413f2ace9569",
         "dabdaa4c916ea633c41114e3ffd969f73e368616a027a2db8d3a658c508a14e4",
         "67422c5b16556fbad825342d768436241eb010bd3b32375faf711570b73724eb",
-        "051c102bf1edaf71e65b12b7c99519d43d52c04594a95dbd4f2733bdc4a8114e"
+        "051c102bf1edaf71e65b12b7c99519d43d52c04594a95dbd4f2733bdc4a8114e",
+        "8735026dcef3b6eb0e397202314ed488e8cc1b79785855413fd8e755d7eb3ab7"
       ]
     },
     {

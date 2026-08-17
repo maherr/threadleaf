@@ -2110,6 +2110,15 @@
                 "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
               }
             ]
+          },
+          {
+            "signatureHash": "8735026dcef3b6eb0e397202314ed488e8cc1b79785855413fd8e755d7eb3ab7",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.workspace-extended.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
           }
         ]
       }
