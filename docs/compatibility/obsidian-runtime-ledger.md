@@ -158,7 +158,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | ToggleComponent | class | implemented | a39eaf18ee6900de |
 | UrlValue | class | missing | 23e0604a73cec0f1 |
 | Value | class | missing | 7c58c01f8b955627 |
-| ValueComponent | class | missing | 529ce7aae6a57c84 |
+| ValueComponent | class | implemented | 529ce7aae6a57c84 |
 | Vault | class | partial | 8041bc89ef9d718b |
 | View | class | implemented | b8f2d48cb007660e |
 | Workspace | class | partial | 678ad5eacec977ed |

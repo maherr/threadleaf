@@ -13,15 +13,15 @@
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 97,
+    "implemented": 98,
     "partial": 7,
     "unsupported": 0,
-    "missing": 54,
+    "missing": 53,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 571
+    "implementedObligations": 574
   },
   "factory": {
     "keys": [
@@ -5740,15 +5740,23 @@
       "exportId": "export:class:ValueComponent:529ce7aae6a57c846cd5aee7f998e23b938c3f01efac239a2b690a134e3ace20",
       "name": "ValueComponent",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "529ce7aae6a57c846cd5aee7f998e23b938c3f01efac239a2b690a134e3ace20",
       "location": {
         "line": 7313,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.settings-components.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-ui-compat.ts",
+        "exportName": "ValueComponent"
+      },
       "obligationIds": [
         "obligation:export:class:ValueComponent:529ce7aae6a57c846cd5aee7f998e23b938c3f01efac239a2b690a134e3ace20:e4b9f53fc257c673a3b0ae8e1d1206f004bcb06128862f3d9b9305481aaeb74f",
         "obligation:export:class:ValueComponent:529ce7aae6a57c846cd5aee7f998e23b938c3f01efac239a2b690a134e3ace20:57bafa0942b3c726b892fe200766555c342ade80a6a734b2425ea3fe6b8b5ee7",
@@ -5757,8 +5765,16 @@
       "heritageEdgeIds": [
         "heritage:export:class:ValueComponent:529ce7aae6a57c846cd5aee7f998e23b938c3f01efac239a2b690a134e3ace20:7105e8d50c796591d8e6f0fe775a3610b4c2e654fed7c6eea9fa5389275f3b56"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:ValueComponent:529ce7aae6a57c846cd5aee7f998e23b938c3f01efac239a2b690a134e3ace20:e4b9f53fc257c673a3b0ae8e1d1206f004bcb06128862f3d9b9305481aaeb74f",
+        "obligation:export:class:ValueComponent:529ce7aae6a57c846cd5aee7f998e23b938c3f01efac239a2b690a134e3ace20:57bafa0942b3c726b892fe200766555c342ade80a6a734b2425ea3fe6b8b5ee7",
+        "obligation:export:class:ValueComponent:529ce7aae6a57c846cd5aee7f998e23b938c3f01efac239a2b690a134e3ace20:66dae07927ab81adefbd7ba0106b774157505cacd9fc731d39fb6f58c04cfb3d"
+      ],
+      "coveredObligationSignatureHashes": [
+        "e4b9f53fc257c673a3b0ae8e1d1206f004bcb06128862f3d9b9305481aaeb74f",
+        "57bafa0942b3c726b892fe200766555c342ade80a6a734b2425ea3fe6b8b5ee7",
+        "66dae07927ab81adefbd7ba0106b774157505cacd9fc731d39fb6f58c04cfb3d"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -17653,7 +17669,7 @@
     {
       "exportId": "export:class:ValueComponent:529ce7aae6a57c846cd5aee7f998e23b938c3f01efac239a2b690a134e3ace20",
       "name": "ValueComponent",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:ValueComponent:529ce7aae6a57c846cd5aee7f998e23b938c3f01efac239a2b690a134e3ace20:e4b9f53fc257c673a3b0ae8e1d1206f004bcb06128862f3d9b9305481aaeb74f",
@@ -17717,8 +17733,16 @@
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:ValueComponent:529ce7aae6a57c846cd5aee7f998e23b938c3f01efac239a2b690a134e3ace20:e4b9f53fc257c673a3b0ae8e1d1206f004bcb06128862f3d9b9305481aaeb74f",
+        "obligation:export:class:ValueComponent:529ce7aae6a57c846cd5aee7f998e23b938c3f01efac239a2b690a134e3ace20:57bafa0942b3c726b892fe200766555c342ade80a6a734b2425ea3fe6b8b5ee7",
+        "obligation:export:class:ValueComponent:529ce7aae6a57c846cd5aee7f998e23b938c3f01efac239a2b690a134e3ace20:66dae07927ab81adefbd7ba0106b774157505cacd9fc731d39fb6f58c04cfb3d"
+      ],
+      "coveredObligationSignatureHashes": [
+        "e4b9f53fc257c673a3b0ae8e1d1206f004bcb06128862f3d9b9305481aaeb74f",
+        "57bafa0942b3c726b892fe200766555c342ade80a6a734b2425ea3fe6b8b5ee7",
+        "66dae07927ab81adefbd7ba0106b774157505cacd9fc731d39fb6f58c04cfb3d"
+      ]
     },
     {
       "exportId": "export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11",
