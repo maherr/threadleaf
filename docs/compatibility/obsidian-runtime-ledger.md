@@ -38,7 +38,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | ConfirmationButton | class | missing | b3100e2fe15dddf0 |
 | ConfirmationModal | class | missing | 16d786038936266a |
 | DateValue | class | missing | 45dce24b565b761c |
-| debounce | function | missing | a72e0eb10fc8a651 |
+| debounce | function | implemented | a72e0eb10fc8a651 |
 | displayTooltip | function | missing | dee2b380f1fef0a9 |
 | DisplayValueComponent | class | implemented | 8eadc4fafb416556 |
 | DropdownComponent | class | implemented | 563d13fef3a6b00c |
@@ -139,7 +139,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | SettingGroup | class | missing | c78bde6786f4650c |
 | SettingPage | class | missing | 731418280376fc92 |
 | SettingTab | class | partial | b685ce410ff8ca87 |
-| setTooltip | function | missing | d2b2dabab058f3d2 |
+| setTooltip | function | implemented | d2b2dabab058f3d2 |
 | SliderComponent | class | implemented | d90844d55c39379d |
 | sortSearchResults | function | missing | b51b5d221f8562ad |
 | stringifyYaml | function | implemented | 9fd7dc20723b04e0 |

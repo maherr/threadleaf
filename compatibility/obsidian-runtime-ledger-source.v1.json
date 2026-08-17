@@ -3800,6 +3800,50 @@
         ]
       }
     },
+    "debounce": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "debounce"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-behaviors.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["debounce.coalesces", "debounce.run", "debounce.cancel"],
+        "behaviors": [
+          {
+            "id": "debounce.coalesces",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-behaviors.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "debounce.run",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-behaviors.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "debounce.cancel",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-behaviors.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
     "getAllTags": {
       "implementation": {
         "source": "src/runtime/obsidian-compat.ts",
@@ -4059,6 +4103,32 @@
             "evidence": [
               {
                 "id": "obsidian-runtime.binary-dom-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "setTooltip": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "setTooltip"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-behaviors.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["tooltip.metadata-and-accessibility"],
+        "behaviors": [
+          {
+            "id": "tooltip.metadata-and-accessibility",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.utility-behaviors.v1",
                 "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
               }
             ]

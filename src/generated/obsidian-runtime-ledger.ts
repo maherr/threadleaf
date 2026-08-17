@@ -14,10 +14,10 @@ export const obsidianRuntimeLedger = {
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 46,
+    "implemented": 48,
     "partial": 12,
     "unsupported": 0,
-    "missing": 100,
+    "missing": 98,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
@@ -1038,21 +1038,37 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:function:debounce:a72e0eb10fc8a6518b6ed69b80fccd9d338e31cf78245156217f3af84ae992ba",
       "name": "debounce",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "a72e0eb10fc8a6518b6ed69b80fccd9d338e31cf78245156217f3af84ae992ba",
       "location": {
         "line": 2232,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-behaviors.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "debounce"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "debounce.coalesces",
+        "debounce.run",
+        "debounce.cancel"
+      ],
+      "coveredBehaviorIds": [
+        "debounce.coalesces",
+        "debounce.run",
+        "debounce.cancel"
+      ]
     },
     {
       "exportId": "export:function:displayTooltip:dee2b380f1fef0a99fe4b178a3cff3b52ed1b1a2cdd86d6adc806bca9be7dcb3",
@@ -4232,21 +4248,33 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:function:setTooltip:d2b2dabab058f3d2bffaec52cf3c6525045a41a90e4c3b3d5355ac3e319d995b",
       "name": "setTooltip",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "d2b2dabab058f3d2bffaec52cf3c6525045a41a90e4c3b3d5355ac3e319d995b",
       "location": {
         "line": 6727,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.utility-behaviors.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "setTooltip"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "tooltip.metadata-and-accessibility"
+      ],
+      "coveredBehaviorIds": [
+        "tooltip.metadata-and-accessibility"
+      ]
     },
     {
       "exportId": "export:class:SliderComponent:d90844d55c39379dcd52769fdd909d3a10418199ecbbe1ddd33f58d566e0f2da",

@@ -571,6 +571,91 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
     }
   });
 
+  /** @compatibility-test-id obsidian-runtime.utility-behaviors.v1 */
+  it('proves debounce control and tooltip metadata through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-runtime-ledger-utility-behaviors-"),
+    );
+    const pluginPath = path.join(sandboxPath, "utility-behaviors-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "utility-behaviors-ledger-fixture",
+          name: "Utility behaviors ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { Plugin, debounce, setTooltip } = require("obsidian");',
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          "    const delayedCalls = [];",
+          "    const delayed = debounce((value) => { delayedCalls.push(value); return value; }, 1);",
+          '    delayed("first");',
+          '    delayed("second");',
+          "    await new Promise((resolve) => setTimeout(resolve, 10));",
+          "    const runCalls = [];",
+          "    const runner = debounce((value) => { runCalls.push(value); return value; }, 100);",
+          '    runner("run-now");',
+          "    const runResult = runner.run();",
+          "    const canceledCalls = [];",
+          '    const canceled = debounce(() => canceledCalls.push("canceled"), 1);',
+          "    canceled();",
+          "    canceled.cancel();",
+          "    await new Promise((resolve) => setTimeout(resolve, 10));",
+          '    const element = document.createElement("button");',
+          '    setTooltip(element, "Tooltip", { placement: "bottom", classes: ["one", "two"], gap: 4, delay: 7 });',
+          "    globalThis.__threadleafRuntimeLedgerUtilityBehaviorsProbe = {",
+          "      delayedCalls,",
+          "      runCalls,",
+          "      runResult,",
+          "      canceledCalls,",
+          "      title: element.title,",
+          "      placement: element.dataset.tooltipPosition,",
+          "      classes: element.dataset.tooltipClasses,",
+          "      gap: element.dataset.tooltipGap,",
+          "      delay: element.dataset.tooltipDelay,",
+          '      ariaLabel: element.getAttribute("aria-label"),',
+          "    };",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      await withTestDocument(async () => {
+        const host = new PluginHost(fixtureVault);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerUtilityBehaviorsProbe?: unknown })
+              .__threadleafRuntimeLedgerUtilityBehaviorsProbe,
+          ).toEqual({
+            delayedCalls: ["second"],
+            runCalls: ["run-now"],
+            runResult: "run-now",
+            canceledCalls: [],
+            title: "Tooltip",
+            placement: "bottom",
+            classes: "one two",
+            gap: "4",
+            delay: "7",
+            ariaLabel: "Tooltip",
+          });
+        } finally {
+          await host.close();
+        }
+      });
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerUtilityBehaviorsProbe");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   /** @compatibility-test-id obsidian-runtime.core-events-files-vault.v1 */
   /** @compatibility-test-id obsidian-runtime.workspace-core.v1 */
   /** @compatibility-test-id obsidian-runtime.editor-core.v1 */
