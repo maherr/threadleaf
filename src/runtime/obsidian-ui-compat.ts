@@ -1888,10 +1888,66 @@ export interface EditorPosition {
   line: number;
 }
 
+export interface EditorRange {
+  from: EditorPosition;
+  to: EditorPosition;
+}
+
+export interface EditorRangeOrCaret {
+  from: EditorPosition;
+  to?: EditorPosition;
+}
+
+export interface EditorSelection {
+  anchor: EditorPosition;
+  head: EditorPosition;
+}
+
+export interface EditorSelectionOrCaret {
+  anchor: EditorPosition;
+  head?: EditorPosition;
+}
+
+export interface EditorChange extends EditorRangeOrCaret {
+  text: string;
+}
+
+export interface EditorTransaction {
+  replaceSelection?: string;
+  changes?: EditorChange[];
+  selections?: EditorRangeOrCaret[];
+  selection?: EditorRangeOrCaret;
+}
+
+export type EditorCommandName =
+  | "goUp"
+  | "goDown"
+  | "goLeft"
+  | "goRight"
+  | "goStart"
+  | "goEnd"
+  | "goWordLeft"
+  | "goWordRight"
+  | "indentMore"
+  | "indentLess"
+  | "newlineAndIndent"
+  | "swapLineUp"
+  | "swapLineDown"
+  | "deleteLine"
+  | "toggleFold"
+  | "foldAll"
+  | "unfoldAll";
+
 export class Editor {
   private anchor = 0;
   private focused = false;
   private head = 0;
+  private mainSelectionIndex = 0;
+  private selections: Array<{ anchor: number; head: number }> = [{ anchor: 0, head: 0 }];
+  private scrollLeft = 0;
+  private scrollTop = 0;
+  private readonly undoStack: string[] = [];
+  private readonly redoStack: string[] = [];
   private readonly onChange: (value: string) => void;
   private value = "";
 
@@ -1899,16 +1955,32 @@ export class Editor {
     this.onChange = onChange;
   }
 
+  getDoc(): this {
+    return this;
+  }
+
+  refresh(): void {
+    // The compatibility editor has no separate display buffer to refresh.
+  }
+
   getValue(): string {
     return this.value;
   }
 
   setValue(value: string): void {
-    this.replaceValue(value, true);
+    this.replaceValue(value, true, true);
   }
 
   syncValue(value: string): void {
-    this.replaceValue(value, false);
+    this.replaceValue(value, false, false);
+  }
+
+  setLine(line: number, text: string): void {
+    const lines = this.value.split("\n");
+    if (line < 0 || line >= lines.length) return;
+    const start = { line, ch: 0 };
+    const end = { line, ch: lines[line]?.length ?? 0 };
+    this.replaceRange(text, start, end);
   }
 
   getSelection(): string {
@@ -1924,15 +1996,17 @@ export class Editor {
   replaceSelection(replacement: string): void {
     const from = Math.min(this.anchor, this.head);
     const to = Math.max(this.anchor, this.head);
-    this.value = `${this.value.slice(0, from)}${replacement}${this.value.slice(to)}`;
-    this.anchor = from + replacement.length;
-    this.head = this.anchor;
-    this.onChange(this.value);
+    this.replaceRangeValue(from, to, replacement, true);
   }
 
   replaceRange(replacement: string, from: EditorPosition, to: EditorPosition = from): void {
-    this.setSelection(from, to);
-    this.replaceSelection(replacement);
+    this.replaceRangeValue(this.posToOffset(from), this.posToOffset(to), replacement, true);
+  }
+
+  getRange(from: EditorPosition, to: EditorPosition): string {
+    const start = this.posToOffset(from);
+    const end = this.posToOffset(to);
+    return this.value.slice(Math.min(start, end), Math.max(start, end));
   }
 
   getCursor(which: "anchor" | "from" | "head" | "to" = "head"): EditorPosition {
@@ -1948,20 +2022,47 @@ export class Editor {
     return this.offsetToPos(this.head);
   }
 
-  setCursor(position: EditorPosition): void {
-    const offset = this.posToOffset(position);
+  listSelections(): EditorSelection[] {
+    return this.selections.map(({ anchor, head }) => ({
+      anchor: this.offsetToPos(anchor),
+      head: this.offsetToPos(head),
+    }));
+  }
+
+  setCursor(position: EditorPosition | number, ch?: number): void {
+    const resolved = typeof position === "number" ? { line: position, ch: ch ?? 0 } : position;
+    const offset = this.posToOffset(resolved);
     this.anchor = offset;
     this.head = offset;
+    this.selections = [{ anchor: offset, head: offset }];
+    this.mainSelectionIndex = 0;
   }
 
   setSelection(anchor: EditorPosition, head: EditorPosition = anchor): void {
     this.anchor = this.posToOffset(anchor);
     this.head = this.posToOffset(head);
+    this.selections = [{ anchor: this.anchor, head: this.head }];
+    this.mainSelectionIndex = 0;
+  }
+
+  setSelections(ranges: EditorSelectionOrCaret[], main = 0): void {
+    if (ranges.length === 0) {
+      this.setSelection(this.offsetToPos(this.head));
+      return;
+    }
+    this.selections = ranges.map(({ anchor, head }) => ({
+      anchor: this.posToOffset(anchor),
+      head: this.posToOffset(head ?? anchor),
+    }));
+    this.mainSelectionIndex = Math.max(0, Math.min(Math.trunc(main), this.selections.length - 1));
+    this.syncPrimarySelection();
   }
 
   setSelectionOffsets(anchor: number, head: number): void {
     this.anchor = this.clampOffset(anchor);
     this.head = this.clampOffset(head);
+    this.selections = [{ anchor: this.anchor, head: this.head }];
+    this.mainSelectionIndex = 0;
   }
 
   getSelectionOffsets(): { anchor: number; head: number } {
@@ -2005,21 +2106,224 @@ export class Editor {
     this.focused = true;
   }
 
+  blur(): void {
+    this.focused = false;
+  }
+
   hasFocus(): boolean {
     return this.focused;
+  }
+
+  getScrollInfo(): { top: number; left: number } {
+    return { top: this.scrollTop, left: this.scrollLeft };
+  }
+
+  scrollTo(x?: number | null, y?: number | null): void {
+    if (x !== undefined && x !== null) this.scrollLeft = Math.max(0, x);
+    if (y !== undefined && y !== null) this.scrollTop = Math.max(0, y);
+  }
+
+  scrollIntoView(range: EditorRange, _center = false): void {
+    this.scrollTop = Math.max(0, range.from.line);
+  }
+
+  undo(): void {
+    const previous = this.undoStack.pop();
+    if (previous === undefined) return;
+    this.redoStack.push(this.value);
+    this.replaceValue(previous, true, false);
+  }
+
+  redo(): void {
+    const next = this.redoStack.pop();
+    if (next === undefined) return;
+    this.undoStack.push(this.value);
+    this.replaceValue(next, true, false);
+  }
+
+  exec(command: EditorCommandName): void {
+    const cursor = this.getCursor("head");
+    switch (command) {
+      case "goLeft":
+        this.setCursor(this.offsetToPos(Math.max(0, this.head - 1)));
+        return;
+      case "goRight":
+        this.setCursor(this.offsetToPos(Math.min(this.value.length, this.head + 1)));
+        return;
+      case "goStart":
+        this.setCursor({ line: cursor.line, ch: 0 });
+        return;
+      case "goEnd":
+        this.setCursor({ line: cursor.line, ch: this.getLine(cursor.line).length });
+        return;
+      case "goUp":
+        this.setCursor({ line: Math.max(0, cursor.line - 1), ch: cursor.ch });
+        return;
+      case "goDown":
+        this.setCursor({ line: Math.min(this.lastLine(), cursor.line + 1), ch: cursor.ch });
+        return;
+      case "goWordLeft": {
+        let offset = this.head;
+        while (offset > 0 && !this.isWordCharacter(this.value[offset - 1] ?? "")) offset -= 1;
+        while (offset > 0 && this.isWordCharacter(this.value[offset - 1] ?? "")) offset -= 1;
+        this.setCursor(this.offsetToPos(offset));
+        return;
+      }
+      case "goWordRight": {
+        let offset = this.head;
+        while (offset < this.value.length && !this.isWordCharacter(this.value[offset] ?? "")) {
+          offset += 1;
+        }
+        while (offset < this.value.length && this.isWordCharacter(this.value[offset] ?? "")) {
+          offset += 1;
+        }
+        this.setCursor(this.offsetToPos(offset));
+        return;
+      }
+      case "deleteLine": {
+        const start = { line: cursor.line, ch: 0 };
+        const end =
+          cursor.line < this.lastLine()
+            ? { line: cursor.line + 1, ch: 0 }
+            : { line: cursor.line, ch: this.getLine(cursor.line).length };
+        this.replaceRange("", start, end);
+        return;
+      }
+      case "newlineAndIndent":
+        this.replaceSelection(`\n${this.getLine(cursor.line).match(/^\s*/u)?.[0] ?? ""}`);
+        return;
+      case "indentMore":
+        this.replaceRange(
+          `  ${this.getLine(cursor.line)}`,
+          { line: cursor.line, ch: 0 },
+          {
+            line: cursor.line,
+            ch: this.getLine(cursor.line).length,
+          },
+        );
+        return;
+      case "indentLess": {
+        const line = this.getLine(cursor.line);
+        const removed = line.startsWith("  ") ? 2 : line.startsWith("\t") ? 1 : 0;
+        if (removed > 0)
+          this.replaceRange(
+            line.slice(removed),
+            { line: cursor.line, ch: 0 },
+            {
+              line: cursor.line,
+              ch: line.length,
+            },
+          );
+        return;
+      }
+      case "swapLineUp":
+      case "swapLineDown":
+      case "toggleFold":
+      case "foldAll":
+      case "unfoldAll":
+        return;
+    }
+  }
+
+  transaction(transaction: EditorTransaction): void {
+    let nextValue = this.value;
+    const changes = transaction.changes ?? [];
+    const resolvedChanges = changes
+      .map((change) => ({
+        from: this.posToOffset(change.from),
+        to: this.posToOffset(change.to ?? change.from),
+        text: change.text,
+      }))
+      .sort((left, right) => right.from - left.from);
+    for (const change of resolvedChanges) {
+      const from = Math.min(change.from, change.to);
+      const to = Math.max(change.from, change.to);
+      nextValue = `${nextValue.slice(0, from)}${change.text}${nextValue.slice(to)}`;
+    }
+    if (transaction.replaceSelection !== undefined && changes.length === 0) {
+      const from = Math.min(this.anchor, this.head);
+      const to = Math.max(this.anchor, this.head);
+      nextValue = `${nextValue.slice(0, from)}${transaction.replaceSelection}${nextValue.slice(to)}`;
+    }
+    if (nextValue !== this.value) {
+      this.replaceValue(nextValue, true, true);
+    }
+    if (transaction.selections) {
+      this.setSelections(
+        transaction.selections.map(({ from, to }) => ({ anchor: from, head: to ?? from })),
+      );
+    } else if (transaction.selection) {
+      this.setSelection(transaction.selection.from, transaction.selection.to);
+    }
+  }
+
+  wordAt(position: EditorPosition): EditorRange | null {
+    let offset = this.posToOffset(position);
+    if (offset === this.value.length && offset > 0) offset -= 1;
+    if (!this.isWordCharacter(this.value[offset] ?? "")) return null;
+    let from = offset;
+    let to = offset + 1;
+    while (from > 0 && this.isWordCharacter(this.value[from - 1] ?? "")) from -= 1;
+    while (to < this.value.length && this.isWordCharacter(this.value[to] ?? "")) to += 1;
+    return { from: this.offsetToPos(from), to: this.offsetToPos(to) };
+  }
+
+  processLines<T>(
+    read: (line: number, lineText: string) => T | null,
+    write: (line: number, lineText: string, value: T | null) => EditorChange | undefined,
+    ignoreEmpty = false,
+  ): void {
+    const changes: EditorChange[] = [];
+    for (const [line, lineText] of this.value.split("\n").entries()) {
+      if (ignoreEmpty && lineText.length === 0) continue;
+      const change = write(line, lineText, read(line, lineText));
+      if (change) changes.push(change);
+    }
+    if (changes.length > 0) this.transaction({ changes });
   }
 
   private clampOffset(offset: number): number {
     return Math.max(0, Math.min(Math.trunc(offset), this.value.length));
   }
 
-  private replaceValue(value: string, notify: boolean): void {
+  private replaceRangeValue(from: number, to: number, replacement: string, notify: boolean): void {
+    const start = Math.min(from, to);
+    const end = Math.max(from, to);
+    const next = `${this.value.slice(0, start)}${replacement}${this.value.slice(end)}`;
+    this.replaceValue(next, notify, true);
+    const cursor = start + replacement.length;
+    this.anchor = cursor;
+    this.head = cursor;
+    this.selections = [{ anchor: cursor, head: cursor }];
+    this.mainSelectionIndex = 0;
+  }
+
+  private replaceValue(value: string, notify: boolean, recordHistory: boolean): void {
+    if (recordHistory && value !== this.value) {
+      this.undoStack.push(this.value);
+      this.redoStack.length = 0;
+    }
     this.value = value;
     this.anchor = this.clampOffset(this.anchor);
     this.head = this.clampOffset(this.head);
+    this.selections = this.selections.map(({ anchor, head }) => ({
+      anchor: this.clampOffset(anchor),
+      head: this.clampOffset(head),
+    }));
+    this.syncPrimarySelection();
     if (notify) {
       this.onChange(this.value);
     }
+  }
+
+  private syncPrimarySelection(): void {
+    const selection = this.selections[this.mainSelectionIndex] ?? { anchor: 0, head: 0 };
+    this.anchor = selection.anchor;
+    this.head = selection.head;
+  }
+
+  private isWordCharacter(value: string): boolean {
+    return /^[\p{L}\p{N}_]$/u.test(value);
   }
 }
 

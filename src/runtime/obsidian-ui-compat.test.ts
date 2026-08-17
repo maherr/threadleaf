@@ -38,6 +38,74 @@ describe("Obsidian editor compatibility", () => {
     editor.setSelectionOffsets(99, -4);
     expect(editor.getSelectionOffsets()).toEqual({ anchor: 3, head: 0 });
   });
+
+  it("supports the public range, transaction, history, command, and line APIs", () => {
+    const changes: string[] = [];
+    const editor = new Editor((value) => changes.push(value));
+    editor.syncValue("alpha beta\ngamma");
+
+    expect(editor.getDoc()).toBe(editor);
+    expect(editor.getRange({ line: 0, ch: 0 }, { line: 0, ch: 5 })).toBe("alpha");
+    expect(editor.wordAt({ line: 0, ch: 2 })).toEqual({
+      from: { line: 0, ch: 0 },
+      to: { line: 0, ch: 5 },
+    });
+    editor.setLine(1, "delta");
+    expect(editor.getValue()).toBe("alpha beta\ndelta");
+    editor.undo();
+    expect(editor.getValue()).toBe("alpha beta\ngamma");
+    editor.redo();
+    expect(editor.getValue()).toBe("alpha beta\ndelta");
+
+    editor.setSelections(
+      [{ anchor: { line: 0, ch: 0 }, head: { line: 0, ch: 5 } }, { anchor: { line: 1, ch: 0 } }],
+      1,
+    );
+    expect(editor.listSelections()).toEqual([
+      { anchor: { line: 0, ch: 0 }, head: { line: 0, ch: 5 } },
+      { anchor: { line: 1, ch: 0 }, head: { line: 1, ch: 0 } },
+    ]);
+    expect(editor.getCursor()).toEqual({ line: 1, ch: 0 });
+
+    editor.transaction({
+      changes: [
+        {
+          from: { line: 0, ch: 6 },
+          to: { line: 0, ch: 10 },
+          text: "WORLD",
+        },
+      ],
+      selection: { from: { line: 0, ch: 0 }, to: { line: 0, ch: 5 } },
+    });
+    expect(editor.getValue()).toBe("alpha WORLD\ndelta");
+    expect(editor.getSelection()).toBe("alpha");
+
+    editor.exec("goEnd");
+    expect(editor.getCursor()).toEqual({ line: 0, ch: 11 });
+    editor.exec("goStart");
+    expect(editor.getCursor()).toEqual({ line: 0, ch: 0 });
+    editor.scrollTo(4, 12);
+    expect(editor.getScrollInfo()).toEqual({ left: 4, top: 12 });
+    editor.scrollIntoView({ from: { line: 1, ch: 0 }, to: { line: 1, ch: 1 } });
+    expect(editor.getScrollInfo()).toMatchObject({ top: 1, left: 4 });
+    editor.focus();
+    editor.blur();
+    expect(editor.hasFocus()).toBe(false);
+
+    editor.processLines(
+      (_line, lineText) => lineText,
+      (line, lineText) =>
+        line === 0
+          ? {
+              from: { line, ch: 0 },
+              to: { line, ch: lineText.length },
+              text: lineText.toUpperCase(),
+            }
+          : undefined,
+    );
+    expect(editor.getValue()).toBe("ALPHA WORLD\ndelta");
+    expect(changes).toContain("alpha WORLD\ndelta");
+  });
 });
 
 describe("Obsidian settings compatibility", () => {
