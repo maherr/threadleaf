@@ -3451,7 +3451,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
       await fs.writeFile(
         path.join(pluginPath, "main.js"),
         [
-          'const { DateValue, DurationValue, HTMLValue, IconValue, ImageValue, LinkValue, Plugin, RegExpValue, RelativeDateValue, StringValue, TagValue, UrlValue } = require("obsidian");',
+          'const { DateValue, DurationValue, FileValue, HTMLValue, IconValue, ImageValue, LinkValue, ListValue, moment, ObjectValue, Plugin, RegExpValue, RelativeDateValue, StringValue, TFile, TagValue, UrlValue } = require("obsidian");',
           "class LedgerPlugin extends Plugin {",
           "  async onload() {",
           '    const date = DateValue.parseFromString("2026-01-02T03:04:05");',
@@ -3463,6 +3463,10 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           "    const regexp = new RegExpValue(/threadleaf/iu);",
           '    const link = LinkValue.parseFromString(this.app, "[[Welcome|Welcome note]]", "Linked Note.md");',
           '    const tag = new TagValue("project/compatibility");',
+          '    const fileValue = new FileValue(this.app, new TFile("Notes/Value.md"));',
+          '    const list = new ListValue([1, "two", null]);',
+          '    const object = new ObjectValue({ label: "value", count: 2 });',
+          '    const concatenated = list.concat(new ListValue(["three"]));',
           '    const target = document.createElement("div");',
           "    date.renderTo(target, {});",
           "    globalThis.__threadleafRuntimeLedgerValueExtendedProbe = {",
@@ -3486,6 +3490,24 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           '      urlText: new UrlValue("https://threadleaf.test").toString(),',
           "      tagText: tag.toString(),",
           '      tagMatches: tag.tagMatches(new TagValue("#project")),',
+          "      fileIsFileValue: fileValue instanceof FileValue,",
+          "      fileText: fileValue.toString(),",
+          "      fileTruthy: fileValue.isTruthy(),",
+          "      listType: ListValue.type,",
+          "      listText: list.toString(),",
+          "      listTruthy: list.isTruthy(),",
+          '      listIncludes: list.includes(new StringValue("two")),',
+          "      listLength: list.length(),",
+          "      listFirst: list.get(0).toString(),",
+          "      listMissing: list.get(9).toString(),",
+          "      listConcat: concatenated.toString(),",
+          "      objectType: ObjectValue.type,",
+          "      objectText: object.toString(),",
+          "      objectTruthy: object.isTruthy(),",
+          "      objectEmpty: new ObjectValue({}).isEmpty(),",
+          '      objectLabel: object.get("label")?.toString(),',
+          '      objectMissing: object.get("missing")?.toString(),',
+          '      momentDate: moment.utc("2026-08-12").format("YYYY-MM-DD"),',
           "      linkIsString: link instanceof StringValue,",
           "      linkText: link.toString(),",
           "      linkResolved: link.resolve()?.path,",
@@ -3524,6 +3546,24 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
             urlText: string;
             tagText: string;
             tagMatches: boolean;
+            fileIsFileValue: boolean;
+            fileText: string;
+            fileTruthy: boolean;
+            listType: string;
+            listText: string;
+            listTruthy: boolean;
+            listIncludes: boolean;
+            listLength: number;
+            listFirst: string;
+            listMissing: string;
+            listConcat: string;
+            objectType: string;
+            objectText: string;
+            objectTruthy: boolean;
+            objectEmpty: boolean;
+            objectLabel: string;
+            objectMissing: string;
+            momentDate: string;
             linkIsString: boolean;
             linkText: string;
             linkResolved: string;
@@ -3550,6 +3590,24 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           expect(probe.urlText).toBe("https://threadleaf.test");
           expect(probe.tagText).toBe("#project/compatibility");
           expect(probe.tagMatches).toBe(true);
+          expect(probe.fileIsFileValue).toBe(true);
+          expect(probe.fileText).toBe("Notes/Value.md");
+          expect(probe.fileTruthy).toBe(true);
+          expect(probe.listType).toBe("List");
+          expect(probe.listText).toBe("1, two, null");
+          expect(probe.listTruthy).toBe(true);
+          expect(probe.listIncludes).toBe(true);
+          expect(probe.listLength).toBe(3);
+          expect(probe.listFirst).toBe("1");
+          expect(probe.listMissing).toBe("null");
+          expect(probe.listConcat).toBe("1, two, null, three");
+          expect(probe.objectType).toBe("Object");
+          expect(probe.objectText).toBe('{"label":"value","count":"2"}');
+          expect(probe.objectTruthy).toBe(true);
+          expect(probe.objectEmpty).toBe(true);
+          expect(probe.objectLabel).toBe("value");
+          expect(probe.objectMissing).toBe("null");
+          expect(probe.momentDate).toBe("2026-08-12");
           expect(probe.linkIsString).toBe(true);
           expect(probe.linkText).toBe("[[Welcome|Welcome note]]");
           expect(probe.linkResolved).toBe("Welcome.md");

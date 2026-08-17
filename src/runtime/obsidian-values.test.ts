@@ -1,17 +1,20 @@
 import { JSDOM } from "jsdom";
 import { describe, expect, it, vi } from "vitest";
-import type { App } from "./obsidian-compat";
+import type { App, TFile } from "./obsidian-compat";
 import {
   BooleanValue,
   DateValue,
   DurationValue,
+  FileValue,
   HTMLValue,
   IconValue,
   ImageValue,
   LinkValue,
+  ListValue,
   NotNullValue,
   NullValue,
   NumberValue,
+  ObjectValue,
   PrimitiveValue,
   RegExpValue,
   RelativeDateValue,
@@ -106,5 +109,28 @@ describe("Obsidian value compatibility", () => {
     );
 
     dom.window.close();
+  });
+
+  it("supports file, list, and object values", () => {
+    const file = new FileValue({} as App, { path: "Notes/Value.md" } as TFile);
+    const list = new ListValue([1, "two", null]);
+    const object = new ObjectValue({ label: "value", count: 2 });
+
+    expect(file.toString()).toBe("Notes/Value.md");
+    expect(file.isTruthy()).toBe(true);
+    expect(ListValue.type).toBe("List");
+    expect(list.toString()).toBe("1, two, null");
+    expect(list.includes(new StringValue("two"))).toBe(true);
+    expect(list.length()).toBe(3);
+    expect(list.get(0).toString()).toBe("1");
+    expect(list.get(9)).toBe(NullValue.value);
+    expect(list.concat(new ListValue(["three"])).toString()).toBe("1, two, null, three");
+    expect(ObjectValue.type).toBe("Object");
+    expect(object.toString()).toBe('{"label":"value","count":"2"}');
+    expect(object.isTruthy()).toBe(true);
+    expect(object.isEmpty()).toBe(false);
+    expect(new ObjectValue({}).isEmpty()).toBe(true);
+    expect(object.get("label")?.toString()).toBe("value");
+    expect(object.get("missing")).toBe(NullValue.value);
   });
 });

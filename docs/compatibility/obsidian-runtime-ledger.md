@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 134 (133 public, 1 internal extra)
+- Factory keys: 137 (136 public, 1 internal extra)
 
 ## Export status
 
@@ -54,7 +54,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | ExtraButtonComponent | class | implemented | 60577a4b3a5c4ed2 |
 | FileManager | class | partial | f131be3eb6de3df2 |
 | FileSystemAdapter | class | partial | a11e4e56f43d1ba4 |
-| FileValue | class | missing | 90a3b3e1fcd40461 |
+| FileValue | class | implemented | 90a3b3e1fcd40461 |
 | FileView | class | implemented | 1a7d777aaddc3cb1 |
 | finishRenderMath | function | partial | 58b4e9583b344203 |
 | FuzzySuggestModal | class | implemented | 042ca80827cde1a8 |
@@ -76,7 +76,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | iterateRefs | function | implemented | 882efbf3735f3d6a |
 | Keymap | class | implemented | f1db66e779392942 |
 | LinkValue | class | implemented | 9b8b264f5a8cf96c |
-| ListValue | class | missing | 22393019e553322f |
+| ListValue | class | implemented | 22393019e553322f |
 | livePreviewState | variable | missing | 33974b4ed1375f2b |
 | loadMathJax | function | missing | b98165b8c369b4a5 |
 | loadMermaid | function | missing | b7baf683b29b12b1 |
@@ -93,14 +93,14 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | MenuSeparator | class | partial | 8d76cd93d0b4b14a |
 | MetadataCache | class | implemented | 4f2d6786f29d03b5 |
 | Modal | class | implemented | 0ecda97644af4e27 |
-| moment | variable | missing | 9ee051521ccd8991 |
+| moment | variable | implemented | 9ee051521ccd8991 |
 | MomentFormatComponent | class | implemented | b3a4fd344f8d82a1 |
 | normalizePath | function | implemented | 9811227609eeb952 |
 | Notice | class | implemented | 10560b31dc604864 |
 | NotNullValue | class | partial | c1ea1665f928693f |
 | NullValue | class | implemented | 1324bf65b03915a3 |
 | NumberValue | class | implemented | fd1c8c04fc04ea95 |
-| ObjectValue | class | missing | f4b04ddccfe69cc4 |
+| ObjectValue | class | implemented | f4b04ddccfe69cc4 |
 | parseFrontMatterAliases | function | implemented | 6591b6101b4100ac |
 | parseFrontMatterEntry | function | implemented | 208d94491e23b5b6 |
 | parseFrontMatterStringArray | function | implemented | deb327a55cd9c91f |

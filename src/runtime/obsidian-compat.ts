@@ -11,7 +11,7 @@ import {
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import MarkdownIt from "markdown-it";
-import moment from "moment";
+import momentLibrary from "moment";
 import TurndownService from "turndown";
 import { parse as parseYamlDocument, stringify as yamlStringify } from "yaml";
 import { ActionRegistry } from "../application/action-registry";
@@ -78,13 +78,16 @@ import {
   BooleanValue,
   DateValue,
   DurationValue,
+  FileValue,
   HTMLValue,
   IconValue,
   ImageValue,
   LinkValue,
+  ListValue,
   NotNullValue,
   NullValue,
   NumberValue,
+  ObjectValue,
   PrimitiveValue,
   RegExpValue,
   RelativeDateValue,
@@ -112,6 +115,8 @@ import {
   WorkspaceTabs,
   WorkspaceWindow,
 } from "./obsidian-workspace-compat";
+
+export const moment = momentLibrary;
 
 export interface PluginManifest {
   id: string;
@@ -3445,6 +3450,7 @@ export interface ObsidianCompatibilityModule {
   EditorSuggest: typeof EditorSuggest;
   Events: typeof Events;
   ExtraButtonComponent: typeof ExtraButtonComponent;
+  FileValue: typeof FileValue;
   FileManager: typeof FileManager;
   FileSystemAdapter: typeof FileSystemAdapter;
   FileView: typeof FileView;
@@ -3462,6 +3468,7 @@ export interface ObsidianCompatibilityModule {
   ItemView: typeof ItemView;
   Keymap: typeof Keymap;
   LinkValue: typeof LinkValue;
+  ListValue: typeof ListValue;
   MarkdownView: typeof MarkdownView;
   MarkdownEditView: typeof MarkdownEditView;
   MarkdownPreviewView: typeof MarkdownPreviewView;
@@ -3507,6 +3514,7 @@ export interface ObsidianCompatibilityModule {
   NullValue: typeof NullValue;
   NotNullValue: typeof NotNullValue;
   NumberValue: typeof NumberValue;
+  ObjectValue: typeof ObjectValue;
   PrimitiveValue: typeof PrimitiveValue;
   StringValue: typeof StringValue;
   UrlValue: typeof UrlValue;
@@ -4197,6 +4205,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     Events,
     ExtraButtonComponent,
     finishRenderMath,
+    FileValue,
     FileManager,
     FileSystemAdapter,
     FileView,
@@ -4212,6 +4221,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     ImageValue,
     Keymap,
     LinkValue,
+    ListValue,
     MarkdownView,
     MarkdownEditView,
     MarkdownPreviewView,
@@ -4263,6 +4273,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     NullValue,
     NotNullValue,
     NumberValue,
+    ObjectValue,
     PrimitiveValue,
     StringValue,
     UrlValue,

@@ -84,6 +84,25 @@ export class NullValue extends Value {
   }
 }
 
+export class FileValue extends NotNullValue {
+  readonly app: App;
+  readonly file: TFile;
+
+  constructor(app: App, file: TFile) {
+    super();
+    this.app = app;
+    this.file = file;
+  }
+
+  toString(): string {
+    return this.file.path;
+  }
+
+  isTruthy(): boolean {
+    return true;
+  }
+}
+
 const DATE_TIME_PATTERN =
   /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}(?::?\d{2})?)?$/u;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
@@ -469,4 +488,123 @@ export class LinkValue extends StringValue {
     const display = separator === -1 ? null : new StringValue(inner.slice(separator + 1));
     return new LinkValue(app, target, sourcePath, display);
   }
+}
+
+export class ListValue extends NotNullValue {
+  static type = "List";
+  private readonly values: (unknown | Value)[];
+
+  constructor(value: (unknown | Value)[]) {
+    super();
+    this.values = value;
+  }
+
+  toString(): string {
+    return this.values.map((_value, index) => this.get(index).toString()).join(", ");
+  }
+
+  isTruthy(): boolean {
+    return this.values.length > 0;
+  }
+
+  includes(value: Value): boolean {
+    return this.values.some((_item, index) => Value.looseEquals(this.get(index), value));
+  }
+
+  length(): number {
+    return this.values.length;
+  }
+
+  get(index: number): Value {
+    const raw = this.values[index];
+    if (raw === null || raw === undefined) {
+      return NullValue.value;
+    }
+    if (raw instanceof Value) {
+      return raw;
+    }
+    const value = wrapValue(raw);
+    this.values[index] = value;
+    return value;
+  }
+
+  concat(other: ListValue): ListValue {
+    return new ListValue(this.values.concat(other.values));
+  }
+}
+
+export class ObjectValue extends NotNullValue {
+  static type = "Object";
+  private readonly values: Record<string, unknown>;
+
+  constructor(value: Record<string, unknown>) {
+    super();
+    this.values = value;
+  }
+
+  toString(): string {
+    const serialized: Record<string, string> = {};
+    for (const key of Object.keys(this.values)) {
+      serialized[key] = this.get(key)?.toString() ?? "null";
+    }
+    return JSON.stringify(serialized);
+  }
+
+  isTruthy(): boolean {
+    return !this.isEmpty();
+  }
+
+  isEmpty(): boolean {
+    return Object.keys(this.values).length === 0;
+  }
+
+  get(key: string): Value | null {
+    if (!Object.hasOwn(this.values, key)) {
+      return NullValue.value;
+    }
+    const raw = this.values[key];
+    if (raw === null || raw === undefined) {
+      return NullValue.value;
+    }
+    if (raw instanceof Value) {
+      return raw;
+    }
+    const value = wrapValue(raw);
+    this.values[key] = value;
+    return value;
+  }
+}
+
+function wrapValue(input: unknown): Value {
+  if (input === null || input === undefined) {
+    return NullValue.value;
+  }
+  if (typeof input === "function") {
+    return NullValue.value;
+  }
+  if (input instanceof Value) {
+    return input;
+  }
+  if (typeof input === "string") {
+    return new StringValue(input);
+  }
+  if (typeof input === "number") {
+    return new NumberValue(input);
+  }
+  if (typeof input === "boolean") {
+    return new BooleanValue(input);
+  }
+  if (input instanceof Date) {
+    return new DateValue(new Date(input));
+  }
+  if (input instanceof RegExp) {
+    return new RegExpValue(input);
+  }
+  if (Array.isArray(input)) {
+    return new ListValue(input);
+  }
+  if (typeof input === "object") {
+    return new ObjectValue(input as Record<string, unknown>);
+  }
+  throw new TypeError(`Unsupported value type: ${typeof input}`);
 }
