@@ -75,6 +75,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
   });
 
   /** @compatibility-test-id obsidian-runtime.core-events-files-vault.v1 */
+  /** @compatibility-test-id obsidian-runtime.workspace-core.v1 */
   it('proves the core events, file identity, vault, and metadata bindings through require("obsidian")', async () => {
     const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-runtime-ledger-core-"));
     const pluginPath = path.join(sandboxPath, "core-ledger-fixture");
@@ -91,10 +92,11 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
       await fs.writeFile(
         path.join(pluginPath, "main.js"),
         [
-          'const { Events, Plugin, TAbstractFile, TFile, TFolder, Vault } = require("obsidian");',
+          'const { Events, Plugin, TAbstractFile, TFile, TFolder, Vault, WorkspaceSplit } = require("obsidian");',
           "class LedgerPlugin extends Plugin {",
           "  async onload() {",
           "    const vault = this.app.vault;",
+          "    const workspace = this.app.workspace;",
           '    const welcome = vault.getFileByPath("Welcome.md");',
           '    const linked = vault.getFileByPath("Linked Note.md");',
           '    const boards = vault.getFolderByPath("Boards");',
@@ -102,6 +104,11 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           '    const file = new TFile("Boards/Overview.canvas", vault, { ctime: 1, mtime: 2, size: 3 });',
           '    const folder = new TFolder("Boards", vault);',
           "    const root = vault.getRoot();",
+          "    const layoutCalls = [];",
+          '    const layoutRef = workspace.on("layout-change", () => layoutCalls.push("layout"));',
+          "    workspace.updateOptions();",
+          "    workspace.offref(layoutRef);",
+          "    const layout = workspace.getLayout();",
           "    const calls = [];",
           "    const events = new Events();",
           "    const callback = (...args) => calls.push(args);",
@@ -137,6 +144,19 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           "        markdownCount: vault.getMarkdownFiles().length,",
           "        folderPaths: vault.getAllFolders().map((item) => item.path),",
           "        loadedHasRoot: vault.getAllLoadedFiles().some((item) => item instanceof TFolder && item.isRoot),",
+          "      },",
+          "      workspace: {",
+          "        isEvents: workspace instanceof Events,",
+          "        rootSplitIsSplit: workspace.rootSplit instanceof WorkspaceSplit,",
+          "        rootDirection: workspace.rootSplit.direction,",
+          "        activeLeafIsNull: workspace.activeLeaf === null,",
+          "        activeEditorIsNull: workspace.activeEditor === null,",
+          "        layoutReady: workspace.layoutReady,",
+          "        layoutMainChildren: layout.main.children.length,",
+          "        mostRecentLeafIsNull: workspace.getMostRecentLeaf() === null,",
+          "        activeFileIsNull: workspace.getActiveFile() === null,",
+          '        markdownLeaves: workspace.getLeavesOfType("markdown").length,',
+          "        layoutCalls,",
           "      },",
           "      abstract: {",
           "        path: abstract.path,",
@@ -194,6 +214,19 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
             markdownCount: 2,
             folderPaths: ["Boards"],
             loadedHasRoot: true,
+          },
+          workspace: {
+            isEvents: true,
+            rootSplitIsSplit: true,
+            rootDirection: "vertical",
+            activeLeafIsNull: true,
+            activeEditorIsNull: true,
+            layoutReady: false,
+            layoutMainChildren: 0,
+            mostRecentLeafIsNull: true,
+            activeFileIsNull: true,
+            markdownLeaves: 0,
+            layoutCalls: ["layout"],
           },
           abstract: {
             path: "Boards/Overview.canvas",

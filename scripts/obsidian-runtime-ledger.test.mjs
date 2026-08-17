@@ -32,14 +32,14 @@ assert.deepEqual(ledger.counts, {
   enums: 1,
   variables: 8,
   implemented: 4,
-  partial: 7,
+  partial: 9,
   unsupported: 0,
-  missing: 147,
+  missing: 145,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
-  implementedObligations: 39,
+  implementedObligations: 50,
 });
 assert.equal(ledger.factory.keys.length, 75);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
@@ -66,6 +66,8 @@ assert.deepEqual(
     ["TFile", "implemented"],
     ["TFolder", "implemented"],
     ["Vault", "partial"],
+    ["Workspace", "partial"],
+    ["WorkspaceSplit", "partial"],
   ],
 );
 

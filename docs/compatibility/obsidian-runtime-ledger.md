@@ -161,7 +161,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | ValueComponent | class | missing | 529ce7aae6a57c84 |
 | Vault | class | partial | 8041bc89ef9d718b |
 | View | class | missing | b8f2d48cb007660e |
-| Workspace | class | missing | 678ad5eacec977ed |
+| Workspace | class | partial | 678ad5eacec977ed |
 | WorkspaceContainer | class | missing | 111dc7e1f6366fe3 |
 | WorkspaceFloating | class | missing | e7ce5a480a9e4cc1 |
 | WorkspaceItem | class | missing | 792134b77a9c1bb5 |
@@ -171,7 +171,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | WorkspaceRibbon | class | missing | ffebe640f57faebe |
 | WorkspaceRoot | class | missing | cbd16d72040e24ec |
 | WorkspaceSidedock | class | missing | 7290bfc648754714 |
-| WorkspaceSplit | class | missing | c27a20947773139a |
+| WorkspaceSplit | class | partial | c27a20947773139a |
 | WorkspaceTabs | class | missing | 351384193e50748c |
 | WorkspaceWindow | class | missing | 4d8f442507ed4e2b |
 

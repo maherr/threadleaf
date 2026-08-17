@@ -6,6 +6,7 @@ import type {
 } from "./obsidian-compat";
 import { type App, TFile } from "./obsidian-compat";
 import type { CompatibilityEventRef } from "./obsidian-components";
+import { Events } from "./obsidian-events";
 import { Editor, isConstructedWorkspaceLeaf, WorkspaceLeaf } from "./obsidian-ui-compat";
 
 type EventCallback = (...args: unknown[]) => unknown;
@@ -103,7 +104,7 @@ export class WorkspaceSplit {
   }
 }
 
-export class Workspace {
+export class Workspace extends Events {
   private activeEditorState: MarkdownFileInfo | null = null;
   activeLeaf: WorkspaceLeaf | null = null;
   readonly containerEl = workspaceContainer();

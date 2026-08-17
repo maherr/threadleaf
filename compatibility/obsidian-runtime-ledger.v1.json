@@ -14,14 +14,14 @@
     "enums": 1,
     "variables": 8,
     "implemented": 4,
-    "partial": 7,
+    "partial": 9,
     "unsupported": 0,
-    "missing": 147,
+    "missing": 145,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 39
+    "implementedObligations": 50
   },
   "factory": {
     "keys": [
@@ -1146,7 +1146,7 @@
       ],
       "negativeEvidence": [],
       "implementation": {
-        "source": "src/runtime/obsidian-compat.ts",
+        "source": "src/runtime/obsidian-events.ts",
         "exportName": "Events"
       },
       "obligationIds": [
@@ -4106,15 +4106,23 @@
       "exportId": "export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8",
       "name": "Workspace",
       "kind": "class",
-      "status": "missing",
+      "status": "partial",
       "signatureHash": "678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8",
       "location": {
         "line": 7762,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.workspace-core.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-workspace-compat.ts",
+        "exportName": "Workspace"
+      },
       "obligationIds": [
         "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:bfca3020e3d780bc5003364df0c6a8a4573bac19aefb175663c2a046a755ff9f",
         "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:1e7aaa28f78da251803b459452dfb527bc851196cff289476801c1ba2b1464a1",
@@ -4178,8 +4186,32 @@
       "heritageEdgeIds": [
         "heritage:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:8d14f6e72de8f18ab1ee5c5330f00653c0c3ce099e63024454f80af97e72d333"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:600e5d05323b4163e16a40b5b161e1dc4f41b492b7949340ec6ae7fae6e5591f",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:8a0d7034368586e012f16e9c13f111cb0c33f7dacb5e257186237ad0c54f5eca",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:3a1202875730832cdfd44275e884054e1fe7872f1fa875355394aa427bab5ef4",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:e22700e5cb7c287d6a2af1ab2a245861b91f10474f295cc01aff6148f9c99022",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:6e4b18e4ee69a2be56bd2d904b2b985a4adf0f7591746ad4598096badaec6a75",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:7969ab1b89a666fe6face00d9d05fb3671da544e9c697dda5a90e4a4024a6591",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:67e8af70729233aac5bc821afc9463865f66d7e9b89d497c76ad54524c1d7916",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:5f00542a4d05a997afea2e0d7323c7631be5918c3f20cb3f285622640a5eae00",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:f0772fabbc53097e911e3d1f0ba7f4e08bd68e7ffdb6d9b7e0053f1857e7bedc",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:ee1cd03997f3beddea10ac471c9c5a4f0d646ce821453c2efca5fafe5d46e038",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:2a22093b3e247378a01836db0c87dee64c4cff464e8f70683056af22ffe56e8b"
+      ],
+      "coveredObligationSignatureHashes": [
+        "600e5d05323b4163e16a40b5b161e1dc4f41b492b7949340ec6ae7fae6e5591f",
+        "8a0d7034368586e012f16e9c13f111cb0c33f7dacb5e257186237ad0c54f5eca",
+        "3a1202875730832cdfd44275e884054e1fe7872f1fa875355394aa427bab5ef4",
+        "e22700e5cb7c287d6a2af1ab2a245861b91f10474f295cc01aff6148f9c99022",
+        "6e4b18e4ee69a2be56bd2d904b2b985a4adf0f7591746ad4598096badaec6a75",
+        "7969ab1b89a666fe6face00d9d05fb3671da544e9c697dda5a90e4a4024a6591",
+        "67e8af70729233aac5bc821afc9463865f66d7e9b89d497c76ad54524c1d7916",
+        "5f00542a4d05a997afea2e0d7323c7631be5918c3f20cb3f285622640a5eae00",
+        "f0772fabbc53097e911e3d1f0ba7f4e08bd68e7ffdb6d9b7e0053f1857e7bedc",
+        "ee1cd03997f3beddea10ac471c9c5a4f0d646ce821453c2efca5fafe5d46e038",
+        "2a22093b3e247378a01836db0c87dee64c4cff464e8f70683056af22ffe56e8b"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -4429,15 +4461,23 @@
       "exportId": "export:class:WorkspaceSplit:c27a20947773139a9f85e0b18b9152c2ea8886e1809c8141a3ae4f419bfbe037",
       "name": "WorkspaceSplit",
       "kind": "class",
-      "status": "missing",
+      "status": "partial",
       "signatureHash": "c27a20947773139a9f85e0b18b9152c2ea8886e1809c8141a3ae4f419bfbe037",
       "location": {
         "line": 8442,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.workspace-core.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-workspace-compat.ts",
+        "exportName": "WorkspaceSplit"
+      },
       "obligationIds": [
         "obligation:export:class:WorkspaceSplit:c27a20947773139a9f85e0b18b9152c2ea8886e1809c8141a3ae4f419bfbe037:d40def121a4a17f3fd59b6a030feff983947771bbf936e64bd27e5fdcb4622c8"
       ],
@@ -15467,7 +15507,7 @@
     {
       "exportId": "export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8",
       "name": "Workspace",
-      "status": "missing",
+      "status": "partial",
       "obligations": [
         {
           "obligationId": "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:bfca3020e3d780bc5003364df0c6a8a4573bac19aefb175663c2a046a755ff9f",
@@ -16352,8 +16392,32 @@
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:600e5d05323b4163e16a40b5b161e1dc4f41b492b7949340ec6ae7fae6e5591f",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:8a0d7034368586e012f16e9c13f111cb0c33f7dacb5e257186237ad0c54f5eca",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:3a1202875730832cdfd44275e884054e1fe7872f1fa875355394aa427bab5ef4",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:e22700e5cb7c287d6a2af1ab2a245861b91f10474f295cc01aff6148f9c99022",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:6e4b18e4ee69a2be56bd2d904b2b985a4adf0f7591746ad4598096badaec6a75",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:7969ab1b89a666fe6face00d9d05fb3671da544e9c697dda5a90e4a4024a6591",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:67e8af70729233aac5bc821afc9463865f66d7e9b89d497c76ad54524c1d7916",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:5f00542a4d05a997afea2e0d7323c7631be5918c3f20cb3f285622640a5eae00",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:f0772fabbc53097e911e3d1f0ba7f4e08bd68e7ffdb6d9b7e0053f1857e7bedc",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:ee1cd03997f3beddea10ac471c9c5a4f0d646ce821453c2efca5fafe5d46e038",
+        "obligation:export:class:Workspace:678ad5eacec977ed2aa027bff2e59b49907d99fda51f4cc66aa0aef91b2a7ea8:2a22093b3e247378a01836db0c87dee64c4cff464e8f70683056af22ffe56e8b"
+      ],
+      "coveredObligationSignatureHashes": [
+        "600e5d05323b4163e16a40b5b161e1dc4f41b492b7949340ec6ae7fae6e5591f",
+        "8a0d7034368586e012f16e9c13f111cb0c33f7dacb5e257186237ad0c54f5eca",
+        "3a1202875730832cdfd44275e884054e1fe7872f1fa875355394aa427bab5ef4",
+        "e22700e5cb7c287d6a2af1ab2a245861b91f10474f295cc01aff6148f9c99022",
+        "6e4b18e4ee69a2be56bd2d904b2b985a4adf0f7591746ad4598096badaec6a75",
+        "7969ab1b89a666fe6face00d9d05fb3671da544e9c697dda5a90e4a4024a6591",
+        "67e8af70729233aac5bc821afc9463865f66d7e9b89d497c76ad54524c1d7916",
+        "5f00542a4d05a997afea2e0d7323c7631be5918c3f20cb3f285622640a5eae00",
+        "f0772fabbc53097e911e3d1f0ba7f4e08bd68e7ffdb6d9b7e0053f1857e7bedc",
+        "ee1cd03997f3beddea10ac471c9c5a4f0d646ce821453c2efca5fafe5d46e038",
+        "2a22093b3e247378a01836db0c87dee64c4cff464e8f70683056af22ffe56e8b"
+      ]
     },
     {
       "exportId": "export:class:WorkspaceContainer:111dc7e1f6366fe3ff666d4378cf23344f5da92322c7db62d3b9f0dfa30420c9",
@@ -17120,7 +17184,7 @@
     {
       "exportId": "export:class:WorkspaceSplit:c27a20947773139a9f85e0b18b9152c2ea8886e1809c8141a3ae4f419bfbe037",
       "name": "WorkspaceSplit",
-      "status": "missing",
+      "status": "partial",
       "obligations": [
         {
           "obligationId": "obligation:export:class:WorkspaceSplit:c27a20947773139a9f85e0b18b9152c2ea8886e1809c8141a3ae4f419bfbe037:d40def121a4a17f3fd59b6a030feff983947771bbf936e64bd27e5fdcb4622c8",
