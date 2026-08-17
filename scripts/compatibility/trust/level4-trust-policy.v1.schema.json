@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:threadleaf:compatibility:level4-trust-policy:v1",
+  "title": "Threadleaf Level 4 trust policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "trustStoreVersion", "trustedControllerManifest", "issuerKeys"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "trustStoreVersion": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "trustedControllerManifest": { "$ref": "#/$defs/manifest" },
+    "issuerKeys": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["keyId", "publicKeyBase64", "keyIdentitySha256", "status"],
+        "properties": {
+          "keyId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$" },
+          "publicKeyBase64": { "type": "string" },
+          "keyIdentitySha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "status": { "enum": ["active", "revoked"] }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifestId",
+        "manifestVersion",
+        "controllerVersion",
+        "controllerExecutableSha256",
+        "allowedReceiptSchemaVersions",
+        "currentHarness"
+      ],
+      "properties": {
+        "manifestId": { "type": "string", "minLength": 1 },
+        "manifestVersion": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "controllerVersion": { "type": "string", "minLength": 1 },
+        "controllerExecutableSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "allowedReceiptSchemaVersions": { "const": [2] },
+        "currentHarness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "treeSha256"],
+          "properties": {
+            "version": { "type": "string", "minLength": 1 },
+            "treeSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+          }
+        }
+      }
+    }
+  }
+}

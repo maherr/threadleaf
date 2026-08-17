@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generatedBy": "scripts/generate-plugin-compatibility-registry.mjs",
   "threadleafVersion": "0.1.0-beta.7",
   "entries": [

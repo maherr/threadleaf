@@ -54,6 +54,27 @@ by the [Excalidraw round-trip corpus and packaged gate](excalidraw-roundtrip.md)
 `.excalidraw` JSON and attachment manifests. Its pinned official Obsidian roundtrip is recorded as
 an attended external observation and remains separate from executable compatibility gates.
 
+The Level 4 evidence substrate is now executable but intentionally has no production issuer. The
+dedicated controller under `scripts/compatibility/` is the only supported finalizer: runtime and
+renderer code can emit bounded observations, but cannot sign, finalize, publish, mutate the
+registry, or assign a terminal state. The verifier recomputes the exact package, sealed root,
+workflow, fixture, packaged artifact, installed tree, build manifest, relevant `dist` tree,
+Electron executable, current trust policy, controller manifest, and harness before accepting a
+receipt. Receipts are a co-privileged reproducibility and integrity convention for drift,
+accident, partial runs, replay, and other non-malicious divergence. They are not a sandbox or an
+attestation against an already granted Node plugin. `node scripts/compatibility/level4-operator.mjs status` reports the current bootstrap state and exits
+nonzero while no production issuer is
+configured. The hermetic proof is `pnpm test:level4-hermetic`; it uses an ephemeral fixture key
+only inside a mode-0700 temporary directory and writes its Level 4 row to an isolated output.
+
+A later production workflow must first add one reviewed active issuer to the checked-in trust
+policy, with its private key held outside the repository, and confirm that
+`node scripts/compatibility/level4-operator.mjs status` exits 0. After the real Electron workflow
+finalizes its receipt, the operator verifies the explicit current-input config with
+`node scripts/compatibility/level4-operator.mjs verify --config <reviewed-config.json>`, then
+runs `pnpm compatibility:check` and `pnpm compatibility:generate` to publish only the accepted
+receipt. This milestone deliberately stops before that issuer bootstrap and production workflow.
+
 The measured Markdown processor family has a separate public contract in
 [`open-plugin-api.md`](open-plugin-api.md). It covers fenced-block replacement, ordered Markdown
 post-processing, render-child lifecycle, context metadata, and explicit failure behavior; those

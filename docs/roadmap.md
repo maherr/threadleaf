@@ -21,8 +21,26 @@ Exit gate passed: the findings and resulting decisions are recorded in the
 - [x] Display the observable runtime state in an isolated Electron renderer.
 - [x] Cover the host with automated tests and a rendered-surface check.
 
-Exit gate passed: the fixture reaches compatibility level 4 through the production loader without
-changing any fixture byte.
+Exit gate passed for the original compatibility architecture proof. That fixture result is not a
+production Level 4 registry claim; workflow evidence now requires the separate controller and
+verifier boundary below.
+
+## Level 4 Phase 0 evidence-integrity boundary (implemented, production workflow pending)
+
+- [x] Add the strict RFC 8785 receipt v2 boundary, Ed25519 domain-separated signatures, exact
+      artifact and tree identities, controller-owned terminal derivation, and no-replace atomic
+      receipt publication.
+- [x] Add the current trust-policy and trusted-controller manifest inputs, append-only tuple-bound
+      replay index, exact verifier, fail-closed registry integration, and structural runtime gates.
+- [x] Prove the complete path with a hermetic fixture workflow and an ephemeral fixture key confined
+      to a private temporary directory, including mutation, failure, replay, and policy-rotation
+      controls.
+- [ ] Bootstrap a reviewed production issuer and run a real production Electron workflow for a
+      named plugin and platform. This remains later work and is required before any production row
+      may be Level 4.
+
+Exit gate: the substrate is complete, but the production evidence gate remains open until a later
+workflow creates a real receipt under the current reviewed issuer policy.
 
 ## Phase 1: Safe vault kernel (complete)
 

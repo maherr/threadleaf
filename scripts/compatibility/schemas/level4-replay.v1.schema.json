@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:threadleaf:compatibility:level4-replay:v1",
+  "title": "Threadleaf Level 4 replay entry v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "tupleDigest", "runNonce", "runId", "receiptFileSha256"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "tupleDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "runNonce": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "runId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "receiptFileSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

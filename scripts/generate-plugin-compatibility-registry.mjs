@@ -3,6 +3,11 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { authorityJsonSha256 } from "../src/shared/authority-json-runtime.mjs";
+import {
+  level4JsonSha256,
+  parseLevel4TrustPolicyV1,
+} from "../src/shared/level4-receipt-boundary.mjs";
+import { verifyLevel4Receipt } from "./compatibility/level4-verifier.mjs";
 
 const rootPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourcePath = path.join(rootPath, "compatibility", "plugin-evidence.v1.json");
@@ -15,14 +20,13 @@ const generatedTypeScriptPath = path.join(
 );
 const generatedMarkdownPath = path.join(rootPath, "docs", "compatibility", "registry.md");
 const reviewedAuthorityDirectory = path.join(rootPath, "scripts", "compatibility", "trust");
-const checkOnly = process.argv.includes("--check");
 const pluginIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const versionPattern = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,99}$/u;
 const sha256Pattern = /^[a-f0-9]{64}$/u;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/u;
 const platformStatuses = new Set(["verified", "packaged-only", "unverified"]);
 const workflowStatuses = new Set(["passed", "failed", "unsupported"]);
-const evidenceModes = new Set(["direct", "composed"]);
+const evidenceModes = new Set(["direct", "composed", "production-receipt"]);
 const capabilityIds = new Set([
   "vault-read",
   "vault-write",
@@ -166,7 +170,141 @@ async function reviewedAuthorityIdentities() {
   return identities;
 }
 
-async function validateEntry(value, index, packageVersion, reviewedIdentities) {
+const level4ReceiptPathKeys = [
+  "receiptPath",
+  "replayIndexPath",
+  "trustPolicyPath",
+  "trustedControllerManifestPath",
+  "controllerExecutablePath",
+  "harnessTreePath",
+  "workflowDefinitionPath",
+  "fixtureTreePath",
+  "packagePath",
+  "sealedPackageRootPath",
+  "packagedArtifactPath",
+  "installedApplicationTreePath",
+  "canonicalBuildManifestPath",
+  "relevantDistTreePath",
+  "electronExecutablePath",
+  "authorityProfilePath",
+  "preconditionsPath",
+  "startingFixturePath",
+  "vaultTreeBeforePath",
+  "vaultTreeAfterPath",
+];
+
+function resolveEvidencePath(value, label) {
+  const raw = text(value, label, 1_000);
+  if (!path.isAbsolute(raw) && raw.split(/[\\/]/u).includes("..")) {
+    fail(`${label} must not traverse a parent.`);
+  }
+  return path.resolve(rootPath, raw);
+}
+
+function level4ReceiptConfig(value, label) {
+  if (!isRecord(value)) fail(`${label} must be an object.`);
+  const actual = Object.keys(value).sort();
+  const expected = [
+    ...level4ReceiptPathKeys,
+    "distributionTag",
+    "requiredDistPaths",
+    "screenshots",
+    "platform",
+    "architecture",
+    "sourceCommit",
+    "threadleafVersion",
+    "electronVersion",
+  ].sort();
+  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
+    fail(`${label} contains unsupported or missing verifier inputs.`);
+  }
+  const artifactPaths = Object.fromEntries(
+    level4ReceiptPathKeys.map((key) => [key, resolveEvidencePath(value[key], `${label}.${key}`)]),
+  );
+  artifactPaths.distributionTag = text(value.distributionTag, `${label}.distributionTag`, 100);
+  artifactPaths.requiredDistPaths = stringList(
+    value.requiredDistPaths,
+    `${label}.requiredDistPaths`,
+  );
+  if (!Array.isArray(value.screenshots)) fail(`${label}.screenshots must be an array.`);
+  artifactPaths.screenshots = value.screenshots.map((item, index) => {
+    if (!isRecord(item)) fail(`${label}.screenshots[${index}] must be an object.`);
+    return {
+      path: resolveEvidencePath(item.path, `${label}.screenshots[${index}].path`),
+      purpose: text(item.purpose, `${label}.screenshots[${index}].purpose`, 512),
+    };
+  });
+  return {
+    receiptPath: artifactPaths.receiptPath,
+    artifactPaths,
+    expected: {
+      platform: text(value.platform, `${label}.platform`, 100),
+      architecture: text(value.architecture, `${label}.architecture`, 100),
+      sourceCommit: text(value.sourceCommit, `${label}.sourceCommit`, 128),
+      threadleafVersion: text(value.threadleafVersion, `${label}.threadleafVersion`, 100),
+      electronVersion: text(value.electronVersion, `${label}.electronVersion`, 100),
+    },
+  };
+}
+
+async function trustStoreIdentity(trustPolicyPath) {
+  const policy = parseLevel4TrustPolicyV1(await readJson(trustPolicyPath, "Level 4 trust policy"));
+  return level4JsonSha256(policy);
+}
+
+async function validateLevel4Receipt(
+  value,
+  label,
+  plugin,
+  packageVersion,
+  { reviewedIdentities, allowFixtureOnly },
+) {
+  const config = level4ReceiptConfig(value, label);
+  if (config.expected.threadleafVersion !== packageVersion)
+    fail(`${label}.threadleafVersion is not the current package version.`);
+  const authorityRelative = path.relative(
+    reviewedAuthorityDirectory,
+    config.artifactPaths.authorityProfilePath,
+  );
+  const authorityIsFixed =
+    authorityRelative === "" ||
+    (!authorityRelative.startsWith("..") && !path.isAbsolute(authorityRelative));
+  if (!allowFixtureOnly && !authorityIsFixed)
+    fail(`${label}.authorityProfilePath must name a checked-in reviewed authority profile.`);
+  const verified = await verifyLevel4Receipt(config);
+  if (
+    verified.receipt.payload.packageIdentity.pluginId !== plugin.id ||
+    verified.receipt.payload.packageIdentity.manifestVersion !== plugin.version ||
+    verified.receipt.payload.packageIdentity.mainSha256 !== plugin.bundleSha256
+  ) {
+    fail(`${label} was accepted for a different exact package identity.`);
+  }
+  if (!allowFixtureOnly) {
+    const reviewed = reviewedIdentities.some(
+      (identity) =>
+        identity.pluginId === plugin.id &&
+        identity.manifestVersion === plugin.version &&
+        identity.mainSha256 === plugin.bundleSha256,
+    );
+    if (!reviewed)
+      fail(`${label} requires a fixed reviewed profile for the exact plugin identity.`);
+  }
+  const beforePublicationTrustIdentity = await trustStoreIdentity(
+    config.artifactPaths.trustPolicyPath,
+  );
+  if (beforePublicationTrustIdentity !== verified.issuerTrustStoreIdentitySha256)
+    fail(`${label} trust policy changed before registry publication.`);
+  return {
+    receiptFileSha256: verified.receiptFileSha256,
+    verificationTupleDigest: verified.verificationTupleDigest,
+    workflowId: verified.receipt.payload.workflowId,
+    issuerKeyId: verified.receipt.payload.issuerKeyId,
+    issuerTrustStoreIdentitySha256: verified.issuerTrustStoreIdentitySha256,
+    config,
+  };
+}
+
+async function validateEntry(value, index, packageVersion, reviewedIdentities, allowFixtureOnly) {
   const label = `entries[${index}]`;
   if (!isRecord(value) || !isRecord(value.plugin)) {
     fail(`${label} and its plugin field must be objects.`);
@@ -214,18 +352,27 @@ async function validateEntry(value, index, packageVersion, reviewedIdentities) {
   ) {
     fail(`${label}.compatibilityLevel must be an integer from 0 through 4.`);
   }
-  if (
-    value.compatibilityLevel === 4 &&
-    !reviewedIdentities.some(
-      (identity) =>
-        identity.pluginId === plugin.id &&
-        identity.manifestVersion === plugin.version &&
-        identity.mainSha256 === plugin.bundleSha256,
-    )
-  ) {
-    fail(
-      `${label}.compatibilityLevel 4 requires a reviewed authority profile for the exact plugin ID, manifest version, and main bundle digest.`,
+  const evidenceMode = oneOf(value.evidenceMode, evidenceModes, `${label}.evidenceMode`);
+  let level4Evidence;
+  if (value.compatibilityLevel === 4) {
+    if (evidenceMode !== "production-receipt" || !isRecord(value.level4Receipt)) {
+      fail(
+        `${label}.compatibilityLevel 4 requires a dedicated production-receipt evidence mode and receipt verifier inputs.`,
+      );
+    }
+    level4Evidence = await validateLevel4Receipt(
+      value.level4Receipt,
+      `${label}.level4Receipt`,
+      plugin,
+      packageVersion,
+      { reviewedIdentities, allowFixtureOnly },
     );
+  } else {
+    if (evidenceMode === "production-receipt" || value.level4Receipt !== undefined) {
+      fail(
+        `${label} carries Level 4 receipt state without an accepted Level 4 compatibility level.`,
+      );
+    }
   }
   const requiredCapabilities = stringList(
     value.requiredCapabilities,
@@ -282,12 +429,13 @@ async function validateEntry(value, index, packageVersion, reviewedIdentities) {
     lastTested,
     compatibilityLevel: value.compatibilityLevel,
     summary: text(value.summary, `${label}.summary`),
-    evidenceMode: oneOf(value.evidenceMode, evidenceModes, `${label}.evidenceMode`),
+    evidenceMode,
     requiredCapabilities,
     platforms,
     workflows,
     failures: stringList(value.failures, `${label}.failures`),
     limitations: stringList(value.limitations, `${label}.limitations`),
+    ...(level4Evidence ? { level4Evidence } : {}),
   };
 }
 
@@ -299,7 +447,7 @@ function markdownFor(registry) {
   const lines = [
     "# Generated plugin compatibility registry",
     "",
-    "This document is generated from [`compatibility/plugin-evidence.v1.json`](../../compatibility/plugin-evidence.v1.json).",
+    "This document is generated from the versioned receipt-aware source [`compatibility/plugin-evidence.v1.json`](../../compatibility/plugin-evidence.v1.json).",
     "Discovery in the external community package directory is separate from Threadleaf compatibility evidence.",
     "A row applies only to the exact plugin and Threadleaf versions shown.",
     "",
@@ -373,50 +521,125 @@ async function assertCurrent(filePath, expected) {
   }
 }
 
-const packageJson = await readJson(path.join(rootPath, "package.json"), "package.json");
-const source = await readJson(sourcePath, "plugin evidence source");
-const reviewedIdentities = await reviewedAuthorityIdentities();
-if (!isRecord(packageJson) || !versionPattern.test(packageJson.version)) {
-  fail("package.json has an invalid version.");
-}
-if (!isRecord(source) || source.schemaVersion !== 1 || !Array.isArray(source.entries)) {
-  fail("source must contain schemaVersion 1 and an entries array.");
-}
-const entries = [];
-for (const [index, entry] of source.entries.entries()) {
-  entries.push(await validateEntry(entry, index, packageJson.version, reviewedIdentities));
-}
-entries.sort((left, right) =>
-  `${left.plugin.id}\0${left.plugin.version}`.localeCompare(
-    `${right.plugin.id}\0${right.plugin.version}`,
-  ),
-);
-const keys = entries.map((entry) => `${entry.plugin.id}@${entry.plugin.version}`);
-if (new Set(keys).size !== keys.length) {
-  fail("source contains duplicate plugin and version pairs.");
-}
-const registry = {
-  schemaVersion: 1,
-  generatedBy: "scripts/generate-plugin-compatibility-registry.mjs",
-  threadleafVersion: packageJson.version,
-  entries,
-};
-const outputs = new Map([
-  [registryPath, `${JSON.stringify(registry, null, 2)}\n`],
-  [generatedTypeScriptPath, typeScriptFor(registry)],
-  [generatedMarkdownPath, markdownFor(registry)],
-]);
-for (const [filePath, content] of outputs) {
-  if (/[\u2013\u2014]/u.test(content)) {
-    fail(`${path.relative(rootPath, filePath)} contains a forbidden dash character.`);
-  }
-  if (checkOnly) {
-    await assertCurrent(filePath, content);
-  } else {
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, content, "utf8");
+async function writeAtomicReplace(filePath, content) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  const temporaryPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
+  );
+  let handle;
+  try {
+    handle = await fs.open(temporaryPath, "wx", 0o644);
+    await handle.writeFile(content, "utf8");
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    await fs.rename(temporaryPath, filePath);
+    let directoryHandle;
+    try {
+      directoryHandle = await fs.open(path.dirname(filePath), "r");
+      await directoryHandle.sync();
+    } finally {
+      await directoryHandle?.close();
+    }
+  } finally {
+    if (handle) await handle.close().catch(() => {});
+    await fs.unlink(temporaryPath).catch(() => {});
   }
 }
-process.stdout.write(
-  `${checkOnly ? "Verified" : "Generated"} ${entries.length} plugin compatibility entries.\n`,
-);
+
+export async function generatePluginCompatibilityRegistry({
+  checkOnly = process.argv.includes("--check"),
+  sourcePathOverride = sourcePath,
+  registryPathOverride = registryPath,
+  generatedTypeScriptPathOverride = generatedTypeScriptPath,
+  generatedMarkdownPathOverride = generatedMarkdownPath,
+  beforePublication = undefined,
+  fixtureOnly = false,
+} = {}) {
+  const packageJson = await readJson(path.join(rootPath, "package.json"), "package.json");
+  const source = await readJson(sourcePathOverride, "plugin evidence source");
+  const reviewedIdentities = await reviewedAuthorityIdentities();
+  if (!isRecord(packageJson) || !versionPattern.test(packageJson.version)) {
+    fail("package.json has an invalid version.");
+  }
+  if (!isRecord(source) || source.schemaVersion !== 2 || !Array.isArray(source.entries)) {
+    fail("source must contain schemaVersion 2 and an entries array.");
+  }
+  if (fixtureOnly) {
+    const outputPaths = [
+      sourcePathOverride,
+      registryPathOverride,
+      generatedTypeScriptPathOverride,
+      generatedMarkdownPathOverride,
+    ];
+    if (
+      outputPaths.some((filePath) => {
+        const relative = path.relative(rootPath, path.resolve(filePath));
+        return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+      })
+    ) {
+      fail("fixture-only registry generation must stay outside the repository.");
+    }
+  }
+  const entries = [];
+  for (const [index, entry] of source.entries.entries()) {
+    entries.push(
+      await validateEntry(entry, index, packageJson.version, reviewedIdentities, fixtureOnly),
+    );
+  }
+  entries.sort((left, right) =>
+    `${left.plugin.id}\0${left.plugin.version}`.localeCompare(
+      `${right.plugin.id}\0${right.plugin.version}`,
+    ),
+  );
+  const keys = entries.map((entry) => `${entry.plugin.id}@${entry.plugin.version}`);
+  if (new Set(keys).size !== keys.length) {
+    fail("source contains duplicate plugin and version pairs.");
+  }
+  const registry = {
+    schemaVersion: 2,
+    generatedBy: "scripts/generate-plugin-compatibility-registry.mjs",
+    threadleafVersion: packageJson.version,
+    entries: entries.map((entry) => {
+      if (!entry.level4Evidence) return entry;
+      const { config: _config, ...publicLevel4Evidence } = entry.level4Evidence;
+      return { ...entry, level4Evidence: publicLevel4Evidence };
+    }),
+  };
+  const outputs = new Map([
+    [registryPathOverride, `${JSON.stringify(registry, null, 2)}\n`],
+    [generatedTypeScriptPathOverride, typeScriptFor(registry)],
+    [generatedMarkdownPathOverride, markdownFor(registry)],
+  ]);
+  const level4Entries = entries.filter((entry) => entry.compatibilityLevel === 4);
+  if (beforePublication) await beforePublication({ registry, level4Entries });
+  for (const entry of level4Entries) {
+    const currentIdentity = await trustStoreIdentity(
+      entry.level4Evidence.config.artifactPaths.trustPolicyPath,
+    );
+    if (currentIdentity !== entry.level4Evidence.issuerTrustStoreIdentitySha256)
+      fail("trust policy rotated or was revoked between verification and registry publication.");
+  }
+  for (const [filePath, content] of outputs) {
+    if (/[\u2013\u2014]/u.test(content)) {
+      fail(`${path.relative(rootPath, filePath)} contains a forbidden dash character.`);
+    }
+    if (checkOnly) {
+      await assertCurrent(filePath, content);
+    } else {
+      await writeAtomicReplace(filePath, content);
+    }
+  }
+  return { registry, entries };
+}
+
+if (
+  import.meta.url === `file://${process.argv[1]}` ||
+  process.argv[1]?.endsWith("generate-plugin-compatibility-registry.mjs")
+) {
+  const result = await generatePluginCompatibilityRegistry();
+  process.stdout.write(
+    `${process.argv.includes("--check") ? "Verified" : "Generated"} ${result.entries.length} plugin compatibility entries.\n`,
+  );
+}

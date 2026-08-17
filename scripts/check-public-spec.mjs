@@ -151,7 +151,8 @@ async function check() {
     assert(name.endsWith(".json"), `dataset reference is not JSON: ${name}`);
     assert(await isFile(path.join(dataPath, name)), `index references missing dataset ${name}`);
     const data = await readJson(path.join(dataPath, name));
-    assert(data.schemaVersion === 1, `${name} has unsupported schemaVersion`);
+    const expectedSchemaVersion = name === "registry.v1.json" ? 2 : 1;
+    assert(data.schemaVersion === expectedSchemaVersion, `${name} has unsupported schemaVersion`);
     if (name !== "registry.v1.json") {
       assert(
         typeof data.uri === "string" && data.uri.startsWith("urn:threadleaf:spec:v1:"),

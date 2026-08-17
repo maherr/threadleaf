@@ -1,10 +1,10 @@
 # Generated plugin compatibility registry
 
-This document is generated from [`compatibility/plugin-evidence.v1.json`](../../compatibility/plugin-evidence.v1.json).
+This document is generated from the versioned receipt-aware source [`compatibility/plugin-evidence.v1.json`](../../compatibility/plugin-evidence.v1.json).
 Discovery in the external community package directory is separate from Threadleaf compatibility evidence.
 A row applies only to the exact plugin and Threadleaf versions shown.
 
-Registry schema: 1. Threadleaf version: 0.1.0-beta.7.
+Registry schema: 2. Threadleaf version: 0.1.0-beta.7.
 
 | Plugin | Plugin version | Threadleaf | Level | Evidence | Last tested |
 | --- | --- | --- | ---: | --- | --- |

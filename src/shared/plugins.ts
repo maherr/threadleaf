@@ -320,6 +320,21 @@ export interface PluginManifestData {
 
 export type PluginCompatibilityEvidenceStatus = "verified" | "different-version" | "unverified";
 
+export type PluginCompatibilityEvidenceMode = "direct" | "composed" | "production-receipt";
+export type PluginCompatibilityWorkflowStatus = "passed" | "failed" | "unsupported";
+
+export interface PluginCompatibilityPlatformEvidence {
+  id: string;
+  status: "verified" | "packaged-only" | "unverified";
+  limits: string[];
+}
+
+export interface PluginCompatibilityWorkflowEvidence {
+  id: string;
+  name: string;
+  status: PluginCompatibilityWorkflowStatus;
+}
+
 export interface PluginCompatibilityReport {
   level: 0 | 1 | 2 | 3 | 4;
   status: PluginCompatibilityEvidenceStatus;
@@ -327,6 +342,10 @@ export interface PluginCompatibilityReport {
   testedThreadleafVersion: string | null;
   lastTested: string | null;
   summary: string;
+  evidenceMode?: PluginCompatibilityEvidenceMode;
+  platforms?: PluginCompatibilityPlatformEvidence[];
+  workflows?: PluginCompatibilityWorkflowEvidence[];
+  limitations?: string[];
 }
 
 export type PluginPackageState = "ready" | "invalid";
@@ -445,6 +464,13 @@ export function createPluginCompatibilityReport(
       testedThreadleafVersion: evidence.threadleafVersion,
       lastTested: evidence.lastTested,
       summary: `${evidence.summary} Verified with Threadleaf ${evidence.threadleafVersion} on ${evidence.lastTested}.`,
+      evidenceMode: evidence.evidenceMode,
+      platforms: evidence.platforms.map((platform) => ({
+        ...platform,
+        limits: [...platform.limits],
+      })),
+      workflows: evidence.workflows.map(({ id, name, status }) => ({ id, name, status })),
+      limitations: [...evidence.limitations],
     };
   }
   if (!reference) {

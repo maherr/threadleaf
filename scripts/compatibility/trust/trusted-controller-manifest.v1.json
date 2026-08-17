@@ -1,0 +1,11 @@
+{
+  "manifestId": "threadleaf-level4-controller-main",
+  "manifestVersion": 1,
+  "controllerVersion": "level4-controller-v2-phase0",
+  "controllerExecutableSha256": "eb7e66d29230f92ca327232a5cd8f8611d2dc7eaedc17714f1dd5ac98eb1a491",
+  "allowedReceiptSchemaVersions": [2],
+  "currentHarness": {
+    "version": "level4-harness-v1-phase0",
+    "treeSha256": "f4aa6aee396b4a046e58154a1c95892680623056b8ea33a1f45b7f037ade4ae4"
+  }
+}

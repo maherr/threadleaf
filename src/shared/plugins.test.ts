@@ -126,6 +126,16 @@ describe("plugin compatibility settings", () => {
       testedVersion: "2.26.4",
       testedThreadleafVersion: "0.1.0-beta.7",
       lastTested: "2026-08-16",
+      evidenceMode: "direct",
+      platforms: expect.arrayContaining([
+        expect.objectContaining({ id: "linux-x64-electron", status: "verified" }),
+      ]),
+      workflows: expect.arrayContaining([
+        expect.objectContaining({
+          id: "sealed-construction-restart-revocation",
+          status: "passed",
+        }),
+      ]),
     });
     expect(
       createPluginCompatibilityReport({ id: "obsidian-excalidraw-plugin", version: "2.27.0" }),

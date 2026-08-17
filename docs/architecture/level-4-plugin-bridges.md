@@ -1,8 +1,8 @@
 # Level 4 Plugin Bridges
 
-**Status:** Proposed design, implementation not started  
+**Status:** Phase 0 receipt substrate implemented; production bridges and workflows not started
 **Scope:** Style Settings 1.0.9, Calendar release `2.0.0-beta.2` with manifest `2.0.0`, and Templater 2.25.0  
-**Last updated:** 2026-08-14
+**Last updated:** 2026-08-17
 
 ## Executive decision
 
@@ -14,9 +14,11 @@ Threadleaf should implement three narrow compatibility bridges around the existi
 
 Level 4 is an evidence state, not a side effect of invoking a command. It is awarded only to an exact package identity whose named production workflow reaches an asserted terminal state and still works after the compatibility renderer and application state have been reconstructed.
 
+The Phase 0 evidence-integrity substrate is now implemented in the script-only controller, verifier, strict receipt boundary, artifact builders, replay index, and registry publication path. The production trust policy has no issuer key, so no current real plugin can receive Level 4 from this milestone. The hermetic fixture workflow proves the path with an ephemeral key in a private temporary directory; its isolated Level 4 row never enters the checked-in registry. Style Settings, Calendar, and Templater behavior remain later work.
+
 ## Inputs and current architecture
 
-This design is based on the current `main` tree at commit `2916469`, the compatibility contract, the upstream saturation report, the 2026-08-14 plugin-wedge matrix, the exact upstream releases named above, and the current native-extension capability host.
+This design was implemented from the required `main` baseline `bdff2adb27ba4768ad6ede8c5832ae923c6b059b`, the compatibility contract, the upstream saturation report, the 2026-08-14 plugin-wedge matrix, the exact upstream releases named above, and the current native-extension capability host.
 
 That baseline already includes these wedge foundations:
 
@@ -191,7 +193,7 @@ interface Level4ReceiptEnvelopeV2 {
 
 Payloads are UTF-8 RFC 8785 canonical JSON. The schema permits only JSON strings, booleans, nulls, arrays, objects, and safe-range integers; it forbids floating-point measurements. Timestamps are UTC RFC 3339 strings and digests are lowercase hexadecimal. `payloadSha256` is computed over the canonical payload bytes. The unsigned envelope consists of `schemaVersion`, `payload`, `payloadSha256`, and `issuer`; the Ed25519 signature covers the domain-separated bytes `threadleaf-level4-receipt-v2\0` followed by the RFC 8785 canonical unsigned-envelope bytes. The complete envelope, including the signature, is then canonicalized, and its SHA-256 becomes `receiptFileSha256` in the registry entry. The verifier requires every duplicated issuer, controller-manifest, controller-executable, key-identity, and trust-store identity field inside the payload to equal the signed outer `issuer` fields.
 
-The controller holds draft observations in a controller-designated per-run directory. It finalizes only after the application has reached the declared reload checkpoint, every required assertion and negative control has passed, the final vault/private-state diff has settled, and all artifact hashes have been recomputed from disk. It writes the complete canonical envelope to a temporary file in the final receipt directory, flushes the file, installs it as `<runId>.json` with a no-replace atomic rename, and flushes the directory. An existing final name, an inability to guarantee no-replace semantics, a signing failure, or any failed flush aborts publication. In ordinary operation the registry generator sees either the complete finalized envelope or no receipt, never a partially written receipt. This atomicity claim does not make the same-user directory immutable against a malicious granted plugin.
+The controller holds draft observations in a controller-designated per-run directory. It finalizes only after the application has reached the declared reload checkpoint, every required assertion and negative control has passed, the final vault/private-state diff has settled, and all artifact hashes have been recomputed from disk. It writes the complete canonical envelope to a temporary file in the final receipt directory, flushes the file, installs it with a no-replace atomic hard-link, removes the temporary name, and flushes the directory. An existing final name, an inability to guarantee no-replace semantics, a signing failure, or any failed flush aborts publication. In ordinary operation the registry generator sees either the complete finalized envelope or no receipt, never a partially written receipt. This atomicity claim does not make the same-user directory immutable against a malicious granted plugin.
 
 Canceled, failed, timed-out, crashed, and partial attempts may produce controller-signed non-passing attempt records in a separate attempts store, or no record. They never produce a receipt in the publishable receipt store and never reuse the nonce. The controller does not turn a later retry into the same run; every retry gets a fresh nonce and run ID.
 
@@ -244,7 +246,7 @@ The exact verification tuple is the canonical digest of the effective build iden
 
 Any change to the packaged artifact, installed tree, relevant `dist` bundle, build manifest, Electron executable, exact package tree, authority profile, workflow definition, fixture tree, platform, architecture, controller executable, trusted controller manifest, evidence-harness version or tree, issuer key identity, or issuer-trust-store identity invalidates the receipt. A still-valid signature from a superseded controller, harness, key, or trust-store generation is rejected against the current policy. There is no metadata-only carry-forward. Re-establishing Level 4 for any changed tuple is a new controller run that re-executes every required probe and produces a fresh nonce, signature, and receipt.
 
-Policy reads and registry publication must be one coherent generation. The verifier reads and canonicalizes the trust policy exactly once into an immutable in-memory snapshot and carries that snapshot's `issuerTrustStoreIdentitySha256` in every accepted-verification result and in every generated registry row. Immediately before the atomic registry publication, the generator re-reads the current checked-in policy and compares its canonical identity against the snapshot identity; on any difference it aborts publication entirely and reports the rotation. A reviewed rotation or revocation must also invalidate, or atomically replace, any registry whose rows were generated under the old policy identity, so no stale Level 4 row survives the policy change. The required control for this rule rotates or revokes the policy between receipt verification and registry publication and asserts that the resulting catalog contains zero Level 4 rows.
+Policy reads and registry publication must be one coherent generation. The verifier takes an initial canonical trust-policy snapshot and carries that snapshot's `issuerTrustStoreIdentitySha256` in every accepted-verification result and in every generated registry row; it performs a final current-identity reread before returning so a policy change during verification fails closed. Immediately before atomic registry publication, the generator rereads the current checked-in policy and compares its canonical identity against the verifier snapshot; on any difference it aborts publication entirely and reports the rotation. A reviewed rotation or revocation must also invalidate, or atomically replace, any registry whose rows were generated under the old policy identity, so no stale Level 4 row survives the policy change. The required control for this rule rotates or revokes the policy between verification and registry publication and asserts that the resulting catalog contains zero Level 4 rows.
 
 ### Evidence modes
 
@@ -254,7 +256,7 @@ Unit, integration, and composed tests remain valuable gates, but none can award 
 2. Integration tests prove each cross-process seam with deliberate positive and negative controls.
 3. One production Electron workflow is observed and finalized by the dedicated controller, and its receipt is accepted against the current trust policy and verification tuple.
 
-The registry can retain `composed` evidence as a supporting mode, but a Level 4 workflow must also name a `production-electron` receipt. Platform-specific evidence yields platform-specific Level 4. A Linux receipt must not make the Windows or macOS catalog report Level 4.
+The registry can retain `composed` evidence as a supporting mode, but a Level 4 workflow must also name a verifier-accepted `production-receipt` record. The current source has no such record. Platform-specific evidence yields platform-specific Level 4. A Linux receipt must not make the Windows or macOS catalog report Level 4.
 
 ### Catalog wording
 
@@ -263,7 +265,7 @@ The catalog should say, for example, "Level 4 for the Style Settings live snippe
 ### Required code-level changes for evidence
 
 - `src/runtime/plugin-host.ts`: remove the compatibility-level mutation from `runCommand()` and expose workflow observations without assigning a level.
-- `compatibility/plugin-evidence.v1.json`: replace with, or migrate to, a v2 evidence source that names exact identities, signed production workflow receipts, completion assertions, reload assertions, and platform scope.
+- `compatibility/plugin-evidence.v1.json`: migrated in place to schema 2 so the existing path now names exact identities, signed production workflow receipts, completion assertions, reload assertions, and platform scope.
 - `scripts/generate-plugin-compatibility-registry.mjs`: invoke the dedicated verifier with the current trust policy, trusted controller and harness artifacts, supplied packaged application, and exact package tree rather than checking only declarations and gate paths.
 - `src/shared/plugins.ts` and `src/generated/plugin-compatibility-registry.ts`: represent workflow-scoped evidence, platform scope, distribution tag, and limitations.
 - Add the canonical receipt schema, dedicated controller/finalizer, checked-in trust policy, trusted controller manifest, replay index, and verifier under `scripts/compatibility/`. Runtime code may import observation types only, not finalization or signing code.

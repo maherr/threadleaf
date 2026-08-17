@@ -927,7 +927,7 @@ async function buildModel() {
   const registry = await readJson(registrySourcePath);
   const pluginEvidence = await readJson(pluginEvidencePath);
   assert(registry.threadleafVersion === version, "plugin registry version is stale");
-  assert(pluginEvidence.schemaVersion === 1, "plugin evidence schema is unsupported");
+  assert(pluginEvidence.schemaVersion === 2, "plugin evidence schema is unsupported");
 
   const api = {
     schemaVersion: 1,
@@ -1710,7 +1710,7 @@ function schemaFor(name) {
       type: "object",
       required: ["schemaVersion", "generatedBy", "threadleafVersion", "entries"],
       properties: {
-        schemaVersion: { const: 1 },
+        schemaVersion: { const: 2 },
         generatedBy: { type: "string" },
         threadleafVersion: { type: "string" },
         entries: {
@@ -1737,7 +1737,25 @@ function schemaFor(name) {
               lastTested: { type: "string", format: "date" },
               compatibilityLevel: { type: "integer", minimum: 0, maximum: 4 },
               summary: { type: "string" },
-              evidenceMode: { type: "string" },
+              evidenceMode: { enum: ["direct", "composed", "production-receipt"] },
+              level4Evidence: {
+                type: "object",
+                additionalProperties: false,
+                required: [
+                  "receiptFileSha256",
+                  "verificationTupleDigest",
+                  "workflowId",
+                  "issuerKeyId",
+                  "issuerTrustStoreIdentitySha256",
+                ],
+                properties: {
+                  receiptFileSha256: { type: "string", pattern: "^[a-f0-9]{64}$" },
+                  verificationTupleDigest: { type: "string", pattern: "^[a-f0-9]{64}$" },
+                  workflowId: { type: "string" },
+                  issuerKeyId: { type: "string" },
+                  issuerTrustStoreIdentitySha256: { type: "string", pattern: "^[a-f0-9]{64}$" },
+                },
+              },
               requiredCapabilities: stringArray,
               platforms: { type: "array", items: platform },
               workflows: { type: "array", items: workflow },

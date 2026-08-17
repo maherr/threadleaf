@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:threadleaf:compatibility:level4-verification-tuple:v2",
+  "title": "Threadleaf Level 4 verification tuple v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "effectiveBuildIdentityDigest",
+    "packageIdentityDigest",
+    "authorityDigest",
+    "workflowDefinitionSha256",
+    "fixtureTreeSha256",
+    "platform",
+    "architecture",
+    "controllerExecutableSha256",
+    "trustedControllerManifestSha256",
+    "evidenceHarnessVersion",
+    "evidenceHarnessTreeSha256",
+    "issuerKeyIdentitySha256",
+    "issuerTrustStoreVersion",
+    "issuerTrustStoreIdentitySha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "effectiveBuildIdentityDigest": { "$ref": "#/$defs/digest" },
+    "packageIdentityDigest": { "$ref": "#/$defs/digest" },
+    "authorityDigest": { "$ref": "#/$defs/digest" },
+    "workflowDefinitionSha256": { "$ref": "#/$defs/digest" },
+    "fixtureTreeSha256": { "$ref": "#/$defs/digest" },
+    "platform": { "$ref": "#/$defs/text" },
+    "architecture": { "$ref": "#/$defs/text" },
+    "controllerExecutableSha256": { "$ref": "#/$defs/digest" },
+    "trustedControllerManifestSha256": { "$ref": "#/$defs/digest" },
+    "evidenceHarnessVersion": { "$ref": "#/$defs/text" },
+    "evidenceHarnessTreeSha256": { "$ref": "#/$defs/digest" },
+    "issuerKeyIdentitySha256": { "$ref": "#/$defs/digest" },
+    "issuerTrustStoreVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "issuerTrustStoreIdentitySha256": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    }
+  }
+}

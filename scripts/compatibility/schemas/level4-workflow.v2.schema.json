@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:threadleaf:compatibility:level4-workflow:v2",
+  "title": "Threadleaf Level 4 workflow definition v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "workflowId",
+    "version",
+    "pluginId",
+    "packageIdentityDigest",
+    "platform",
+    "architecture",
+    "requiredAssertionIds",
+    "requiredPostReloadAssertionIds",
+    "requiredDeliveryIds",
+    "cancellationStepId",
+    "fixtureVersion"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "workflowId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$" },
+    "version": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "pluginId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$" },
+    "packageIdentityDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "platform": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "architecture": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "requiredAssertionIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "requiredPostReloadAssertionIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "requiredDeliveryIds": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "cancellationStepId": { "type": "string", "minLength": 1 },
+    "fixtureVersion": { "type": "string", "minLength": 1, "maxLength": 100 }
+  }
+}

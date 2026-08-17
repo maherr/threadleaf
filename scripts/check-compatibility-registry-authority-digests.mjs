@@ -60,6 +60,18 @@ async function createFixture(mutateProfile) {
     fixtureRoot,
     "scripts/generate-plugin-compatibility-registry.mjs",
   );
+  for (const relativePath of [
+    "scripts/compatibility/level4-verifier.mjs",
+    "scripts/compatibility/level4-artifacts.mjs",
+    "src/shared/level4-receipt-boundary.mjs",
+  ]) {
+    await copyFileIntoFixture(projectRoot, fixtureRoot, relativePath);
+  }
+  await cp(
+    path.join(projectRoot, "node_modules", "canonicalize"),
+    path.join(fixtureRoot, "node_modules", "canonicalize"),
+    { recursive: true },
+  );
   await copyFileIntoFixture(projectRoot, fixtureRoot, "src/shared/authority-json-runtime.mjs");
   for (const gate of template.workflows.flatMap((workflow) => workflow.gates)) {
     await copyFileIntoFixture(projectRoot, fixtureRoot, gate.path);
@@ -80,7 +92,7 @@ async function createFixture(mutateProfile) {
   await mkdir(path.dirname(evidencePath), { recursive: true });
   await writeFile(
     evidencePath,
-    `${JSON.stringify({ schemaVersion: 1, entries: [template] }, null, 2)}\n`,
+    `${JSON.stringify({ schemaVersion: 2, entries: [template] }, null, 2)}\n`,
   );
   return fixtureRoot;
 }
