@@ -472,6 +472,21 @@ describe("Obsidian FileManager compatibility wedge", () => {
     });
   });
 
+  it("rejects permanent Vault.delete so plugin deletion remains recoverable", async () => {
+    const vault = await createVault({ "Keep me.md": "content" });
+    const file = vault.getFileByPath("Keep me.md");
+    if (!file) {
+      throw new Error("Permanent-delete fixture file was not discovered.");
+    }
+
+    await expect(vault.delete(file)).rejects.toThrow(
+      "Permanent plugin file deletion is not supported",
+    );
+    await expect(fs.readFile(path.join(vault.rootPath, file.path), "utf8")).resolves.toBe(
+      "content",
+    );
+  });
+
   it("promptForDeletion cancels without mutation and trashes only after explicit confirmation", async () => {
     const vault = await createVault({ "Delete me.md": "content" });
     const fileManager = new FileManager(vault);

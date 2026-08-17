@@ -1247,7 +1247,18 @@ export class Vault extends Events {
     this.trigger("rename", file, sourcePath);
   }
 
-  async trash(file: TAbstractFile): Promise<void> {
+  /**
+   * Permanent deletion is intentionally not part of Threadleaf's plugin write contract.
+   * Plugins must use `trash()` so a user can recover the file and the kernel can retain a
+   * durable recovery receipt.
+   */
+  async delete(_file: TAbstractFile, _force = false): Promise<void> {
+    throw new Error(
+      "Permanent plugin file deletion is not supported by Threadleaf; use Vault.trash() for recoverable deletion.",
+    );
+  }
+
+  async trash(file: TAbstractFile, _system = false): Promise<void> {
     if (!this.#writer?.trashFile) {
       throw new Error("Plugin file trash is not available in the read-only compatibility runtime.");
     }

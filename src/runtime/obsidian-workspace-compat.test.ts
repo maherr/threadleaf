@@ -1,7 +1,11 @@
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
-import type { App } from "./obsidian-compat";
-import { ItemView, WorkspaceLeaf } from "./obsidian-ui-compat";
+import { App, CommandRegistry, NoticeBus, Vault } from "./obsidian-compat";
+import { Menu } from "./obsidian-menu-compat";
+import { ItemView, MarkdownView, WorkspaceLeaf } from "./obsidian-ui-compat";
 import { CompatibilityIntegrationRegistry, Workspace } from "./obsidian-workspace-compat";
 
 describe("Obsidian compatibility workspace lifecycle", () => {
@@ -41,6 +45,23 @@ describe("Obsidian compatibility workspace lifecycle", () => {
     ]);
 
     expect(events).toEqual(["first-started", "second-started"]);
+  });
+
+  it("exposes the debounced layout signal and explicit unsupported layout boundaries", async () => {
+    const workspace = new Workspace();
+    const events: string[] = [];
+    workspace.on("layout-change", () => events.push("layout-change"));
+
+    workspace.requestSaveLayout();
+    workspace.requestSaveLayout.run();
+    expect(events).toEqual(["layout-change"]);
+    await expect(workspace.changeLayout({})).rejects.toThrow(
+      "Workspace layout replacement is not supported",
+    );
+    expect(() => workspace.openPopoutLeaf()).toThrow("Workspace popout windows are not supported");
+    expect(() => workspace.moveLeafToPopout({} as WorkspaceLeaf)).toThrow(
+      "Workspace popout windows are not supported",
+    );
   });
 
   it("reports synchronous and asynchronous callback failures without poisoning readiness", async () => {
@@ -193,6 +214,64 @@ describe("Obsidian compatibility workspace lifecycle", () => {
         "view-close",
       ]);
       expect(container.isConnected).toBe(false);
+    } finally {
+      if (previousDocument === undefined) {
+        Reflect.deleteProperty(globalThis, "document");
+      } else {
+        Object.defineProperty(globalThis, "document", {
+          configurable: true,
+          value: previousDocument,
+          writable: true,
+        });
+      }
+      dom.window.close();
+    }
+  });
+
+  /** @compatibility-test-id obsidian-runtime.workspace-link-context-menu.v1 */
+  it("adds a working context-menu action for a resolvable internal link", async () => {
+    const dom = new JSDOM("<!doctype html><body></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    const previousDocument = globalThis.document;
+    try {
+      Object.defineProperty(globalThis, "document", {
+        configurable: true,
+        value: dom.window.document,
+        writable: true,
+      });
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-workspace-link-menu-"));
+      await fs.mkdir(path.join(root, "Notes"), { recursive: true });
+      await fs.writeFile(path.join(root, "Notes", "Source.md"), "source");
+      await fs.writeFile(path.join(root, "Notes", "Target.md"), "target");
+      try {
+        const vault = new Vault(root);
+        const app = new App(vault, new CommandRegistry(), new NoticeBus(() => undefined));
+        app.workspace.setLeafFactory((containerEl) => new WorkspaceLeaf(app, containerEl));
+        const source = vault.getFileByPath("Notes/Source.md");
+        if (!source) throw new Error("Link-menu source fixture was not discovered.");
+        const leaf = app.workspace.getLeaf(false);
+        await leaf.openFile(source);
+
+        const menu = new Menu();
+        expect(
+          app.workspace.handleLinkContextMenu(menu, "Target#Heading", "Notes/Source.md", leaf),
+        ).toBe(true);
+        expect(app.workspace.handleLinkContextMenu(new Menu(), "Missing", "Notes/Source.md")).toBe(
+          false,
+        );
+        menu.showAtPosition({ x: 8, y: 8 }, dom.window.document);
+        const action = dom.window.document.querySelector<HTMLButtonElement>(".menu-item");
+        expect(action?.textContent).toContain("Open Target.md");
+        action?.click();
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        expect(leaf.view).toBeInstanceOf(MarkdownView);
+        expect((leaf.view as MarkdownView).file?.path).toBe("Notes/Target.md");
+        expect(leaf.getViewState()).toMatchObject({ state: { subpath: "#Heading" } });
+        expect(app.workspace.activeLeaf).toBe(leaf);
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
     } finally {
       if (previousDocument === undefined) {
         Reflect.deleteProperty(globalThis, "document");

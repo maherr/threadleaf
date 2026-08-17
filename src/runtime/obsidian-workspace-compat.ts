@@ -4,9 +4,10 @@ import type {
   MarkdownPostProcessor,
   MarkdownPostProcessorContext,
 } from "./obsidian-compat";
-import { type App, TFile } from "./obsidian-compat";
+import { type App, debounce, TFile } from "./obsidian-compat";
 import type { CompatibilityEventRef } from "./obsidian-components";
 import { Events } from "./obsidian-events";
+import type { Menu } from "./obsidian-menu-compat";
 import { Editor, isConstructedWorkspaceLeaf, WorkspaceLeaf } from "./obsidian-ui-compat";
 import { WorkspaceParent } from "./obsidian-workspace-items";
 
@@ -196,6 +197,9 @@ export class WorkspaceFloating extends WorkspaceParent {
 export class Workspace extends Events {
   private activeEditorState: MarkdownFileInfo | null = null;
   activeLeaf: WorkspaceLeaf | null = null;
+  readonly requestSaveLayout = debounce(async () => {
+    this.trigger("layout-change");
+  }, 0);
   readonly containerEl = workspaceContainer();
   readonly leftSplit = new WorkspaceSidedock(this, "vertical");
   readonly rightSplit = new WorkspaceSidedock(this, "vertical");
@@ -400,6 +404,12 @@ export class Workspace extends Events {
     this.trigger("layout-change");
   }
 
+  async changeLayout(_workspace: unknown): Promise<void> {
+    throw new Error(
+      "Workspace layout replacement is not supported by this compatibility runtime; use Threadleaf workspace actions.",
+    );
+  }
+
   getLeavesOfType(viewType: string): WorkspaceLeaf[] {
     return [...this.leaves].filter((leaf) => {
       const view = leaf.view;
@@ -528,6 +538,14 @@ export class Workspace extends Events {
       throw new Error("Workspace popout leaves are not supported by this compatibility runtime.");
     }
     throw new Error(`Unsupported workspace pane type: ${String(newLeaf)}.`);
+  }
+
+  moveLeafToPopout(_leaf: WorkspaceLeaf, _data?: unknown): WorkspaceWindow {
+    throw new Error("Workspace popout windows are not supported by this compatibility runtime.");
+  }
+
+  openPopoutLeaf(_data?: unknown): WorkspaceLeaf {
+    throw new Error("Workspace popout windows are not supported by this compatibility runtime.");
   }
 
   getUnpinnedLeaf(): WorkspaceLeaf {
@@ -660,25 +678,7 @@ export class Workspace extends Events {
     newLeaf?: PaneType | boolean,
     openViewState?: OpenViewState,
   ): Promise<void> {
-    let resolver = this.linkResolver;
-    if (!resolver) {
-      const app = this.leafApp(this.activeLeaf);
-      const metadataCache = app?.metadataCache;
-      if (
-        metadataCache &&
-        typeof metadataCache === "object" &&
-        "getFirstLinkpathDest" in metadataCache &&
-        typeof metadataCache.getFirstLinkpathDest === "function"
-      ) {
-        const getFirstLinkpathDest = metadataCache.getFirstLinkpathDest;
-        resolver = (candidate, source) =>
-          getFirstLinkpathDest.call(metadataCache, candidate, source);
-      }
-    }
-    if (!resolver) {
-      return;
-    }
-    const file = resolver(linktext, sourcePath);
+    const file = this.resolveLinkText(linktext, sourcePath);
     if (!file) {
       return;
     }
@@ -704,6 +704,34 @@ export class Workspace extends Events {
     if (effectiveOpenViewState?.active !== false) {
       this.setActiveLeaf(leaf);
     }
+  }
+
+  handleLinkContextMenu(
+    menu: Menu,
+    linktext: string,
+    sourcePath: string,
+    leaf?: WorkspaceLeaf,
+  ): boolean {
+    const file = this.resolveLinkText(linktext, sourcePath);
+    if (!file) {
+      return false;
+    }
+    menu.addItem((item) => {
+      item
+        .setTitle(`Open ${file.name}`)
+        .setIcon("document")
+        .onClick(() => {
+          const destination = leaf ?? this.activeLeaf ?? this.getLeaf(false);
+          const subpathIndex = linktext.indexOf("#");
+          const subpath = subpathIndex >= 0 ? linktext.slice(subpathIndex) : "";
+          const openViewState = subpath ? { state: { subpath } } : undefined;
+          void destination
+            .openFile(file, openViewState)
+            .then(() => this.setActiveLeaf(destination))
+            .catch((error) => this.reportLayoutReadyError(error));
+        });
+    });
+    return true;
   }
 
   createLeafBySplit(
@@ -978,6 +1006,25 @@ export class Workspace extends Events {
       return false;
     }
     return !("editor" in candidate) || candidate.editor instanceof Editor;
+  }
+
+  private resolveLinkText(linktext: string, sourcePath: string): TFile | null {
+    let resolver = this.linkResolver;
+    if (!resolver) {
+      const app = this.leafApp(this.activeLeaf);
+      const metadataCache = app?.metadataCache;
+      if (
+        metadataCache &&
+        typeof metadataCache === "object" &&
+        "getFirstLinkpathDest" in metadataCache &&
+        typeof metadataCache.getFirstLinkpathDest === "function"
+      ) {
+        const getFirstLinkpathDest = metadataCache.getFirstLinkpathDest;
+        resolver = (candidate, source) =>
+          getFirstLinkpathDest.call(metadataCache, candidate, source);
+      }
+    }
+    return resolver?.(linktext, sourcePath) ?? null;
   }
 }
 

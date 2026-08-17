@@ -3430,6 +3430,15 @@
                 "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
               }
             ]
+          },
+          {
+            "signatureHash": "aa4a5e8e7e618625c8906527039711adada98893c8358486cc682e8e71e46c2e",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.workspace-link-context-menu.v1",
+                "path": "src/runtime/obsidian-workspace-compat.test.ts"
+              }
+            ]
           }
         ]
       }
