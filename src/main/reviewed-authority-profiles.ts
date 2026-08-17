@@ -22,6 +22,12 @@ import styleSettingsProfileJson from "../../scripts/compatibility/trust/obsidian
 import templaterProfileJson from "../../scripts/compatibility/trust/templater-obsidian-2.25.0.authority-profile.json" with {
   type: "json",
 };
+import trustedStateFixtureProfileJson from "../../scripts/compatibility/trust/threadleaf-trusted-state-fixture-0.1.0.authority-profile.json" with {
+  type: "json",
+};
+import trustedViewFixtureProfileJson from "../../scripts/compatibility/trust/threadleaf-trusted-view-fixture-0.1.0.authority-profile.json" with {
+  type: "json",
+};
 import {
   type ExactPluginPackageIdentity,
   type PluginCapabilityId,
@@ -257,6 +263,8 @@ const parsedProfiles = [
   parseReviewedAuthorityProfile(inspectionTeardownProfileJson),
   parseReviewedAuthorityProfile(excalidraw2253ProfileJson),
   parseReviewedAuthorityProfile(excalidraw2264ProfileJson),
+  parseReviewedAuthorityProfile(trustedStateFixtureProfileJson),
+  parseReviewedAuthorityProfile(trustedViewFixtureProfileJson),
 ];
 
 if (

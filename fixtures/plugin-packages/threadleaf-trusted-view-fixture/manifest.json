@@ -1,0 +1,9 @@
+{
+  "id": "threadleaf-trusted-view-fixture",
+  "name": "Threadleaf Trusted View Fixture",
+  "version": "0.1.0",
+  "minAppVersion": "0.1.0",
+  "description": "Independently authored CodeMirror view-plugin compatibility fixture.",
+  "author": "Threadleaf contributors",
+  "isDesktopOnly": true
+}

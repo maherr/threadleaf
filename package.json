@@ -117,6 +117,7 @@
     "test:plugin-packages-e2e": "pnpm run build && pnpm run test:plugin-packages-e2e:built",
     "test:plugin-packages-e2e:built": "node scripts/check-plugin-packages-e2e.mjs",
     "test:plugin-packages-e2e-config": "node scripts/check-plugin-packages-e2e-config.mjs",
+    "test:trusted-workspace-compatibility": "pnpm run build && node scripts/check-trusted-workspace-compatibility.mjs",
     "test:migration-apply": "pnpm run build && node scripts/check-migration-apply.mjs",
     "test:plugin-recovery": "pnpm run build && node scripts/check-plugin-recovery.mjs",
     "test:cite-settled-reading": "pnpm run build && node scripts/check-cite-settled-reading.mjs",

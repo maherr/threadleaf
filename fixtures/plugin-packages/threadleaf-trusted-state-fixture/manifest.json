@@ -1,0 +1,9 @@
+{
+  "id": "threadleaf-trusted-state-fixture",
+  "name": "Threadleaf Trusted State Fixture",
+  "version": "0.1.0",
+  "minAppVersion": "0.1.0",
+  "description": "Independently authored CodeMirror state-field compatibility fixture.",
+  "author": "Threadleaf contributors",
+  "isDesktopOnly": true
+}

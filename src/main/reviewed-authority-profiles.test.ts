@@ -8,7 +8,7 @@ import {
 } from "./reviewed-authority-profiles";
 
 describe("reviewed authority profiles", () => {
-  it("loads the eight exact identity-bound records", () => {
+  it("loads the ten exact identity-bound records", () => {
     const profiles = reviewedAuthorityProfiles();
     expect(profiles.map(({ packageIdentity }) => packageIdentity.pluginId).sort()).toEqual([
       "calendar-beta",
@@ -19,6 +19,8 @@ describe("reviewed authority profiles", () => {
       "obsidian-excalidraw-plugin",
       "obsidian-style-settings",
       "templater-obsidian",
+      "threadleaf-trusted-state-fixture",
+      "threadleaf-trusted-view-fixture",
     ]);
     const calendar = profiles.find(
       ({ packageIdentity }) => packageIdentity.pluginId === "calendar-beta",
