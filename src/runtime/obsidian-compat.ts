@@ -37,6 +37,7 @@ import {
   Keymap as BaseKeymap,
   ButtonComponent,
   ColorComponent,
+  DisplayValueComponent,
   DropdownComponent,
   Editor,
   EditorSuggest,
@@ -2453,6 +2454,7 @@ export interface ObsidianCompatibilityModule {
   ColorComponent: typeof ColorComponent;
   Component: typeof Component;
   DropdownComponent: typeof DropdownComponent;
+  DisplayValueComponent: typeof DisplayValueComponent;
   Editor: typeof Editor;
   EditorSuggest: typeof EditorSuggest;
   Events: typeof Events;
@@ -2936,6 +2938,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     Component,
     debounce,
     DropdownComponent,
+    DisplayValueComponent,
     Editor,
     EditorSuggest,
     Events,

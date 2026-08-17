@@ -31,17 +31,17 @@ assert.deepEqual(ledger.counts, {
   functions: 47,
   enums: 1,
   variables: 8,
-  implemented: 17,
-  partial: 19,
+  implemented: 22,
+  partial: 15,
   unsupported: 0,
-  missing: 122,
+  missing: 121,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
-  implementedObligations: 207,
+  implementedObligations: 227,
 });
-assert.equal(ledger.factory.keys.length, 75);
+assert.equal(ledger.factory.keys.length, 76);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
 assert.equal(
   ledger.exports.some((entry) => entry.name === "sleep"),
@@ -56,9 +56,10 @@ assert.deepEqual(
     .map((entry) => [entry.name, entry.status]),
   [
     ["BaseComponent", "partial"],
-    ["ButtonComponent", "partial"],
-    ["ColorComponent", "partial"],
+    ["ButtonComponent", "implemented"],
+    ["ColorComponent", "implemented"],
     ["Component", "partial"],
+    ["DisplayValueComponent", "implemented"],
     ["DropdownComponent", "implemented"],
     ["Editor", "partial"],
     ["Events", "implemented"],
@@ -77,8 +78,8 @@ assert.deepEqual(
     ["prepareSimpleSearch", "implemented"],
     ["ProgressBarComponent", "implemented"],
     ["SearchComponent", "partial"],
-    ["Setting", "partial"],
-    ["SliderComponent", "partial"],
+    ["Setting", "implemented"],
+    ["SliderComponent", "implemented"],
     ["TAbstractFile", "implemented"],
     ["TextAreaComponent", "implemented"],
     ["TextComponent", "implemented"],

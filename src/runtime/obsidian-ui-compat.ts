@@ -29,6 +29,85 @@ function setElementIcon(element: HTMLElement, icon: string): void {
   }
 }
 
+function clampColorChannel(value: number): number {
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function hexToRgb(value: string): { r: number; g: number; b: number } {
+  const normalized = value.replace(/^#/u, "");
+  const expanded =
+    normalized.length === 3 ? normalized.replace(/./gu, (part) => `${part}${part}`) : normalized;
+  return {
+    r: Number.parseInt(expanded.slice(0, 2), 16),
+    g: Number.parseInt(expanded.slice(2, 4), 16),
+    b: Number.parseInt(expanded.slice(4, 6), 16),
+  };
+}
+
+function rgbToHex(rgb: { r: number; g: number; b: number }): string {
+  return `#${[rgb.r, rgb.g, rgb.b]
+    .map((channel) => clampColorChannel(channel).toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+function rgbToHsl(rgb: { r: number; g: number; b: number }): { h: number; s: number; l: number } {
+  const red = clampColorChannel(rgb.r) / 255;
+  const green = clampColorChannel(rgb.g) / 255;
+  const blue = clampColorChannel(rgb.b) / 255;
+  const maximum = Math.max(red, green, blue);
+  const minimum = Math.min(red, green, blue);
+  const lightness = (maximum + minimum) / 2;
+  if (maximum === minimum) {
+    return { h: 0, s: 0, l: Math.round(lightness * 100) };
+  }
+  const delta = maximum - minimum;
+  const saturation =
+    lightness > 0.5 ? delta / (2 - maximum - minimum) : delta / (maximum + minimum);
+  let hue: number;
+  if (maximum === red) {
+    hue = (green - blue) / delta + (green < blue ? 6 : 0);
+  } else if (maximum === green) {
+    hue = (blue - red) / delta + 2;
+  } else {
+    hue = (red - green) / delta + 4;
+  }
+  hue /= 6;
+  return {
+    h: Math.round(hue * 360) % 360,
+    s: Math.round(saturation * 100),
+    l: Math.round(lightness * 100),
+  };
+}
+
+function hslToRgb(hsl: { h: number; s: number; l: number }): { r: number; g: number; b: number } {
+  const hue = (((hsl.h % 360) + 360) % 360) / 360;
+  const saturation = Math.max(0, Math.min(100, hsl.s)) / 100;
+  const lightness = Math.max(0, Math.min(100, hsl.l)) / 100;
+  if (saturation === 0) {
+    const channel = Math.round(lightness * 255);
+    return { r: channel, g: channel, b: channel };
+  }
+  const q =
+    lightness < 0.5
+      ? lightness * (1 + saturation)
+      : lightness + saturation - lightness * saturation;
+  const p = 2 * lightness - q;
+  const hueToChannel = (value: number): number => {
+    let channel = value;
+    if (channel < 0) channel += 1;
+    if (channel > 1) channel -= 1;
+    if (channel < 1 / 6) return p + (q - p) * 6 * channel;
+    if (channel < 1 / 2) return q;
+    if (channel < 2 / 3) return p + (q - p) * (2 / 3 - channel) * 6;
+    return p;
+  };
+  return {
+    r: Math.round(hueToChannel(hue + 1 / 3) * 255),
+    g: Math.round(hueToChannel(hue) * 255),
+    b: Math.round(hueToChannel(hue - 1 / 3) * 255),
+  };
+}
+
 export abstract class ValueComponent<T> extends BaseComponent {
   registerOptionListener(_listeners: Record<string, (value?: T) => T>, _key: string): this {
     return this;
@@ -232,25 +311,32 @@ export class ToggleComponent extends ValueComponent<boolean> {
 
 export class SliderComponent extends ValueComponent<number> {
   readonly sliderEl: HTMLInputElement;
+  private readonly valueEl: HTMLElement;
   private readonly changeCallbacks: Array<(value: number) => unknown> = [];
   private instant = true;
+  private displayFormat: ((value: number) => string) | null = null;
 
   constructor(containerEl: HTMLElement) {
     super();
     this.sliderEl = containerEl.ownerDocument.createElement("input");
     this.sliderEl.type = "range";
     this.sliderEl.className = "slider";
+    this.valueEl = containerEl.ownerDocument.createElement("span");
+    this.valueEl.className = "slider-value";
     this.sliderEl.addEventListener("input", () => {
+      this.updateDisplay();
       if (this.instant) {
         this.emitChange();
       }
     });
     this.sliderEl.addEventListener("change", () => {
+      this.updateDisplay();
       if (!this.instant) {
         this.emitChange();
       }
     });
-    containerEl.append(this.sliderEl);
+    containerEl.append(this.sliderEl, this.valueEl);
+    this.updateDisplay();
   }
 
   override setDisabled(disabled: boolean): this {
@@ -277,11 +363,19 @@ export class SliderComponent extends ValueComponent<number> {
 
   setValue(value: number): this {
     this.sliderEl.value = String(value);
+    this.updateDisplay();
     return this;
   }
 
   getValuePretty(): string {
-    return String(this.getValue());
+    const value = this.getValue();
+    return this.displayFormat ? this.displayFormat(value) : String(value);
+  }
+
+  setDisplayFormat(format: (value: number) => string): this {
+    this.displayFormat = format;
+    this.updateDisplay();
+    return this;
   }
 
   setDynamicTooltip(): this {
@@ -303,6 +397,10 @@ export class SliderComponent extends ValueComponent<number> {
     for (const callback of this.changeCallbacks) {
       callback(value);
     }
+  }
+
+  private updateDisplay(): void {
+    this.valueEl.textContent = this.getValuePretty();
   }
 }
 
@@ -334,6 +432,16 @@ export class ButtonComponent extends BaseComponent {
 
   setWarning(): this {
     this.buttonEl.classList.add("mod-warning");
+    return this;
+  }
+
+  setDestructive(): this {
+    this.buttonEl.classList.add("mod-warning");
+    return this;
+  }
+
+  removeDestructive(): this {
+    this.buttonEl.classList.remove("mod-warning");
     return this;
   }
 
@@ -417,9 +525,25 @@ export class ColorComponent extends ValueComponent<string> {
     return this.colorPickerEl.value;
   }
 
+  getValueRgb(): { r: number; g: number; b: number } {
+    return hexToRgb(this.getValue());
+  }
+
+  getValueHsl(): { h: number; s: number; l: number } {
+    return rgbToHsl(this.getValueRgb());
+  }
+
   setValue(value: string): this {
     this.colorPickerEl.value = value;
     return this;
+  }
+
+  setValueRgb(rgb: { r: number; g: number; b: number }): this {
+    return this.setValue(rgbToHex(rgb));
+  }
+
+  setValueHsl(hsl: { h: number; s: number; l: number }): this {
+    return this.setValue(rgbToHex(hslToRgb(hsl)));
   }
 
   onChange(callback: (value: string) => unknown): this {
@@ -445,6 +569,32 @@ export class ProgressBarComponent extends ValueComponent<number> {
 
   setValue(value: number): this {
     this.progressBarEl.value = value;
+    return this;
+  }
+}
+
+export class DisplayValueComponent extends BaseComponent {
+  readonly valueEl: HTMLElement;
+
+  constructor(containerEl: HTMLElement) {
+    super();
+    this.valueEl = containerEl.ownerDocument.createElement("span");
+    this.valueEl.className = "setting-item-display-value";
+    containerEl.append(this.valueEl);
+  }
+
+  setValue(value: string | null): this {
+    this.valueEl.textContent = value ?? "";
+    return this;
+  }
+
+  setStatus(status: "warning" | null): this {
+    this.valueEl.classList.toggle("mod-warning", status === "warning");
+    if (status === null) {
+      delete this.valueEl.dataset.status;
+    } else {
+      this.valueEl.dataset.status = status;
+    }
     return this;
   }
 }
@@ -496,6 +646,7 @@ export class Setting {
   readonly descEl: HTMLElement;
   readonly controlEl: HTMLElement;
   readonly components: BaseComponent[] = [];
+  errorEl: HTMLElement | null = null;
 
   constructor(containerEl: HTMLElement) {
     const doc = containerEl.ownerDocument;
@@ -522,6 +673,27 @@ export class Setting {
   setDesc(description: string | DocumentFragment): this {
     replaceElementContent(this.descEl, description);
     return this;
+  }
+
+  setErrorMessage(message: string | null): this {
+    if (!message) {
+      this.errorEl?.remove();
+      this.errorEl = null;
+      this.settingEl.classList.remove("is-invalid");
+      return this;
+    }
+    if (!this.errorEl) {
+      this.errorEl = this.settingEl.ownerDocument.createElement("div");
+      this.errorEl.className = "setting-item-error";
+      this.controlEl.append(this.errorEl);
+    }
+    this.errorEl.textContent = message;
+    this.settingEl.classList.add("is-invalid");
+    return this;
+  }
+
+  addDisplayValue(callback: (component: DisplayValueComponent) => unknown): this {
+    return this.addComponentInstance(new DisplayValueComponent(this.controlEl), callback);
   }
 
   setClass(className: string): this {
@@ -553,47 +725,53 @@ export class Setting {
   }
 
   addButton(callback: (component: ButtonComponent) => unknown): this {
-    return this.addComponent(new ButtonComponent(this.controlEl), callback);
+    return this.addComponentInstance(new ButtonComponent(this.controlEl), callback);
   }
 
   addExtraButton(callback: (component: ExtraButtonComponent) => unknown): this {
-    return this.addComponent(new ExtraButtonComponent(this.controlEl), callback);
+    return this.addComponentInstance(new ExtraButtonComponent(this.controlEl), callback);
   }
 
   addToggle(callback: (component: ToggleComponent) => unknown): this {
-    return this.addComponent(new ToggleComponent(this.controlEl), callback);
+    return this.addComponentInstance(new ToggleComponent(this.controlEl), callback);
   }
 
   addText(callback: (component: TextComponent) => unknown): this {
-    return this.addComponent(new TextComponent(this.controlEl), callback);
+    return this.addComponentInstance(new TextComponent(this.controlEl), callback);
+  }
+
+  addComponent<T extends BaseComponent>(callback: (element: HTMLElement) => T): this {
+    const component = callback(this.controlEl);
+    this.components.push(component);
+    return this;
   }
 
   addSearch(callback: (component: SearchComponent) => unknown): this {
-    return this.addComponent(new SearchComponent(this.controlEl), callback);
+    return this.addComponentInstance(new SearchComponent(this.controlEl), callback);
   }
 
   addTextArea(callback: (component: TextAreaComponent) => unknown): this {
-    return this.addComponent(new TextAreaComponent(this.controlEl), callback);
+    return this.addComponentInstance(new TextAreaComponent(this.controlEl), callback);
   }
 
   addMomentFormat(callback: (component: MomentFormatComponent) => unknown): this {
-    return this.addComponent(new MomentFormatComponent(this.controlEl), callback);
+    return this.addComponentInstance(new MomentFormatComponent(this.controlEl), callback);
   }
 
   addDropdown(callback: (component: DropdownComponent) => unknown): this {
-    return this.addComponent(new DropdownComponent(this.controlEl), callback);
+    return this.addComponentInstance(new DropdownComponent(this.controlEl), callback);
   }
 
   addColorPicker(callback: (component: ColorComponent) => unknown): this {
-    return this.addComponent(new ColorComponent(this.controlEl), callback);
+    return this.addComponentInstance(new ColorComponent(this.controlEl), callback);
   }
 
   addProgressBar(callback: (component: ProgressBarComponent) => unknown): this {
-    return this.addComponent(new ProgressBarComponent(this.controlEl), callback);
+    return this.addComponentInstance(new ProgressBarComponent(this.controlEl), callback);
   }
 
   addSlider(callback: (component: SliderComponent) => unknown): this {
-    return this.addComponent(new SliderComponent(this.controlEl), callback);
+    return this.addComponentInstance(new SliderComponent(this.controlEl), callback);
   }
 
   // biome-ignore lint/suspicious/noThenProperty: Required by Obsidian's public Setting API.
@@ -607,10 +785,12 @@ export class Setting {
     this.nameEl.replaceChildren();
     this.descEl.replaceChildren();
     this.controlEl.replaceChildren();
+    this.errorEl = null;
+    this.settingEl.classList.remove("is-invalid");
     return this;
   }
 
-  private addComponent<T extends BaseComponent>(
+  private addComponentInstance<T extends BaseComponent>(
     component: T,
     callback: (component: T) => unknown,
   ): this {

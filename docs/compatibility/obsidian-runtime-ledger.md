@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 75 (74 public, 1 internal extra)
+- Factory keys: 76 (75 public, 1 internal extra)
 
 ## Export status
 
@@ -31,16 +31,16 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | BasesView | class | missing | 64c9be20c2cc3198 |
 | BasesViewConfig | class | missing | 430e1421ac6a4cb4 |
 | BooleanValue | class | missing | fdd077f4df28f630 |
-| ButtonComponent | class | partial | 3329c8e457d23c16 |
+| ButtonComponent | class | implemented | 3329c8e457d23c16 |
 | CapacitorAdapter | class | missing | b468049f7adeaf0c |
-| ColorComponent | class | partial | aa471211ee3a3891 |
+| ColorComponent | class | implemented | aa471211ee3a3891 |
 | Component | class | partial | 66c65c8e55598f6c |
 | ConfirmationButton | class | missing | b3100e2fe15dddf0 |
 | ConfirmationModal | class | missing | 16d786038936266a |
 | DateValue | class | missing | 45dce24b565b761c |
 | debounce | function | missing | a72e0eb10fc8a651 |
 | displayTooltip | function | missing | dee2b380f1fef0a9 |
-| DisplayValueComponent | class | missing | 8eadc4fafb416556 |
+| DisplayValueComponent | class | implemented | 8eadc4fafb416556 |
 | DropdownComponent | class | implemented | 563d13fef3a6b00c |
 | DurationValue | class | missing | 1b6e3eccbd6b278b |
 | EditableFileView | class | missing | c32178dc1207763b |
@@ -135,12 +135,12 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | SecretComponent | class | missing | f3133f6f9328e3cb |
 | SecretStorage | class | missing | cd03c227b70ca8e0 |
 | setIcon | function | missing | 74dab0a196e4515a |
-| Setting | class | partial | 28f9e763ee1bc0e3 |
+| Setting | class | implemented | 28f9e763ee1bc0e3 |
 | SettingGroup | class | missing | c78bde6786f4650c |
 | SettingPage | class | missing | 731418280376fc92 |
 | SettingTab | class | missing | b685ce410ff8ca87 |
 | setTooltip | function | missing | d2b2dabab058f3d2 |
-| SliderComponent | class | partial | d90844d55c39379d |
+| SliderComponent | class | implemented | d90844d55c39379d |
 | sortSearchResults | function | missing | b51b5d221f8562ad |
 | stringifyYaml | function | missing | 9fd7dc20723b04e0 |
 | StringValue | class | missing | 5a8c7f34710de2a3 |
