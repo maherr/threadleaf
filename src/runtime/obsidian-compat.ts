@@ -74,6 +74,15 @@ import {
   WorkspaceLeaf,
 } from "./obsidian-ui-compat";
 import {
+  BooleanValue,
+  NotNullValue,
+  NullValue,
+  NumberValue,
+  PrimitiveValue,
+  StringValue,
+  Value,
+} from "./obsidian-values";
+import {
   type CompatibilityBasesViewRegistration,
   type CompatibilityCliFlags,
   type CompatibilityCliHandler,
@@ -3306,6 +3315,13 @@ export interface ObsidianCompatibilityModule {
   TextComponent: typeof TextComponent;
   ToggleComponent: typeof ToggleComponent;
   ValueComponent: typeof ValueComponent;
+  BooleanValue: typeof BooleanValue;
+  NullValue: typeof NullValue;
+  NotNullValue: typeof NotNullValue;
+  NumberValue: typeof NumberValue;
+  PrimitiveValue: typeof PrimitiveValue;
+  StringValue: typeof StringValue;
+  Value: typeof Value;
   View: typeof View;
   Vault: typeof Vault;
   Workspace: typeof Workspace;
@@ -3974,6 +3990,13 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     TextComponent,
     ToggleComponent,
     ValueComponent,
+    BooleanValue,
+    NullValue,
+    NotNullValue,
+    NumberValue,
+    PrimitiveValue,
+    StringValue,
+    Value,
     Vault,
     View,
     Workspace,

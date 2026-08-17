@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 110 (109 public, 1 internal extra)
+- Factory keys: 117 (116 public, 1 internal extra)
 
 ## Export status
 
@@ -30,7 +30,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | BasesQueryResult | class | missing | b2e46230415278ba |
 | BasesView | class | missing | 64c9be20c2cc3198 |
 | BasesViewConfig | class | missing | 430e1421ac6a4cb4 |
-| BooleanValue | class | missing | fdd077f4df28f630 |
+| BooleanValue | class | implemented | fdd077f4df28f630 |
 | ButtonComponent | class | implemented | 3329c8e457d23c16 |
 | CapacitorAdapter | class | missing | b468049f7adeaf0c |
 | ColorComponent | class | implemented | aa471211ee3a3891 |
@@ -97,9 +97,9 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | MomentFormatComponent | class | implemented | b3a4fd344f8d82a1 |
 | normalizePath | function | implemented | 9811227609eeb952 |
 | Notice | class | implemented | 10560b31dc604864 |
-| NotNullValue | class | missing | c1ea1665f928693f |
-| NullValue | class | missing | 1324bf65b03915a3 |
-| NumberValue | class | missing | fd1c8c04fc04ea95 |
+| NotNullValue | class | partial | c1ea1665f928693f |
+| NullValue | class | implemented | 1324bf65b03915a3 |
+| NumberValue | class | implemented | fd1c8c04fc04ea95 |
 | ObjectValue | class | missing | f4b04ddccfe69cc4 |
 | parseFrontMatterAliases | function | implemented | 6591b6101b4100ac |
 | parseFrontMatterEntry | function | implemented | 208d94491e23b5b6 |
@@ -115,7 +115,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | PopoverSuggest | class | implemented | 380470a80b007a51 |
 | prepareFuzzySearch | function | implemented | 8ef6a695db24bdb3 |
 | prepareSimpleSearch | function | implemented | 81341d6edc8ec6fa |
-| PrimitiveValue | class | missing | 8a6cb580619668a6 |
+| PrimitiveValue | class | implemented | 8a6cb580619668a6 |
 | ProgressBarComponent | class | implemented | 765be3f5a5d3693b |
 | QueryController | class | missing | 8687a7aa105e69dd |
 | RegExpValue | class | missing | edb0177eb288015b |
@@ -143,7 +143,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | SliderComponent | class | implemented | d90844d55c39379d |
 | sortSearchResults | function | implemented | b51b5d221f8562ad |
 | stringifyYaml | function | implemented | 9fd7dc20723b04e0 |
-| StringValue | class | missing | 5a8c7f34710de2a3 |
+| StringValue | class | implemented | 5a8c7f34710de2a3 |
 | stripHeading | function | missing | f21325fbff066d0b |
 | stripHeadingForLink | function | missing | 609f52c3520cfb71 |
 | SuggestModal | class | implemented | 4282e1a8e74dc8a6 |
@@ -157,7 +157,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | TFolder | class | implemented | 46f08a943675f948 |
 | ToggleComponent | class | implemented | a39eaf18ee6900de |
 | UrlValue | class | missing | 23e0604a73cec0f1 |
-| Value | class | missing | 7c58c01f8b955627 |
+| Value | class | implemented | 7c58c01f8b955627 |
 | ValueComponent | class | implemented | 529ce7aae6a57c84 |
 | Vault | class | partial | 8041bc89ef9d718b |
 | View | class | implemented | b8f2d48cb007660e |

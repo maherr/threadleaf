@@ -965,6 +965,267 @@
         ]
       }
     },
+    "Value": {
+      "implementation": {
+        "source": "src/runtime/obsidian-values.ts",
+        "exportName": "Value"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.value-core.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "417593bf3c19ad72e4ac0aeddcd9af2acdcfba5cfd2e8cc2d4e961057e33ebbb",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-core.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "132fa61092b53cef704fe3cc98adeef9167339c90315decf528882f85cf73234",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-core.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "a371fffa202f748a59bf9557fd98aa0c59f397e78496f28e9f0817f5142f33ba",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-core.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "be3862b40d726f01ff756c104e4cb0376922dba333a3ea7654f33de213bc22f8",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-core.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "e8b28bc8d8914903776fe223ed5ac04fa9e9a0416725711edbe1628f328968b5",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-core.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "f3727a175787d9603f585ddb5f587bcc283c6deb23d5de5e1bbde315418ac86f",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-core.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "374bb562c2cee460b74127ae35e8566608c1cbb21eb18e085496569eeb56b3f4",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-core.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "cc7c1edfd83a6aa5eaa22b915a999a6c8bf1b8f071439ac3c029e24615e5da12",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-core.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "NotNullValue": {
+      "implementation": {
+        "source": "src/runtime/obsidian-values.ts",
+        "exportName": "NotNullValue"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.value-core.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ]
+    },
+    "NullValue": {
+      "implementation": {
+        "source": "src/runtime/obsidian-values.ts",
+        "exportName": "NullValue"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.value-core.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-core.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "fa47340c997de2c935ce5e15a4ca55f947b0329f3dc722b63a54bfbb5cce46ff",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-core.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "361cf1544583c60022aca73a9e3cbd7620034ef3a4ef7245d344fdfa8b2ba8db",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-core.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "NumberValue": {
+      "implementation": {
+        "source": "src/runtime/obsidian-values.ts",
+        "exportName": "NumberValue"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.value-core.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "417593bf3c19ad72e4ac0aeddcd9af2acdcfba5cfd2e8cc2d4e961057e33ebbb",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-core.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "PrimitiveValue": {
+      "implementation": {
+        "source": "src/runtime/obsidian-values.ts",
+        "exportName": "PrimitiveValue"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.value-core.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "ee21824f173ab456589bf5b00ef9019a714ac5f68e4264174cf5ddc8338c4359",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-core.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-core.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "fa47340c997de2c935ce5e15a4ca55f947b0329f3dc722b63a54bfbb5cce46ff",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-core.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "StringValue": {
+      "implementation": {
+        "source": "src/runtime/obsidian-values.ts",
+        "exportName": "StringValue"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.value-core.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "417593bf3c19ad72e4ac0aeddcd9af2acdcfba5cfd2e8cc2d4e961057e33ebbb",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-core.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "BooleanValue": {
+      "implementation": {
+        "source": "src/runtime/obsidian-values.ts",
+        "exportName": "BooleanValue"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.value-core.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "417593bf3c19ad72e4ac0aeddcd9af2acdcfba5cfd2e8cc2d4e961057e33ebbb",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.value-core.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
     "Events": {
       "implementation": {
         "source": "src/runtime/obsidian-events.ts",

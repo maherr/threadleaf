@@ -3239,6 +3239,99 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
     }
   });
 
+  /** @compatibility-test-id obsidian-runtime.value-core.v1 */
+  it('proves the core Values family through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-runtime-ledger-value-core-"),
+    );
+    const pluginPath = path.join(sandboxPath, "value-core-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "value-core-ledger-fixture",
+          name: "Value core ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { BooleanValue, NullValue, NotNullValue, NumberValue, PrimitiveValue, StringValue, Value, RenderContext, Plugin } = require("obsidian");',
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          '    const raw = new PrimitiveValue("raw");',
+          "    const truthy = new BooleanValue(true);",
+          "    const falsey = new BooleanValue(false);",
+          '    const text = new StringValue("1");',
+          "    const number = new NumberValue(1);",
+          "    const nullValue = NullValue.value;",
+          '    const target = document.createElement("div");',
+          "    text.renderTo(target, new RenderContext());",
+          "    globalThis.__threadleafRuntimeLedgerValueCoreProbe = {",
+          "      rawIsPrimitive: raw instanceof PrimitiveValue,",
+          "      rawText: raw.toString(),",
+          "      rawTruthy: raw.isTruthy(),",
+          "      booleanType: BooleanValue.type,",
+          "      stringType: StringValue.type,",
+          "      numberType: NumberValue.type,",
+          "      valueType: Value.type,",
+          "      notNull: truthy instanceof NotNullValue,",
+          '      strictEqual: Value.equals(new StringValue("same"), new StringValue("same")),',
+          "      strictDifferent: Value.equals(text, number),",
+          "      looseEqual: Value.looseEquals(text, number),",
+          "      instanceEqual: truthy.equals(new BooleanValue(true)),",
+          "      falsey: falsey.isTruthy(),",
+          "      nullSingleton: nullValue === NullValue.value,",
+          "      nullText: nullValue.toString(),",
+          "      nullTruthy: nullValue.isTruthy(),",
+          "      nullEqual: Value.equals(null, null),",
+          "      rendered: target.textContent,",
+          "    };",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      await withTestDocument(async () => {
+        const host = new PluginHost(fixtureVault);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerValueCoreProbe?: unknown })
+              .__threadleafRuntimeLedgerValueCoreProbe,
+          ).toEqual({
+            rawIsPrimitive: true,
+            rawText: "raw",
+            rawTruthy: true,
+            booleanType: "boolean",
+            stringType: "string",
+            numberType: "number",
+            valueType: "unknown",
+            notNull: true,
+            strictEqual: true,
+            strictDifferent: false,
+            looseEqual: true,
+            instanceEqual: true,
+            falsey: false,
+            nullSingleton: true,
+            nullText: "null",
+            nullTruthy: false,
+            nullEqual: true,
+            rendered: "1",
+          });
+        } finally {
+          await host.close();
+        }
+      });
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerValueCoreProbe");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   /** @compatibility-test-id obsidian-runtime.setting-tabs.v1 */
   it('proves setting-tab definition and plugin-settings behavior through require("obsidian")', async () => {
     const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-runtime-ledger-tabs-"));
