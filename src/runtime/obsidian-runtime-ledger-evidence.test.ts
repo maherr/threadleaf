@@ -372,6 +372,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
   /** @compatibility-test-id obsidian-runtime.utility-functions.v1 */
   /** @compatibility-test-id obsidian-runtime.reference-search-utilities.v1 */
   /** @compatibility-test-id obsidian-runtime.render-search-utilities.v1 */
+  /** @compatibility-test-id obsidian-runtime.property-id.v1 */
   it('proves public link and search utilities through require("obsidian")', async () => {
     const sandboxPath = await fs.mkdtemp(
       path.join(os.tmpdir(), "threadleaf-runtime-ledger-utils-"),
@@ -390,7 +391,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
       await fs.writeFile(
         path.join(pluginPath, "main.js"),
         [
-          'const { Plugin, getLinkpath, iterateCacheRefs, iterateRefs, normalizePath, parseLinktext, prepareFuzzySearch, prepareSimpleSearch, renderMatches, renderResults, sortSearchResults } = require("obsidian");',
+          'const { Plugin, getLinkpath, iterateCacheRefs, iterateRefs, normalizePath, parseLinktext, parsePropertyId, prepareFuzzySearch, prepareSimpleSearch, renderMatches, renderResults, sortSearchResults } = require("obsidian");',
           "class LedgerPlugin extends Plugin {",
           "  async onload() {",
           '    const fuzzy = prepareFuzzySearch("dng");',
@@ -402,6 +403,9 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           '    const cacheStopped = iterateCacheRefs({ links: [{ link: "link", original: "Link", position: {} }], embeds: [{ link: "embed", original: "Embed", position: {} }] }, (reference) => { cacheVisited.push(reference.link); });',
           "    const searchResults = [{ match: { score: 0.2, matches: [] } }, { match: { score: 0.9, matches: [] } }, { match: { score: 0.5, matches: [] } }];",
           "    sortSearchResults(searchResults);",
+          '    const noteProperty = parsePropertyId("note.title");',
+          '    const formulaProperty = parsePropertyId("formula.total.value");',
+          '    const fileProperty = parsePropertyId("file");',
           '    const matchesElement = document.createElement("div");',
           '    renderMatches(matchesElement, "alpha beta", [[0, 5], [6, 10]]);',
           '    const offsetElement = document.createElement("div");',
@@ -425,6 +429,9 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           "      cacheVisited,",
           "      cacheStopped,",
           "      sortedScores: searchResults.map((result) => result.match.score),",
+          "      noteProperty,",
+          "      formulaProperty,",
+          "      fileProperty,",
           "      matchesHtml: matchesElement.innerHTML,",
           "      matchesText: matchesElement.textContent,",
           "      offsetHtml: offsetElement.innerHTML,",
@@ -467,6 +474,9 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
             cacheVisited: ["link", "embed"],
             cacheStopped: false,
             sortedScores: [0.9, 0.5, 0.2],
+            noteProperty: { type: "note", name: "title" },
+            formulaProperty: { type: "formula", name: "total.value" },
+            fileProperty: { type: "file", name: "" },
             matchesHtml:
               '<span class="search-result-file-matched-text">alpha</span> <span class="search-result-file-matched-text">beta</span>',
             matchesText: "alpha beta",

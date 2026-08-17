@@ -14,10 +14,10 @@ export const obsidianRuntimeLedger = {
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 84,
+    "implemented": 85,
     "partial": 9,
     "unsupported": 0,
-    "missing": 65,
+    "missing": 64,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
@@ -73,6 +73,7 @@ export const obsidianRuntimeLedger = {
       "parseFrontMatterEntry",
       "parseFrontMatterStringArray",
       "parseFrontMatterTags",
+      "parsePropertyId",
       "parseYaml",
       "Plugin",
       "PluginSettingTab",
@@ -173,6 +174,7 @@ export const obsidianRuntimeLedger = {
       "parseFrontMatterEntry",
       "parseFrontMatterStringArray",
       "parseFrontMatterTags",
+      "parsePropertyId",
       "parseYaml",
       "Plugin",
       "PluginSettingTab",
@@ -3639,21 +3641,35 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:function:parsePropertyId:260ec28552701cc81f3ccf4046084cd5d90acbd7c19bbec60240a4c9118f4d46",
       "name": "parsePropertyId",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "260ec28552701cc81f3ccf4046084cd5d90acbd7c19bbec60240a4c9118f4d46",
       "location": {
         "line": 4814,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.property-id.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "parsePropertyId"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "property-id.supported-prefixes",
+        "property-id.dotted-name"
+      ],
+      "coveredBehaviorIds": [
+        "property-id.supported-prefixes",
+        "property-id.dotted-name"
+      ]
     },
     {
       "exportId": "export:function:parseYaml:48af828ae472e2e33e3a0f49687c0daec8ffbb80eebed5a668a9d4925490fffc",

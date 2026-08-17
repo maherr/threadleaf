@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 98 (97 public, 1 internal extra)
+- Factory keys: 99 (98 public, 1 internal extra)
 
 ## Export status
 
@@ -106,7 +106,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | parseFrontMatterStringArray | function | implemented | deb327a55cd9c91f |
 | parseFrontMatterTags | function | implemented | c9dcb6788b1937d3 |
 | parseLinktext | function | implemented | fd10e8b7ba73e829 |
-| parsePropertyId | function | missing | 260ec28552701cc8 |
+| parsePropertyId | function | implemented | 260ec28552701cc8 |
 | parseYaml | function | implemented | 48af828ae472e2e3 |
 | Platform | variable | implemented | ce92658397c816fa |
 | Plugin | class | partial | e771e8ff5a3f8cba |

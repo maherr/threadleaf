@@ -1229,6 +1229,13 @@ export interface SearchResultContainer {
   match: SearchResult;
 }
 
+export type BasesPropertyType = "file" | "formula" | "note";
+
+export interface BasesProperty {
+  name: string;
+  type: BasesPropertyType;
+}
+
 export interface TagCache {
   position: CachePosition;
   tag: string;
@@ -1381,6 +1388,17 @@ export function parseLinktext(linktext: string): { path: string; subpath: string
         path: linktext.slice(0, subpathStart),
         subpath: linktext.slice(subpathStart),
       };
+}
+
+export function parsePropertyId(propertyId: string): BasesProperty {
+  const separator = propertyId.indexOf(".");
+  if (separator < 0) {
+    return { type: propertyId as BasesPropertyType, name: "" };
+  }
+  return {
+    type: propertyId.slice(0, separator) as BasesPropertyType,
+    name: propertyId.slice(separator + 1),
+  };
 }
 
 export function getLinkpath(linktext: string): string {
@@ -2969,6 +2987,7 @@ export interface ObsidianCompatibilityModule {
   parseFrontMatterStringArray: typeof parseFrontMatterStringArray;
   parseFrontMatterTags: typeof parseFrontMatterTags;
   parseLinktext: typeof parseLinktext;
+  parsePropertyId(propertyId: string): BasesProperty;
   parseYaml: typeof parseYaml;
   Platform: typeof Platform;
   prepareFuzzySearch: typeof prepareFuzzySearch;
@@ -3583,6 +3602,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     parseFrontMatterEntry,
     parseFrontMatterStringArray,
     parseFrontMatterTags,
+    parsePropertyId,
     parseYaml,
     Plugin,
     PluginSettingTab,

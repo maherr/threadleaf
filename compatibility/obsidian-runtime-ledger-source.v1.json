@@ -5808,6 +5808,41 @@
         ]
       }
     },
+    "parsePropertyId": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "parsePropertyId"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.property-id.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["property-id.supported-prefixes", "property-id.dotted-name"],
+        "behaviors": [
+          {
+            "id": "property-id.supported-prefixes",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.property-id.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "property-id.dotted-name",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.property-id.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
     "parseLinktext": {
       "implementation": {
         "source": "src/runtime/obsidian-compat.ts",
