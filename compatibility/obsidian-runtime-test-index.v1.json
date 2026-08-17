@@ -14,15 +14,21 @@
       "status": "positive"
     },
     {
+      "id": "obsidian-runtime.core-events-files-vault.v1",
+      "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
+      "line": 77,
+      "status": "positive"
+    },
+    {
       "id": "obsidian-runtime.marker-negative-adjacent.v1",
       "path": "scripts/obsidian-runtime-ledger.test.mjs",
-      "line": 81,
+      "line": 87,
       "status": "unsupported"
     },
     {
       "id": "obsidian-runtime.marker-positive-adjacent.v1",
       "path": "scripts/obsidian-runtime-ledger.test.mjs",
-      "line": 80,
+      "line": 86,
       "status": "positive"
     },
     {

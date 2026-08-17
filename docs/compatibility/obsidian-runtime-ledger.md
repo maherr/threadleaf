@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 74 (73 public, 1 internal extra)
+- Factory keys: 75 (74 public, 1 internal extra)
 
 ## Export status
 
@@ -50,7 +50,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | editorLivePreviewField | variable | missing | 9dc2e8d15892552f |
 | EditorSuggest | class | missing | b03c36d2fa50ced5 |
 | editorViewField | variable | missing | 576bc7a8290cb120 |
-| Events | class | missing | 69b49be903499033 |
+| Events | class | implemented | 69b49be903499033 |
 | ExtraButtonComponent | class | missing | 60577a4b3a5c4ed2 |
 | FileManager | class | missing | f131be3eb6de3df2 |
 | FileSystemAdapter | class | missing | a11e4e56f43d1ba4 |
@@ -91,7 +91,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | Menu | class | missing | 0a7cec2e1715d55b |
 | MenuItem | class | missing | 4b0f05262839c353 |
 | MenuSeparator | class | missing | 8d76cd93d0b4b14a |
-| MetadataCache | class | missing | 4f2d6786f29d03b5 |
+| MetadataCache | class | partial | 4f2d6786f29d03b5 |
 | Modal | class | missing | 0ecda97644af4e27 |
 | moment | variable | missing | 9ee051521ccd8991 |
 | MomentFormatComponent | class | missing | b3a4fd344f8d82a1 |
@@ -147,19 +147,19 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | stripHeading | function | missing | f21325fbff066d0b |
 | stripHeadingForLink | function | missing | 609f52c3520cfb71 |
 | SuggestModal | class | missing | 4282e1a8e74dc8a6 |
-| TAbstractFile | class | missing | 33e1dba7bf6c6e2f |
+| TAbstractFile | class | implemented | 33e1dba7bf6c6e2f |
 | TagValue | class | missing | c6c6bafd2fd50797 |
 | Tasks | class | missing | 7471c3f0a015a76d |
 | TextAreaComponent | class | missing | 82022a25c1d9b869 |
 | TextComponent | class | missing | 4f2a68c9738f82e5 |
 | TextFileView | class | missing | 0a4a4ba88dddacf0 |
-| TFile | class | missing | 059690fe62a6783f |
-| TFolder | class | missing | 46f08a943675f948 |
+| TFile | class | implemented | 059690fe62a6783f |
+| TFolder | class | implemented | 46f08a943675f948 |
 | ToggleComponent | class | missing | a39eaf18ee6900de |
 | UrlValue | class | missing | 23e0604a73cec0f1 |
 | Value | class | missing | 7c58c01f8b955627 |
 | ValueComponent | class | missing | 529ce7aae6a57c84 |
-| Vault | class | missing | 8041bc89ef9d718b |
+| Vault | class | partial | 8041bc89ef9d718b |
 | View | class | missing | b8f2d48cb007660e |
 | Workspace | class | missing | 678ad5eacec977ed |
 | WorkspaceContainer | class | missing | 111dc7e1f6366fe3 |

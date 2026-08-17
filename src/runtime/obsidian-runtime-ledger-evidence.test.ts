@@ -73,4 +73,161 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
       await fs.rm(sandboxPath, { recursive: true, force: true });
     }
   });
+
+  /** @compatibility-test-id obsidian-runtime.core-events-files-vault.v1 */
+  it('proves the core events, file identity, vault, and metadata bindings through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-runtime-ledger-core-"));
+    const pluginPath = path.join(sandboxPath, "core-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "core-ledger-fixture",
+          name: "Core ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { Events, Plugin, TAbstractFile, TFile, TFolder, Vault } = require("obsidian");',
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          "    const vault = this.app.vault;",
+          '    const welcome = vault.getFileByPath("Welcome.md");',
+          '    const linked = vault.getFileByPath("Linked Note.md");',
+          '    const boards = vault.getFolderByPath("Boards");',
+          '    const abstract = new TAbstractFile("Boards/Overview.canvas", vault);',
+          '    const file = new TFile("Boards/Overview.canvas", vault, { ctime: 1, mtime: 2, size: 3 });',
+          '    const folder = new TFolder("Boards", vault);',
+          "    const root = vault.getRoot();",
+          "    const calls = [];",
+          "    const events = new Events();",
+          "    const callback = (...args) => calls.push(args);",
+          '    const eventRef = events.on("sample", callback);',
+          '    events.trigger("sample", "trigger");',
+          '    events.tryTrigger(eventRef, ["try"]);',
+          '    events.off("sample", callback);',
+          '    events.trigger("sample", "after-off");',
+          '    const releasedRef = events.on("released", callback);',
+          "    events.offref(releasedRef);",
+          '    events.tryTrigger(releasedRef, ["after-offref"]);',
+          "    const metadata = this.app.metadataCache;",
+          "    const cache = metadata.getFileCache(welcome);",
+          '    const cacheByPath = metadata.getCache("Welcome.md");',
+          '    const destination = metadata.getFirstLinkpathDest("Linked Note#Project brief", "Welcome.md");',
+          '    const linktext = metadata.fileToLinktext(destination, "Welcome.md", true);',
+          "    const resolved = metadata.resolvedLinks;",
+          "    const unresolved = metadata.unresolvedLinks;",
+          "    globalThis.__threadleafRuntimeLedgerCoreProbe = {",
+          "      events: calls,",
+          "      vault: {",
+          "        isVault: vault instanceof Vault,",
+          "        adapterName: vault.adapter.getName(),",
+          "        configDir: vault.configDir,",
+          "        name: vault.getName(),",
+          "        welcomeIsFile: welcome instanceof TFile,",
+          "        linkedPath: linked.path,",
+          "        boardsIsFolder: boards instanceof TFolder,",
+          '        abstractIsFile: vault.getAbstractFileByPath("Boards/Overview.canvas") instanceof TFile,',
+          "        rootIsFolder: vault.getRoot() instanceof TFolder,",
+          '        resourceIsFileUrl: vault.getResourcePath(welcome).startsWith("file:"),',
+          "        fileCount: vault.getFiles().length,",
+          "        markdownCount: vault.getMarkdownFiles().length,",
+          "        folderPaths: vault.getAllFolders().map((item) => item.path),",
+          "        loadedHasRoot: vault.getAllLoadedFiles().some((item) => item instanceof TFolder && item.isRoot),",
+          "      },",
+          "      abstract: {",
+          "        path: abstract.path,",
+          "        name: abstract.name,",
+          "        vaultMatches: abstract.vault === vault,",
+          "        parentPath: abstract.parent && abstract.parent.path,",
+          "      },",
+          "      file: {",
+          "        path: file.path,",
+          "        name: file.name,",
+          "        basename: file.basename,",
+          "        extension: file.extension,",
+          "        stat: file.stat,",
+          "      },",
+          "      folder: {",
+          "        childPaths: folder.children.map((item) => item.path),",
+          "        isRoot: folder.isRoot,",
+          "        rootIsRoot: root.isRoot,",
+          "      },",
+          "      metadata: {",
+          "        cacheFrontmatter: cache && cache.frontmatter,",
+          "        cacheByPathFrontmatter: cacheByPath && cacheByPath.frontmatter,",
+          "        destinationPath: destination && destination.path,",
+          "        linktext,",
+          "        resolvedCount: Object.keys(resolved).length,",
+          "        unresolvedCount: Object.keys(unresolved).length,",
+          "      },",
+          "    };",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      const host = new PluginHost(fixtureVault);
+      try {
+        await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+        expect(
+          (globalThis as { __threadleafRuntimeLedgerCoreProbe?: unknown })
+            .__threadleafRuntimeLedgerCoreProbe,
+        ).toEqual({
+          events: [["trigger"], ["try"]],
+          vault: {
+            isVault: true,
+            adapterName: "basic",
+            configDir: ".obsidian",
+            name: "basic",
+            welcomeIsFile: true,
+            linkedPath: "Linked Note.md",
+            boardsIsFolder: true,
+            abstractIsFile: true,
+            rootIsFolder: true,
+            resourceIsFileUrl: true,
+            fileCount: 3,
+            markdownCount: 2,
+            folderPaths: ["Boards"],
+            loadedHasRoot: true,
+          },
+          abstract: {
+            path: "Boards/Overview.canvas",
+            name: "Overview.canvas",
+            vaultMatches: true,
+            parentPath: "Boards",
+          },
+          file: {
+            path: "Boards/Overview.canvas",
+            name: "Overview.canvas",
+            basename: "Overview",
+            extension: "canvas",
+            stat: { ctime: 1, mtime: 2, size: 3 },
+          },
+          folder: {
+            childPaths: ["Boards/Overview.canvas"],
+            isRoot: false,
+            rootIsRoot: true,
+          },
+          metadata: {
+            cacheFrontmatter: { kind: "compatibility-fixture" },
+            cacheByPathFrontmatter: { kind: "compatibility-fixture" },
+            destinationPath: "Linked Note.md",
+            linktext: "Linked Note",
+            resolvedCount: 2,
+            unresolvedCount: 2,
+          },
+        });
+      } finally {
+        await host.close();
+      }
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerCoreProbe");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
 });

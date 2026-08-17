@@ -13,15 +13,15 @@
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 0,
-    "partial": 5,
+    "implemented": 4,
+    "partial": 7,
     "unsupported": 0,
-    "missing": 153,
+    "missing": 147,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 7
+    "implementedObligations": 39
   },
   "factory": {
     "keys": [
@@ -39,6 +39,7 @@
       "DropdownComponent",
       "Editor",
       "EditorSuggest",
+      "Events",
       "ExtraButtonComponent",
       "FileManager",
       "FileSystemAdapter",
@@ -115,6 +116,7 @@
       "DropdownComponent",
       "Editor",
       "EditorSuggest",
+      "Events",
       "ExtraButtonComponent",
       "FileManager",
       "FileSystemAdapter",
@@ -1130,15 +1132,23 @@
       "exportId": "export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc",
       "name": "Events",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc",
       "location": {
         "line": 2808,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.core-events-files-vault.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "Events"
+      },
       "obligationIds": [
         "obligation:export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc:fc6271188eb7c9babf3baf790d3da81b7585dc07ca4bbe78d66f59677d051851",
         "obligation:export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc:6dcb888cfefd4b19a733c9b850d95f817eaf8ade6a963d1a4948833ce1684ab7",
@@ -1147,8 +1157,20 @@
         "obligation:export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc:ca1d7dddeb69569db0698f1c839cdf33b040434cc22cf8e0c712d6af9869df75"
       ],
       "heritageEdgeIds": [],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc:fc6271188eb7c9babf3baf790d3da81b7585dc07ca4bbe78d66f59677d051851",
+        "obligation:export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc:6dcb888cfefd4b19a733c9b850d95f817eaf8ade6a963d1a4948833ce1684ab7",
+        "obligation:export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc:332ade19b68d647dfb0103aba6c84348e0ed256fc571526f4fdc8567f3f52903",
+        "obligation:export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc:9fef56047f29871472c28f7c9f73b28a9fff1546b4bc5bc774751a068a67ea12",
+        "obligation:export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc:ca1d7dddeb69569db0698f1c839cdf33b040434cc22cf8e0c712d6af9869df75"
+      ],
+      "coveredObligationSignatureHashes": [
+        "fc6271188eb7c9babf3baf790d3da81b7585dc07ca4bbe78d66f59677d051851",
+        "6dcb888cfefd4b19a733c9b850d95f817eaf8ade6a963d1a4948833ce1684ab7",
+        "332ade19b68d647dfb0103aba6c84348e0ed256fc571526f4fdc8567f3f52903",
+        "9fef56047f29871472c28f7c9f73b28a9fff1546b4bc5bc774751a068a67ea12",
+        "ca1d7dddeb69569db0698f1c839cdf33b040434cc22cf8e0c712d6af9869df75"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -2155,15 +2177,23 @@
       "exportId": "export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605",
       "name": "MetadataCache",
       "kind": "class",
-      "status": "missing",
+      "status": "partial",
       "signatureHash": "4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605",
       "location": {
         "line": 4404,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.core-events-files-vault.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "MetadataCache"
+      },
       "obligationIds": [
         "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:1da3bb4a4c65eb85384d99da378a63507905097964cb68b320783cad9927e762",
         "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:cfd0ff965a58af31db100b119785390fbf9b7b6fb65df10f9a8a2235f782fb04",
@@ -2179,8 +2209,22 @@
       "heritageEdgeIds": [
         "heritage:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:8d14f6e72de8f18ab1ee5c5330f00653c0c3ce099e63024454f80af97e72d333"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:1da3bb4a4c65eb85384d99da378a63507905097964cb68b320783cad9927e762",
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:cfd0ff965a58af31db100b119785390fbf9b7b6fb65df10f9a8a2235f782fb04",
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:936f493fb482582f94a295ff56a590318827dc2a6fbb8bec43a436ab160c546b",
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:796bdb0cfc8866e857990609c0d35d7ec1e8058fe95dff3bd47e7db2a4ef705c",
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:9a94e0242b5867d3338cd4b81a6123de88c1be6ff1f6b44c47105a6044741e84",
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:833ca2bc0a384c40ba34c2190b942c57067a49f660736c42ea6cc2b1b44eb920"
+      ],
+      "coveredObligationSignatureHashes": [
+        "1da3bb4a4c65eb85384d99da378a63507905097964cb68b320783cad9927e762",
+        "cfd0ff965a58af31db100b119785390fbf9b7b6fb65df10f9a8a2235f782fb04",
+        "936f493fb482582f94a295ff56a590318827dc2a6fbb8bec43a436ab160c546b",
+        "796bdb0cfc8866e857990609c0d35d7ec1e8058fe95dff3bd47e7db2a4ef705c",
+        "9a94e0242b5867d3338cd4b81a6123de88c1be6ff1f6b44c47105a6044741e84",
+        "833ca2bc0a384c40ba34c2190b942c57067a49f660736c42ea6cc2b1b44eb920"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -3571,15 +3615,23 @@
       "exportId": "export:class:TAbstractFile:33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9",
       "name": "TAbstractFile",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9",
       "location": {
         "line": 6953,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.core-events-files-vault.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "TAbstractFile"
+      },
       "obligationIds": [
         "obligation:export:class:TAbstractFile:33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9:7fceb92c74d6548b411353b643a58660784283b0c00a871aa5dd1fdd1025a2d6",
         "obligation:export:class:TAbstractFile:33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9:7a5c686c7cc5ab8ad151e0bfd028d68d52e553d2b81c8b57822f770f674d14e3",
@@ -3587,8 +3639,18 @@
         "obligation:export:class:TAbstractFile:33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9:669359a256027d9eafc81a60da17601fd1bee18369e3ec806c074cee27e31c86"
       ],
       "heritageEdgeIds": [],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:TAbstractFile:33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9:7fceb92c74d6548b411353b643a58660784283b0c00a871aa5dd1fdd1025a2d6",
+        "obligation:export:class:TAbstractFile:33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9:7a5c686c7cc5ab8ad151e0bfd028d68d52e553d2b81c8b57822f770f674d14e3",
+        "obligation:export:class:TAbstractFile:33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9:5926229d7a2fefdf6466fc8cbdb96eff8012f3f2d476a42931bf72d0634edd54",
+        "obligation:export:class:TAbstractFile:33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9:669359a256027d9eafc81a60da17601fd1bee18369e3ec806c074cee27e31c86"
+      ],
+      "coveredObligationSignatureHashes": [
+        "7fceb92c74d6548b411353b643a58660784283b0c00a871aa5dd1fdd1025a2d6",
+        "7a5c686c7cc5ab8ad151e0bfd028d68d52e553d2b81c8b57822f770f674d14e3",
+        "5926229d7a2fefdf6466fc8cbdb96eff8012f3f2d476a42931bf72d0634edd54",
+        "669359a256027d9eafc81a60da17601fd1bee18369e3ec806c074cee27e31c86"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -3725,15 +3787,23 @@
       "exportId": "export:class:TFile:059690fe62a6783fcbbb4bf82f8616cf2ba73241b309dac98ab57d1cdf62c251",
       "name": "TFile",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "059690fe62a6783fcbbb4bf82f8616cf2ba73241b309dac98ab57d1cdf62c251",
       "location": {
         "line": 7129,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.core-events-files-vault.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "TFile"
+      },
       "obligationIds": [
         "obligation:export:class:TFile:059690fe62a6783fcbbb4bf82f8616cf2ba73241b309dac98ab57d1cdf62c251:695aab2ce80ec954c62a02a8717d3c782de8dd3b3bda0603c70726b0010319e2",
         "obligation:export:class:TFile:059690fe62a6783fcbbb4bf82f8616cf2ba73241b309dac98ab57d1cdf62c251:55785040dee015840b12e9250260c8854967c9be560c3bc7c86f353bea6fb212",
@@ -3742,8 +3812,16 @@
       "heritageEdgeIds": [
         "heritage:export:class:TFile:059690fe62a6783fcbbb4bf82f8616cf2ba73241b309dac98ab57d1cdf62c251:54c92298af3d76f8cd67625e5f8bdf4d6547ea3e1966c610b39a44f652ba10f2"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:TFile:059690fe62a6783fcbbb4bf82f8616cf2ba73241b309dac98ab57d1cdf62c251:695aab2ce80ec954c62a02a8717d3c782de8dd3b3bda0603c70726b0010319e2",
+        "obligation:export:class:TFile:059690fe62a6783fcbbb4bf82f8616cf2ba73241b309dac98ab57d1cdf62c251:55785040dee015840b12e9250260c8854967c9be560c3bc7c86f353bea6fb212",
+        "obligation:export:class:TFile:059690fe62a6783fcbbb4bf82f8616cf2ba73241b309dac98ab57d1cdf62c251:c40918fe6eae3e928137f8dfe0c905ea60fdb46d0e1c46a1bf93261f1112fcab"
+      ],
+      "coveredObligationSignatureHashes": [
+        "695aab2ce80ec954c62a02a8717d3c782de8dd3b3bda0603c70726b0010319e2",
+        "55785040dee015840b12e9250260c8854967c9be560c3bc7c86f353bea6fb212",
+        "c40918fe6eae3e928137f8dfe0c905ea60fdb46d0e1c46a1bf93261f1112fcab"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -3751,15 +3829,23 @@
       "exportId": "export:class:TFolder:46f08a943675f948ff8e1c2bf3b0abad044d5e518c8b0a10aa3a349ed9942a30",
       "name": "TFolder",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "46f08a943675f948ff8e1c2bf3b0abad044d5e518c8b0a10aa3a349ed9942a30",
       "location": {
         "line": 7152,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.core-events-files-vault.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "TFolder"
+      },
       "obligationIds": [
         "obligation:export:class:TFolder:46f08a943675f948ff8e1c2bf3b0abad044d5e518c8b0a10aa3a349ed9942a30:75a52d3b487ddf6825d46e0587af0b92b3f360294a7f4c7d7bd5984299d0f2c7",
         "obligation:export:class:TFolder:46f08a943675f948ff8e1c2bf3b0abad044d5e518c8b0a10aa3a349ed9942a30:d85cba38da52c270e64fb4be019df3095b3a35753a4a9ab77c6b33c62daad730"
@@ -3767,8 +3853,14 @@
       "heritageEdgeIds": [
         "heritage:export:class:TFolder:46f08a943675f948ff8e1c2bf3b0abad044d5e518c8b0a10aa3a349ed9942a30:54c92298af3d76f8cd67625e5f8bdf4d6547ea3e1966c610b39a44f652ba10f2"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:TFolder:46f08a943675f948ff8e1c2bf3b0abad044d5e518c8b0a10aa3a349ed9942a30:75a52d3b487ddf6825d46e0587af0b92b3f360294a7f4c7d7bd5984299d0f2c7",
+        "obligation:export:class:TFolder:46f08a943675f948ff8e1c2bf3b0abad044d5e518c8b0a10aa3a349ed9942a30:d85cba38da52c270e64fb4be019df3095b3a35753a4a9ab77c6b33c62daad730"
+      ],
+      "coveredObligationSignatureHashes": [
+        "75a52d3b487ddf6825d46e0587af0b92b3f360294a7f4c7d7bd5984299d0f2c7",
+        "d85cba38da52c270e64fb4be019df3095b3a35753a4a9ab77c6b33c62daad730"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -3884,15 +3976,23 @@
       "exportId": "export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11",
       "name": "Vault",
       "kind": "class",
-      "status": "missing",
+      "status": "partial",
       "signatureHash": "8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11",
       "location": {
         "line": 7337,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.core-events-files-vault.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "Vault"
+      },
       "obligationIds": [
         "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:2fb8a3392d7aaa0fd158b4ff0d3296caf518569988d503e7ddda0257ec6f8f94",
         "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:70c96884691242a12dda6377ab30081d14c1764a5edf8217a646b6e937eba448",
@@ -3930,8 +4030,34 @@
       "heritageEdgeIds": [
         "heritage:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:8d14f6e72de8f18ab1ee5c5330f00653c0c3ce099e63024454f80af97e72d333"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:2fb8a3392d7aaa0fd158b4ff0d3296caf518569988d503e7ddda0257ec6f8f94",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:70c96884691242a12dda6377ab30081d14c1764a5edf8217a646b6e937eba448",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:16d0041c4e5f7fb3a5c2035dc4d7a28e56bf35b687e40c8fcf08a53f5099faf2",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:943bee140513438dbd7985d4d3dd8a248892e764ecf88388b93c593d86bb63fa",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:67a8c0dbc4198dbe3d5ec0bf8699a9c309b5edcfe9b43847c855c322ceb82ade",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:ebdf849c07164ae413bd21bda4c0824631b3ce7132169cc68924f0f36adc425c",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:277f36762b164e089f827a2340a985e39e0a9594532a8908f3e949a278f68de1",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:0320088cfaa3f436a33ee8f24beb531f200daf7b962e2664fed91906ec06d601",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:109d73857161dc1bf468e8684823717f3b3233682076e564fbab3a4507957217",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:31d2014f0bb82ac4d87953533d90a75e7cc6e45d068cac31a34d6b6340d8509a",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:3ecf94c7109c6b56481b81baa52b5b372b7733fd29cff7a47a379e7a9f0c423c",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:9db5ffba5b10286e5ce52550d6e97909c0c1553a0e83037e51ea25f9fcc11742"
+      ],
+      "coveredObligationSignatureHashes": [
+        "2fb8a3392d7aaa0fd158b4ff0d3296caf518569988d503e7ddda0257ec6f8f94",
+        "70c96884691242a12dda6377ab30081d14c1764a5edf8217a646b6e937eba448",
+        "16d0041c4e5f7fb3a5c2035dc4d7a28e56bf35b687e40c8fcf08a53f5099faf2",
+        "943bee140513438dbd7985d4d3dd8a248892e764ecf88388b93c593d86bb63fa",
+        "67a8c0dbc4198dbe3d5ec0bf8699a9c309b5edcfe9b43847c855c322ceb82ade",
+        "ebdf849c07164ae413bd21bda4c0824631b3ce7132169cc68924f0f36adc425c",
+        "277f36762b164e089f827a2340a985e39e0a9594532a8908f3e949a278f68de1",
+        "0320088cfaa3f436a33ee8f24beb531f200daf7b962e2664fed91906ec06d601",
+        "109d73857161dc1bf468e8684823717f3b3233682076e564fbab3a4507957217",
+        "31d2014f0bb82ac4d87953533d90a75e7cc6e45d068cac31a34d6b6340d8509a",
+        "3ecf94c7109c6b56481b81baa52b5b372b7733fd29cff7a47a379e7a9f0c423c",
+        "9db5ffba5b10286e5ce52550d6e97909c0c1553a0e83037e51ea25f9fcc11742"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -7594,7 +7720,7 @@
     {
       "exportId": "export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc",
       "name": "Events",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc:fc6271188eb7c9babf3baf790d3da81b7585dc07ca4bbe78d66f59677d051851",
@@ -7673,8 +7799,20 @@
         }
       ],
       "heritageEdges": [],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc:fc6271188eb7c9babf3baf790d3da81b7585dc07ca4bbe78d66f59677d051851",
+        "obligation:export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc:6dcb888cfefd4b19a733c9b850d95f817eaf8ade6a963d1a4948833ce1684ab7",
+        "obligation:export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc:332ade19b68d647dfb0103aba6c84348e0ed256fc571526f4fdc8567f3f52903",
+        "obligation:export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc:9fef56047f29871472c28f7c9f73b28a9fff1546b4bc5bc774751a068a67ea12",
+        "obligation:export:class:Events:69b49be90349903323ac2f297538285f788bc5b6daa7bb5b8e2baebc17d1fcbc:ca1d7dddeb69569db0698f1c839cdf33b040434cc22cf8e0c712d6af9869df75"
+      ],
+      "coveredObligationSignatureHashes": [
+        "fc6271188eb7c9babf3baf790d3da81b7585dc07ca4bbe78d66f59677d051851",
+        "6dcb888cfefd4b19a733c9b850d95f817eaf8ade6a963d1a4948833ce1684ab7",
+        "332ade19b68d647dfb0103aba6c84348e0ed256fc571526f4fdc8567f3f52903",
+        "9fef56047f29871472c28f7c9f73b28a9fff1546b4bc5bc774751a068a67ea12",
+        "ca1d7dddeb69569db0698f1c839cdf33b040434cc22cf8e0c712d6af9869df75"
+      ]
     },
     {
       "exportId": "export:class:ExtraButtonComponent:60577a4b3a5c4ed28e8dc753f51f524a106f560c42f23793ebf2663ae95ff0d4",
@@ -10257,7 +10395,7 @@
     {
       "exportId": "export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605",
       "name": "MetadataCache",
-      "status": "missing",
+      "status": "partial",
       "obligations": [
         {
           "obligationId": "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:1da3bb4a4c65eb85384d99da378a63507905097964cb68b320783cad9927e762",
@@ -10422,8 +10560,22 @@
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:1da3bb4a4c65eb85384d99da378a63507905097964cb68b320783cad9927e762",
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:cfd0ff965a58af31db100b119785390fbf9b7b6fb65df10f9a8a2235f782fb04",
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:936f493fb482582f94a295ff56a590318827dc2a6fbb8bec43a436ab160c546b",
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:796bdb0cfc8866e857990609c0d35d7ec1e8058fe95dff3bd47e7db2a4ef705c",
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:9a94e0242b5867d3338cd4b81a6123de88c1be6ff1f6b44c47105a6044741e84",
+        "obligation:export:class:MetadataCache:4f2d6786f29d03b5c68c4cd2ea1fc2d16f2969a0864f51adfca113e266803605:833ca2bc0a384c40ba34c2190b942c57067a49f660736c42ea6cc2b1b44eb920"
+      ],
+      "coveredObligationSignatureHashes": [
+        "1da3bb4a4c65eb85384d99da378a63507905097964cb68b320783cad9927e762",
+        "cfd0ff965a58af31db100b119785390fbf9b7b6fb65df10f9a8a2235f782fb04",
+        "936f493fb482582f94a295ff56a590318827dc2a6fbb8bec43a436ab160c546b",
+        "796bdb0cfc8866e857990609c0d35d7ec1e8058fe95dff3bd47e7db2a4ef705c",
+        "9a94e0242b5867d3338cd4b81a6123de88c1be6ff1f6b44c47105a6044741e84",
+        "833ca2bc0a384c40ba34c2190b942c57067a49f660736c42ea6cc2b1b44eb920"
+      ]
     },
     {
       "exportId": "export:class:Modal:0ecda97644af4e2713635ad7b490630cadbfa649b6526b5c272c753baee12451",
@@ -13565,7 +13717,7 @@
     {
       "exportId": "export:class:TAbstractFile:33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9",
       "name": "TAbstractFile",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:TAbstractFile:33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9:7fceb92c74d6548b411353b643a58660784283b0c00a871aa5dd1fdd1025a2d6",
@@ -13629,8 +13781,18 @@
         }
       ],
       "heritageEdges": [],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:TAbstractFile:33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9:7fceb92c74d6548b411353b643a58660784283b0c00a871aa5dd1fdd1025a2d6",
+        "obligation:export:class:TAbstractFile:33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9:7a5c686c7cc5ab8ad151e0bfd028d68d52e553d2b81c8b57822f770f674d14e3",
+        "obligation:export:class:TAbstractFile:33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9:5926229d7a2fefdf6466fc8cbdb96eff8012f3f2d476a42931bf72d0634edd54",
+        "obligation:export:class:TAbstractFile:33e1dba7bf6c6e2fd9cf7d876e171e0ab53511a484cfd16ecd4575e8b3ec7ed9:669359a256027d9eafc81a60da17601fd1bee18369e3ec806c074cee27e31c86"
+      ],
+      "coveredObligationSignatureHashes": [
+        "7fceb92c74d6548b411353b643a58660784283b0c00a871aa5dd1fdd1025a2d6",
+        "7a5c686c7cc5ab8ad151e0bfd028d68d52e553d2b81c8b57822f770f674d14e3",
+        "5926229d7a2fefdf6466fc8cbdb96eff8012f3f2d476a42931bf72d0634edd54",
+        "669359a256027d9eafc81a60da17601fd1bee18369e3ec806c074cee27e31c86"
+      ]
     },
     {
       "exportId": "export:class:TagValue:c6c6bafd2fd50797b1dfc2c9383bfc18f7dbd8966ffcfeb6e16c072e256c749d",
@@ -13975,7 +14137,7 @@
     {
       "exportId": "export:class:TFile:059690fe62a6783fcbbb4bf82f8616cf2ba73241b309dac98ab57d1cdf62c251",
       "name": "TFile",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:TFile:059690fe62a6783fcbbb4bf82f8616cf2ba73241b309dac98ab57d1cdf62c251:695aab2ce80ec954c62a02a8717d3c782de8dd3b3bda0603c70726b0010319e2",
@@ -14035,13 +14197,21 @@
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:TFile:059690fe62a6783fcbbb4bf82f8616cf2ba73241b309dac98ab57d1cdf62c251:695aab2ce80ec954c62a02a8717d3c782de8dd3b3bda0603c70726b0010319e2",
+        "obligation:export:class:TFile:059690fe62a6783fcbbb4bf82f8616cf2ba73241b309dac98ab57d1cdf62c251:55785040dee015840b12e9250260c8854967c9be560c3bc7c86f353bea6fb212",
+        "obligation:export:class:TFile:059690fe62a6783fcbbb4bf82f8616cf2ba73241b309dac98ab57d1cdf62c251:c40918fe6eae3e928137f8dfe0c905ea60fdb46d0e1c46a1bf93261f1112fcab"
+      ],
+      "coveredObligationSignatureHashes": [
+        "695aab2ce80ec954c62a02a8717d3c782de8dd3b3bda0603c70726b0010319e2",
+        "55785040dee015840b12e9250260c8854967c9be560c3bc7c86f353bea6fb212",
+        "c40918fe6eae3e928137f8dfe0c905ea60fdb46d0e1c46a1bf93261f1112fcab"
+      ]
     },
     {
       "exportId": "export:class:TFolder:46f08a943675f948ff8e1c2bf3b0abad044d5e518c8b0a10aa3a349ed9942a30",
       "name": "TFolder",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:TFolder:46f08a943675f948ff8e1c2bf3b0abad044d5e518c8b0a10aa3a349ed9942a30:75a52d3b487ddf6825d46e0587af0b92b3f360294a7f4c7d7bd5984299d0f2c7",
@@ -14086,8 +14256,14 @@
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:TFolder:46f08a943675f948ff8e1c2bf3b0abad044d5e518c8b0a10aa3a349ed9942a30:75a52d3b487ddf6825d46e0587af0b92b3f360294a7f4c7d7bd5984299d0f2c7",
+        "obligation:export:class:TFolder:46f08a943675f948ff8e1c2bf3b0abad044d5e518c8b0a10aa3a349ed9942a30:d85cba38da52c270e64fb4be019df3095b3a35753a4a9ab77c6b33c62daad730"
+      ],
+      "coveredObligationSignatureHashes": [
+        "75a52d3b487ddf6825d46e0587af0b92b3f360294a7f4c7d7bd5984299d0f2c7",
+        "d85cba38da52c270e64fb4be019df3095b3a35753a4a9ab77c6b33c62daad730"
+      ]
     },
     {
       "exportId": "export:class:ToggleComponent:a39eaf18ee6900de2db5cb84766616899cb5b4a08fbd709a60ee5ec5b9bf106f",
@@ -14463,7 +14639,7 @@
     {
       "exportId": "export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11",
       "name": "Vault",
-      "status": "missing",
+      "status": "partial",
       "obligations": [
         {
           "obligationId": "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:2fb8a3392d7aaa0fd158b4ff0d3296caf518569988d503e7ddda0257ec6f8f94",
@@ -14960,8 +15136,34 @@
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:2fb8a3392d7aaa0fd158b4ff0d3296caf518569988d503e7ddda0257ec6f8f94",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:70c96884691242a12dda6377ab30081d14c1764a5edf8217a646b6e937eba448",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:16d0041c4e5f7fb3a5c2035dc4d7a28e56bf35b687e40c8fcf08a53f5099faf2",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:943bee140513438dbd7985d4d3dd8a248892e764ecf88388b93c593d86bb63fa",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:67a8c0dbc4198dbe3d5ec0bf8699a9c309b5edcfe9b43847c855c322ceb82ade",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:ebdf849c07164ae413bd21bda4c0824631b3ce7132169cc68924f0f36adc425c",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:277f36762b164e089f827a2340a985e39e0a9594532a8908f3e949a278f68de1",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:0320088cfaa3f436a33ee8f24beb531f200daf7b962e2664fed91906ec06d601",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:109d73857161dc1bf468e8684823717f3b3233682076e564fbab3a4507957217",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:31d2014f0bb82ac4d87953533d90a75e7cc6e45d068cac31a34d6b6340d8509a",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:3ecf94c7109c6b56481b81baa52b5b372b7733fd29cff7a47a379e7a9f0c423c",
+        "obligation:export:class:Vault:8041bc89ef9d718bcab28b4a052600cf2a4b33d9d5ca918e5070afa9eeec6a11:9db5ffba5b10286e5ce52550d6e97909c0c1553a0e83037e51ea25f9fcc11742"
+      ],
+      "coveredObligationSignatureHashes": [
+        "2fb8a3392d7aaa0fd158b4ff0d3296caf518569988d503e7ddda0257ec6f8f94",
+        "70c96884691242a12dda6377ab30081d14c1764a5edf8217a646b6e937eba448",
+        "16d0041c4e5f7fb3a5c2035dc4d7a28e56bf35b687e40c8fcf08a53f5099faf2",
+        "943bee140513438dbd7985d4d3dd8a248892e764ecf88388b93c593d86bb63fa",
+        "67a8c0dbc4198dbe3d5ec0bf8699a9c309b5edcfe9b43847c855c322ceb82ade",
+        "ebdf849c07164ae413bd21bda4c0824631b3ce7132169cc68924f0f36adc425c",
+        "277f36762b164e089f827a2340a985e39e0a9594532a8908f3e949a278f68de1",
+        "0320088cfaa3f436a33ee8f24beb531f200daf7b962e2664fed91906ec06d601",
+        "109d73857161dc1bf468e8684823717f3b3233682076e564fbab3a4507957217",
+        "31d2014f0bb82ac4d87953533d90a75e7cc6e45d068cac31a34d6b6340d8509a",
+        "3ecf94c7109c6b56481b81baa52b5b372b7733fd29cff7a47a379e7a9f0c423c",
+        "9db5ffba5b10286e5ce52550d6e97909c0c1553a0e83037e51ea25f9fcc11742"
+      ]
     },
     {
       "exportId": "export:class:View:b8f2d48cb007660e0111e69821c64653bab43f1879fcfb3e997183aaa6e65d49",
