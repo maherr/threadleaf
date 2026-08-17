@@ -7,6 +7,7 @@ import type {
   RuntimeEvent,
   RuntimeSnapshot,
 } from "../shared/contracts";
+import type { PluginRendererEnvironment } from "../shared/plugin-runtime-protocol";
 import type { PluginConstructionRequest } from "../shared/plugins";
 import type { PluginRuntimePort } from "./plugin-runtime-port";
 
@@ -71,6 +72,7 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
   private readonly slots = new Map<string, PluginRuntimeSlot<T>>();
   private closed = false;
   private closePromise: Promise<void> | null = null;
+  private environmentSnapshot: RuntimeSnapshot["pluginEnvironment"];
 
   private constructor(
     private readonly baseSnapshot: RuntimeSnapshot,
@@ -78,6 +80,7 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
     private readonly options: IsolatedPluginRuntimeOptions<T>,
   ) {
     this.idleRuntime = idleRuntime;
+    this.environmentSnapshot = baseSnapshot.pluginEnvironment;
     this.ingestEvents("runtime", 0, baseSnapshot);
   }
 
@@ -96,6 +99,29 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
 
   getSnapshot(): Promise<RuntimeSnapshot> {
     return this.enqueue(async () => this.mergeSnapshot());
+  }
+
+  applyEnvironment(environment: PluginRendererEnvironment): Promise<RuntimeSnapshot> {
+    return this.enqueue(async () => {
+      let operationSnapshot: RuntimeSnapshot | undefined;
+      if (this.idleRuntime) {
+        if (!this.idleRuntime.runtime.applyEnvironment) {
+          throw new Error("The idle plugin runtime does not support environment replacement.");
+        }
+        operationSnapshot = await this.idleRuntime.runtime.applyEnvironment(environment);
+        this.idleRuntime.snapshot = operationSnapshot;
+      }
+      await this.updateEverySlot(async (slot) => {
+        if (!slot.runtime.applyEnvironment) {
+          throw new Error("An active plugin runtime does not support environment replacement.");
+        }
+        const snapshot = await slot.runtime.applyEnvironment(environment);
+        operationSnapshot ??= snapshot;
+        return snapshot;
+      });
+      this.environmentSnapshot = operationSnapshot?.pluginEnvironment;
+      return this.mergeSnapshot(this.lastPluginId, operationSnapshot);
+    });
   }
 
   loadPlugin(request: PluginConstructionRequest): Promise<RuntimeSnapshot> {
@@ -482,6 +508,7 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
       pluginSurface: visibleSurface,
       ...(resourceDiagnostics.length > 0 ? { resourceDiagnostics } : {}),
       ...(resourcePolicy ? { resourcePolicy } : {}),
+      ...(this.environmentSnapshot ? { pluginEnvironment: { ...this.environmentSnapshot } } : {}),
     };
   }
 

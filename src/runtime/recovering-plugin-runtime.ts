@@ -8,6 +8,7 @@ import type {
   RuntimeSnapshot,
 } from "../shared/contracts";
 import { createPluginDiagnostic, type PluginDiagnosticCode } from "../shared/plugin-diagnostics";
+import type { PluginRendererEnvironment } from "../shared/plugin-runtime-protocol";
 import type { PluginConstructionRequest } from "../shared/plugins";
 import {
   FatalPluginRuntimeError,
@@ -90,6 +91,7 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
   private readonly knownRequests = new Map<string, PluginConstructionRequest>();
   private operationTail: Promise<void> = Promise.resolve();
   private readonly seenRuntimeEventSequences = new Set<number>();
+  private environment: PluginRendererEnvironment | null = null;
 
   private constructor(
     current: T,
@@ -114,6 +116,26 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
 
   getSnapshot(): Promise<RuntimeSnapshot> {
     return this.runSnapshot({ operation: "get-snapshot" }, (runtime) => runtime.getSnapshot());
+  }
+
+  applyEnvironment(environment: PluginRendererEnvironment): Promise<RuntimeSnapshot> {
+    return this.runSnapshot(
+      { operation: "apply-environment" },
+      (runtime) => {
+        if (!runtime.applyEnvironment) {
+          throw new Error("The active plugin runtime does not support environment replacement.");
+        }
+        return runtime.applyEnvironment(environment);
+      },
+      (snapshot) => {
+        if (
+          snapshot.pluginEnvironment?.status === "applied" &&
+          snapshot.pluginEnvironment.sequence === environment.sequence
+        ) {
+          this.environment = structuredClone(environment);
+        }
+      },
+    );
   }
 
   closePluginView(): Promise<RuntimeSnapshot> {
@@ -350,6 +372,18 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
         throw new Error("Plugin compatibility runtime is closed.", { cause: failure });
       }
       this.current = replacement;
+      if (this.environment) {
+        if (!replacement.applyEnvironment) {
+          throw new Error("The replacement plugin runtime cannot restore its environment.");
+        }
+        const environmentSnapshot = await replacement.applyEnvironment(this.environment);
+        if (
+          environmentSnapshot.pluginEnvironment?.status !== "applied" ||
+          environmentSnapshot.pluginEnvironment.sequence !== this.environment.sequence
+        ) {
+          throw new Error("The replacement plugin runtime did not acknowledge its environment.");
+        }
+      }
       await this.options.onRuntimeChange?.(replacement);
     } catch (recoveryError) {
       await replacement?.close().catch(() => undefined);

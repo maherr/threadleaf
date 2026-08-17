@@ -6,6 +6,7 @@ import type {
   PluginResourceDiagnostic,
   RuntimeSnapshot,
 } from "../shared/contracts";
+import type { PluginRendererEnvironment } from "../shared/plugin-runtime-protocol";
 import type { PluginConstructionDispatch, PluginConstructionRequest } from "../shared/plugins";
 import type { CompatibilityVaultWritePort } from "./obsidian-compat";
 
@@ -30,6 +31,8 @@ export function isFatalPluginRuntimeError(error: unknown): error is FatalPluginR
 }
 
 export interface PluginRuntimePort {
+  /** Apply one complete environment replacement and return its acknowledgement snapshot. */
+  applyEnvironment?(environment: PluginRendererEnvironment): Promise<RuntimeSnapshot>;
   closePluginView(): Promise<RuntimeSnapshot>;
   getSnapshot(): Promise<RuntimeSnapshot>;
   loadPlugin(request: PluginConstructionRequest): Promise<RuntimeSnapshot>;

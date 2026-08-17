@@ -78,6 +78,7 @@ import {
 } from "../shared/plugin-diagnostics";
 import { parsePluginPackagePreviewRequest } from "../shared/plugin-packages";
 import {
+  type PluginRendererEnvironment,
   parsePluginEditorContext,
   parsePluginMutationWaitOptions,
   parsePluginVaultCreateBinaryRequest,
@@ -173,6 +174,7 @@ import {
 } from "./plugin-construction-policy";
 import { assertMainRendererPluginIpcSender } from "./plugin-ipc-sender-guard";
 import { PluginPackageManager } from "./plugin-package-manager";
+import { PluginSurfaceEnvironmentBridge } from "./plugin-surface-environment";
 import {
   ensureHtmlExtension,
   isPublishExportTargetOutsideVault,
@@ -310,11 +312,10 @@ const workspaceOpenTransferTracker = workspaceOpenDiagnostics
   ? new WorkspaceOpenTransferTracker(workspaceOpenDiagnostics)
   : undefined;
 const compatibilityPluginViews = new Set<WebContentsView>();
-const compatibilityPluginWebContents = new Set<WebContents>();
 const visiblePluginViews = new Set<WebContentsView>();
 let pluginSurfaceBounds: PluginSurfaceBounds = { x: 0, y: 0, width: 0, height: 0 };
 let pluginSurfaceCss = "";
-const pluginSurfaceCssKeys = new Map<WebContents, string>();
+let pluginSurfaceAppearanceCss = "";
 
 if (process.env.THREADLEAF_WORKSPACE_DOCKS_RUN) {
   process.on("SIGUSR2", () => {
@@ -338,41 +339,18 @@ let pluginSurfaceAccessibility: EffectiveAccessibilityPreferences = {
   reducedMotion: false,
   reducedTransparency: false,
 };
+const pluginSurfaceEnvironmentBridge = new PluginSurfaceEnvironmentBridge({
+  theme: pluginSurfaceTheme,
+  appearanceCss: pluginSurfaceAppearanceCss,
+  pluginCss: pluginSurfaceCss,
+  accessibilityCss: pluginAccessibilityCss(),
+  accessibility: pluginSurfaceAccessibility,
+});
 let migrationTransactionManager: ObsidianMigrationTransactionManager | null = null;
 const migrationStartupNotices = new Map<
   string,
   Awaited<ReturnType<ObsidianMigrationTransactionManager["recover"]>>
 >();
-
-async function applyPluginSurfaceTheme(
-  theme: "dark" | "light",
-  webContents?: WebContents,
-): Promise<void> {
-  pluginSurfaceTheme = theme;
-  const targets = webContents ? [webContents] : [...compatibilityPluginWebContents];
-  const results = await Promise.allSettled(
-    targets.map(async (target) => {
-      if (target.isDestroyed()) {
-        return;
-      }
-      await target.executeJavaScript(`
-        (() => {
-          const theme = ${JSON.stringify(theme)};
-          document.documentElement.dataset.theme = theme;
-          for (const target of [document.documentElement, document.body]) {
-            target.classList.toggle("theme-dark", theme === "dark");
-            target.classList.toggle("theme-light", theme === "light");
-          }
-        })()
-      `);
-    }),
-  );
-  for (const result of results) {
-    if (result.status === "rejected") {
-      console.error("Could not apply the theme to an isolated plugin renderer:", result.reason);
-    }
-  }
-}
 
 function pluginAccessibilityCss(): string {
   return `
@@ -461,82 +439,52 @@ function pluginAccessibilityCss(): string {
   `;
 }
 
-async function applyPluginSurfaceAccessibility(
-  preferences: EffectiveAccessibilityPreferences,
-  webContents?: WebContents,
-): Promise<void> {
-  pluginSurfaceAccessibility = preferences;
-  const targets = webContents ? [webContents] : [...compatibilityPluginWebContents];
-  const css = pluginAccessibilityCss();
-  const results = await Promise.allSettled(
-    targets.map(async (target) => {
-      if (target.isDestroyed()) return;
-      await target.executeJavaScript(`
-        (() => {
-          const root = document.documentElement;
-          const body = document.body;
-          const state = ${JSON.stringify(preferences)};
-          root.dataset.threadleafAccessibility = "true";
-          root.dataset.threadleafHighContrast = String(state.highContrast);
-          root.dataset.threadleafReducedMotion = String(state.reducedMotion);
-          root.dataset.threadleafReducedTransparency = String(state.reducedTransparency);
-          root.dataset.threadleafAccent = state.accent;
-          for (const target of [root, body]) {
-            target.style.setProperty("--threadleaf-ui-font-scale", String(state.uiFontScale), "important");
-            target.style.setProperty("--threadleaf-text-font-scale", String(state.textFontScale), "important");
-            target.style.setProperty("--threadleaf-editor-font-size", String(state.editorFontSize) + "px", "important");
-            target.style.setProperty("--threadleaf-editor-line-height", String(state.editorLineHeight), "important");
-          }
-          let style = document.getElementById("threadleaf-accessibility-protection");
-          if (!style) {
-            style = document.createElement("style");
-            style.id = "threadleaf-accessibility-protection";
-            document.head.append(style);
-          }
-          style.textContent = ${JSON.stringify(css)};
-        })()
-      `);
-    }),
-  );
-  for (const result of results) {
-    if (result.status === "rejected") {
-      console.error(
-        "Could not apply accessibility preferences to an isolated plugin renderer:",
-        result.reason,
-      );
-    }
+function pluginSurfaceEnvironmentIdentity(): { vaultId: string; vaultGeneration: number } | null {
+  const vaultId = workspaceController?.vaultId;
+  if (!vaultId) {
+    return null;
   }
+  const session = pluginConstructionAuthoritySessions.get(vaultId);
+  return session ? { vaultId, vaultGeneration: session.vaultGeneration } : null;
 }
 
-async function applyPluginSurfaceCss(css: string, view?: WebContentsView): Promise<void> {
-  pluginSurfaceCss = css;
-  const targets = view ? [view] : [...compatibilityPluginViews];
-  const results = await Promise.allSettled(
-    targets.map(async (target) => {
-      const webContents = target.webContents;
-      const previousKey = pluginSurfaceCssKeys.get(webContents);
-      pluginSurfaceCssKeys.delete(webContents);
-      if (previousKey && !webContents.isDestroyed()) {
-        await webContents.removeInsertedCSS(previousKey).catch(() => undefined);
-      }
-      if (webContents.isDestroyed() || !css) {
-        return;
-      }
-      const key = await webContents.insertCSS(css, { cssOrigin: "author" });
-      if (webContents.isDestroyed() || !compatibilityPluginViews.has(target)) {
-        if (!webContents.isDestroyed()) {
-          await webContents.removeInsertedCSS(key).catch(() => undefined);
-        }
-        return;
-      }
-      pluginSurfaceCssKeys.set(webContents, key);
-    }),
-  );
-  for (const result of results) {
-    if (result.status === "rejected") {
-      console.error("Could not apply CSS to an isolated plugin renderer:", result.reason);
-    }
+async function publishPluginSurfaceEnvironment(
+  patch: Partial<PluginRendererEnvironment>,
+): Promise<void> {
+  const identity = pluginSurfaceEnvironmentIdentity();
+  if (!identity && pluginSurfaceEnvironmentBridge.targetCount > 0) {
+    throw new Error("Live compatibility renderers have no active vault identity.");
   }
+  await pluginSurfaceEnvironmentBridge.update({
+    ...patch,
+    ...(identity ?? {}),
+  });
+}
+
+async function applyPluginSurfaceTheme(theme: "dark" | "light"): Promise<void> {
+  pluginSurfaceTheme = theme;
+  pluginSurfaceEnvironmentBridge.setSources({ theme });
+  await publishPluginSurfaceEnvironment({ theme });
+}
+
+async function applyPluginSurfaceAccessibility(
+  preferences: EffectiveAccessibilityPreferences,
+): Promise<void> {
+  pluginSurfaceAccessibility = preferences;
+  pluginSurfaceEnvironmentBridge.setSources({
+    accessibility: preferences,
+    accessibilityCss: pluginAccessibilityCss(),
+  });
+  await publishPluginSurfaceEnvironment({
+    accessibility: preferences,
+    accessibilityCss: pluginAccessibilityCss(),
+  });
+}
+
+async function applyPluginSurfaceCss(css: string): Promise<void> {
+  pluginSurfaceCss = css;
+  pluginSurfaceEnvironmentBridge.setSources({ pluginCss: css });
+  await publishPluginSurfaceEnvironment({ pluginCss: css });
 }
 
 function detachPluginView(): void {
@@ -612,15 +560,18 @@ function setPluginSurfacePresentationVisible(visible: boolean): void {
   }
 }
 
-async function registerCompatibilityPluginView(view: WebContentsView): Promise<void> {
+async function registerCompatibilityPluginView(
+  runtime: ElectronPluginRuntime,
+  identity: { vaultId: string; vaultGeneration: number },
+): Promise<void> {
+  const view = runtime.view;
   const webContents = view.webContents;
+  const targetId = `webcontents:${webContents.id}`;
   compatibilityPluginViews.add(view);
-  compatibilityPluginWebContents.add(webContents);
   webContents.once("destroyed", () => {
     compatibilityPluginViews.delete(view);
-    compatibilityPluginWebContents.delete(webContents);
+    pluginSurfaceEnvironmentBridge.unregister(targetId);
     visiblePluginViews.delete(view);
-    pluginSurfaceCssKeys.delete(webContents);
     if (attachedPluginView === view) {
       detachPluginView();
     }
@@ -638,11 +589,14 @@ async function registerCompatibilityPluginView(view: WebContentsView): Promise<v
         .catch((error) => console.error("Could not persist unloaded plugin reattachment:", error));
     }
   });
-  await Promise.all([
-    applyPluginSurfaceTheme(pluginSurfaceTheme, webContents),
-    applyPluginSurfaceCss(pluginSurfaceCss, view),
-    applyPluginSurfaceAccessibility(pluginSurfaceAccessibility, webContents),
-  ]);
+  await pluginSurfaceEnvironmentBridge.register(
+    {
+      id: targetId,
+      isDestroyed: () => webContents.isDestroyed(),
+      applyEnvironment: (environment) => runtime.applyEnvironment(environment),
+    },
+    identity,
+  );
 }
 
 function workspaceDisplayAreas(): Array<{ x: number; y: number; width: number; height: number }> {
@@ -939,7 +893,10 @@ async function closeCompatibilityPluginView(): Promise<RuntimeSnapshot> {
 }
 
 function isCompatibilityPluginSender(webContents: WebContents): boolean {
-  return compatibilityPluginWebContents.has(webContents) && !webContents.isDestroyed();
+  return (
+    !webContents.isDestroyed() &&
+    [...compatibilityPluginViews].some((view) => view.webContents === webContents)
+  );
 }
 
 function isMainRendererSender(webContents: WebContents): boolean {
@@ -1509,6 +1466,16 @@ async function currentAppearance(expectedVaultId: string): Promise<AppearanceRes
   ) {
     return { status: "stale-vault", vaultId: workspaceController.vaultId };
   }
+  pluginSurfaceAppearanceCss = appearance.css;
+  pluginSurfaceEnvironmentBridge.setSources({ appearanceCss: appearance.css });
+  const authoritySession = pluginConstructionAuthoritySessions.get(expectedVaultId);
+  if (authoritySession) {
+    await publishPluginSurfaceEnvironment({
+      vaultId: expectedVaultId,
+      vaultGeneration: authoritySession.vaultGeneration,
+      appearanceCss: appearance.css,
+    });
+  }
   return { status: "ready", appearance };
 }
 
@@ -1920,6 +1887,33 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
       }
       activeTrustedWorkspaceRuntime = null;
       activeTrustedWorkspaceReadPort = null;
+      const managedPackages = await pluginPackageManager.getManagedPackages(vaultPath, vaultId);
+      const blockedPluginIds = new Set(
+        managedPackages
+          .filter((managed) => managed.integrity === "changed")
+          .map((managed) => managed.pluginId),
+      );
+      const appearance = await loadVaultAppearance({
+        vaultPath,
+        vaultId,
+        preference: settingsController.getVaultAppearance(vaultId),
+        safeMode: appearanceSafeMode(),
+      });
+      const surfaceCatalog = await loadVaultPluginCatalog({
+        vaultPath,
+        vaultId,
+        preference: settingsController.getVaultPlugins(vaultId),
+        safeMode: pluginSafeMode(),
+        blockedPluginIds,
+        resolveConstructionAuthority: (plugin, legacyState) =>
+          resolvePluginCatalogAuthority(authoritySession, plugin, legacyState),
+      });
+      pluginSurfaceAppearanceCss = appearance.css;
+      pluginSurfaceCss = surfaceCatalog.css;
+      pluginSurfaceEnvironmentBridge.setSources({
+        appearanceCss: appearance.css,
+        pluginCss: surfaceCatalog.css,
+      });
       return IsolatedPluginRuntime.open({
         create: () =>
           RecoveringPluginRuntime.open({
@@ -1946,7 +1940,11 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
                   }
                 : null;
             },
-            onRuntimeChange: async (runtime) => registerCompatibilityPluginView(runtime.view),
+            onRuntimeChange: async (runtime) =>
+              registerCompatibilityPluginView(runtime, {
+                vaultId,
+                vaultGeneration: authoritySession.vaultGeneration,
+              }),
           }),
       });
     },
@@ -4537,9 +4535,8 @@ const gracefulShutdownHandler = createGracefulShutdownHandler({
   },
   finalize: () => {
     compatibilityPluginViews.clear();
-    compatibilityPluginWebContents.clear();
+    pluginSurfaceEnvironmentBridge.clear();
     visiblePluginViews.clear();
-    pluginSurfaceCssKeys.clear();
   },
   quit: () => {
     applicationQuitAuthorized = true;

@@ -5,6 +5,7 @@ import {
   optionalPluginMutationWaitOptions,
   parsePluginEditorContext,
   parsePluginMutationWaitOptions,
+  parsePluginRendererEnvironment,
   parsePluginRendererRequest,
   parsePluginRendererResponse,
   parsePluginVaultCreateBinaryRequest,
@@ -18,6 +19,78 @@ import {
 } from "./plugin-runtime-protocol";
 
 describe("plugin renderer protocol", () => {
+  const accessibility = {
+    highContrast: false,
+    accent: "blue" as const,
+    uiFontScale: 1,
+    textFontScale: 1,
+    editorFontSize: 15,
+    editorLineHeight: 1.6,
+    reducedMotion: false,
+    reducedTransparency: false,
+  };
+
+  it("parses a bounded full environment replacement and rejects malformed bounds", () => {
+    const environment = parsePluginRendererEnvironment({
+      vaultId: "a".repeat(64),
+      vaultGeneration: 3,
+      sequence: 7,
+      theme: "dark",
+      appearanceCss: ".appearance { --appearance: 1; }",
+      pluginCss: ".plugin { --plugin: 1; }",
+      accessibilityCss: ":root { --accessibility: 1; }",
+      accessibility,
+    });
+
+    expect(environment).toEqual({
+      vaultId: "a".repeat(64),
+      vaultGeneration: 3,
+      sequence: 7,
+      theme: "dark",
+      appearanceCss: ".appearance { --appearance: 1; }",
+      pluginCss: ".plugin { --plugin: 1; }",
+      accessibilityCss: ":root { --accessibility: 1; }",
+      accessibility,
+    });
+    expect(() =>
+      parsePluginRendererEnvironment({
+        vaultId: "a".repeat(64),
+        vaultGeneration: 0,
+        sequence: 1,
+        theme: "dark",
+        appearanceCss: "",
+        pluginCss: "",
+        accessibilityCss: "",
+        accessibility,
+      }),
+    ).toThrow("vaultGeneration");
+    expect(() =>
+      parsePluginRendererEnvironment({
+        vaultId: "a".repeat(64),
+        vaultGeneration: 1,
+        sequence: 1,
+        theme: "dark",
+        appearanceCss: "",
+        pluginCss: "",
+        accessibilityCss: "",
+        accessibility: { ...accessibility, uiFontScale: Number.NaN },
+      }),
+    ).toThrow("uiFontScale");
+    expect(() =>
+      parsePluginRendererEnvironment({
+        vaultId: "a".repeat(64),
+        vaultGeneration: 1,
+        sequence: 1,
+        theme: "dark",
+        appearanceCss: "",
+        pluginCss: "",
+        accessibilityCss: "",
+        accessibility,
+        extra: true,
+      }),
+    ).toThrow("unknown fields");
+  });
+
   it("accepts a bounded known operation and object payload", () => {
     const request = parsePluginRendererRequest({
       id: "request-1",

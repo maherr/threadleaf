@@ -1,6 +1,7 @@
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { PluginEditorContext, PluginSummary, RuntimeSnapshot } from "../shared/contracts";
+import type { PluginRendererEnvironment } from "../shared/plugin-runtime-protocol";
 import type { PluginConstructionRequest } from "../shared/plugins";
 import { FatalPluginRuntimeError, type PluginRuntimePort } from "./plugin-runtime-port";
 import { RecoveringPluginRuntime } from "./recovering-plugin-runtime";
@@ -75,6 +76,8 @@ class FakePluginRuntime implements PluginRuntimePort {
   fatalCommandId: string | null = null;
   ordinaryLoadError: Error | null = null;
   readonly constructionPaths: string[] = [];
+  readonly environmentSequences: number[] = [];
+  readonly trace: string[] = [];
 
   closePluginView(): Promise<RuntimeSnapshot> {
     return this.getSnapshot();
@@ -86,6 +89,7 @@ class FakePluginRuntime implements PluginRuntimePort {
 
   async loadPlugin(request: PluginConstructionRequest): Promise<RuntimeSnapshot> {
     const id = request.packageIdentity.pluginId;
+    this.trace.push(`load:${id}`);
     this.constructionPaths.push(request.constructionPath);
     if (this.ordinaryLoadError) {
       throw this.ordinaryLoadError;
@@ -96,6 +100,21 @@ class FakePluginRuntime implements PluginRuntimePort {
     const summary = plugin(id);
     this.loaded.set(id, summary);
     return snapshot([...this.loaded.values()], id);
+  }
+
+  async applyEnvironment(environment: PluginRendererEnvironment): Promise<RuntimeSnapshot> {
+    this.environmentSequences.push(environment.sequence);
+    this.trace.push(`environment:${environment.sequence}`);
+    return {
+      ...snapshot([...this.loaded.values()]),
+      pluginEnvironment: {
+        status: "applied",
+        vaultId: environment.vaultId,
+        vaultGeneration: environment.vaultGeneration,
+        sequence: environment.sequence,
+        cssChangeTriggered: false,
+      },
+    };
   }
 
   markLayoutReady(): Promise<RuntimeSnapshot> {
@@ -142,6 +161,43 @@ class FakePluginRuntime implements PluginRuntimePort {
 }
 
 describe("RecoveringPluginRuntime", () => {
+  it("restores the last acknowledged environment before replaying plugins", async () => {
+    const first = new FakePluginRuntime();
+    first.fatalLoadId = "bad";
+    const replacement = new FakePluginRuntime();
+    const runtimes = [first, replacement];
+    const runtime = await RecoveringPluginRuntime.open({
+      create: async () => runtimes.shift() ?? replacement,
+    });
+    const environment: PluginRendererEnvironment = {
+      vaultId: "e".repeat(64),
+      vaultGeneration: 9,
+      sequence: 4,
+      theme: "dark",
+      appearanceCss: ".appearance {}",
+      pluginCss: ".plugin {}",
+      accessibilityCss: ":root {}",
+      accessibility: {
+        highContrast: false,
+        accent: "blue",
+        uiFontScale: 1,
+        textFontScale: 1,
+        editorFontSize: 15,
+        editorLineHeight: 1.6,
+        reducedMotion: false,
+        reducedTransparency: false,
+      },
+    };
+    await runtime.applyEnvironment(environment);
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/good"));
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/bad"));
+
+    expect(replacement.environmentSequences).toEqual([4]);
+    expect(replacement.trace[0]).toBe("environment:4");
+    expect(replacement.trace.slice(1)).toEqual(["load:good"]);
+    await runtime.close();
+  });
+
   it("replaces a wedged renderer and keeps failed plugins available for explicit reload", async () => {
     const first = new FakePluginRuntime();
     first.fatalLoadId = "bad";

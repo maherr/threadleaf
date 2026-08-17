@@ -297,6 +297,20 @@ export interface RuntimeSnapshot {
   workspace?: WorkspaceSnapshot;
   workspaceLayout?: WorkspaceLayoutSnapshot;
   workspaceOpenDiagnostics?: WorkspaceOpenTransferReceipt;
+  pluginEnvironment?: PluginEnvironmentSnapshot;
+}
+
+/**
+ * The renderer acknowledgement carried in runtime snapshots. Source text is
+ * intentionally omitted: diagnostics expose identity, ordering, and whether
+ * a live CSS reparse was settled without duplicating potentially large CSS.
+ */
+export interface PluginEnvironmentSnapshot {
+  status: "applied" | "stale";
+  vaultId: string;
+  vaultGeneration: number;
+  sequence: number;
+  cssChangeTriggered: boolean;
 }
 
 export interface WorkspaceFileSummary {

@@ -2,10 +2,12 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import moment from "moment";
 import { PluginHost } from "../runtime/plugin-host";
+import type { PluginEnvironmentSnapshot, RuntimeSnapshot } from "../shared/contracts";
 import {
   optionalPayloadString,
   optionalPluginEditorContext,
   optionalPluginMutationWaitOptions,
+  type PluginRendererEnvironment,
   type PluginRendererRequest,
   type PluginVaultCreateBinaryRequest,
   type PluginVaultCreateBinaryResponse,
@@ -24,6 +26,7 @@ import {
   requirePayloadContent,
   requirePayloadString,
   requirePluginConstructionDispatch,
+  requirePluginRendererEnvironment,
 } from "../shared/plugin-runtime-protocol";
 
 export interface PluginRendererVaultMutations {
@@ -36,10 +39,108 @@ export interface PluginRendererVaultMutations {
   writeText(request: PluginVaultWriteRequest): Promise<PluginVaultWriteResponse>;
 }
 
+const compatibilityEnvironmentStyleIds = {
+  appearance: "threadleaf-compat-appearance-source",
+  plugin: "threadleaf-compat-plugin-source",
+  accessibility: "threadleaf-compat-accessibility",
+} as const;
+
+type EnvironmentStyleId =
+  (typeof compatibilityEnvironmentStyleIds)[keyof typeof compatibilityEnvironmentStyleIds];
+
+function requireDocument(): Document {
+  if (typeof document === "undefined" || !document.head || !document.documentElement) {
+    throw new Error("Plugin renderer environment requires a document head and root.");
+  }
+  return document;
+}
+
+function ensureEnvironmentStyle(documentRef: Document, id: EnvironmentStyleId): HTMLStyleElement {
+  const existing = documentRef.getElementById(id);
+  if (existing && existing.tagName !== "STYLE") {
+    throw new Error(`Plugin renderer environment node ${id} is not a style element.`);
+  }
+  if (existing) {
+    return existing as HTMLStyleElement;
+  }
+  const style = documentRef.createElement("style");
+  style.id = id;
+  style.dataset.threadleafEnvironmentSource = "true";
+  documentRef.head.append(style);
+  return style;
+}
+
+function realizeEnvironmentStyles(documentRef: Document): void {
+  // Reading cssRules forces the browser to parse each stylesheet before the
+  // acknowledgement is emitted. Cross-origin sheets are not expected in this
+  // isolated renderer, but a defensive catch keeps the local sources realized.
+  for (const sheet of Array.from(documentRef.styleSheets)) {
+    try {
+      void sheet.cssRules.length;
+    } catch {
+      // A foreign sheet cannot be inspected; the source nodes remain local and
+      // are still ordered and acknowledged below.
+    }
+  }
+}
+
+async function settleEnvironmentStyles(documentRef: Document): Promise<void> {
+  const animationFrame = documentRef.defaultView?.requestAnimationFrame;
+  if (typeof animationFrame === "function") {
+    await new Promise<void>((resolve) => animationFrame(() => resolve()));
+    return;
+  }
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
+function applyAccessibilityState(
+  documentRef: Document,
+  state: PluginRendererEnvironment["accessibility"],
+): void {
+  const root = documentRef.documentElement;
+  const body = documentRef.body;
+  root.dataset.threadleafAccessibility = "true";
+  root.dataset.threadleafHighContrast = String(state.highContrast);
+  root.dataset.threadleafReducedMotion = String(state.reducedMotion);
+  root.dataset.threadleafReducedTransparency = String(state.reducedTransparency);
+  root.dataset.threadleafAccent = state.accent;
+  for (const target of [root, body]) {
+    target.style.setProperty("--threadleaf-ui-font-scale", String(state.uiFontScale), "important");
+    target.style.setProperty(
+      "--threadleaf-text-font-scale",
+      String(state.textFontScale),
+      "important",
+    );
+    target.style.setProperty(
+      "--threadleaf-editor-font-size",
+      `${String(state.editorFontSize)}px`,
+      "important",
+    );
+    target.style.setProperty(
+      "--threadleaf-editor-line-height",
+      String(state.editorLineHeight),
+      "important",
+    );
+  }
+}
+
+function applyThemeState(documentRef: Document, theme: "dark" | "light"): void {
+  const root = documentRef.documentElement;
+  root.dataset.theme = theme;
+  for (const target of [root, documentRef.body]) {
+    target.classList.toggle("theme-dark", theme === "dark");
+    target.classList.toggle("theme-light", theme === "light");
+  }
+}
+
 export class PluginRendererService {
   private host: PluginHost | null = null;
   private restoreCompatibilityGlobals: (() => void) | null = null;
   private readonly vaultMutations: PluginRendererVaultMutations | undefined;
+  private environment: PluginRendererEnvironment | null = null;
+  private environmentAcknowledgement: PluginEnvironmentSnapshot | null = null;
+  private accessibilityOrderObserver: MutationObserver | null = null;
+  private hostStyleNodes = new Set<HTMLStyleElement>();
 
   constructor(vaultMutations?: PluginRendererVaultMutations) {
     this.vaultMutations = vaultMutations;
@@ -120,49 +221,78 @@ export class PluginRendererService {
               }
             : undefined,
         );
+        if (typeof document !== "undefined" && document.head) {
+          this.hostStyleNodes = new Set(
+            Array.from(document.head.querySelectorAll("style")) as HTMLStyleElement[],
+          );
+        }
         this.restoreCompatibilityGlobals = this.installCompatibilityGlobals(this.host);
-        return this.host.getSnapshot();
+        return this.snapshot();
       }
       case "get-snapshot":
-        return this.requireHost().getSnapshot();
+        return this.snapshot();
+      case "apply-environment":
+        return this.applyEnvironment(requirePluginRendererEnvironment(request));
       case "load-plugin":
         await this.requireHost().closePluginView();
-        return this.requireHost().loadAuthorizedPlugin(requirePluginConstructionDispatch(request));
+        {
+          const snapshot = await this.requireHost().loadAuthorizedPlugin(
+            requirePluginConstructionDispatch(request),
+          );
+          await this.ensureAccessibilityLast();
+          return this.withEnvironment(snapshot);
+        }
       case "reload-plugin":
         await this.requireHost().closePluginView();
-        return this.requireHost().reloadAuthorizedPlugin(
-          requirePluginConstructionDispatch(request),
-        );
+        {
+          const snapshot = await this.requireHost().reloadAuthorizedPlugin(
+            requirePluginConstructionDispatch(request),
+          );
+          await this.ensureAccessibilityLast();
+          return this.withEnvironment(snapshot);
+        }
       case "render-markdown":
-        return this.requireHost().renderMarkdownProjection(
-          requirePayloadString(request, "pluginId"),
-          requirePayloadString(request, "sourcePath"),
-          requirePayloadContent(request, "content"),
+        return this.withEnvironment(
+          await this.requireHost().renderMarkdownProjection(
+            requirePayloadString(request, "pluginId"),
+            requirePayloadString(request, "sourcePath"),
+            requirePayloadContent(request, "content"),
+          ),
         );
       case "run-command":
-        return this.requireHost().runCommand(
-          requirePayloadString(request, "commandId"),
-          optionalPluginEditorContext(request),
+        return this.withEnvironment(
+          await this.requireHost().runCommand(
+            requirePayloadString(request, "commandId"),
+            optionalPluginEditorContext(request),
+          ),
         );
       case "wait-for-mutations":
-        return this.requireHost().waitForPluginMutations(
-          optionalPluginMutationWaitOptions(request),
+        return this.withEnvironment(
+          await this.requireHost().waitForPluginMutations(
+            optionalPluginMutationWaitOptions(request),
+          ),
         );
       case "unload-plugin":
-        return this.requireHost().unloadPlugin(optionalPayloadString(request, "pluginId"));
+        return this.withEnvironment(
+          await this.requireHost().unloadPlugin(optionalPayloadString(request, "pluginId")),
+        );
       case "unload-all":
-        return this.requireHost().unloadAllPlugins();
+        return this.withEnvironment(await this.requireHost().unloadAllPlugins());
       case "mark-layout-ready":
-        return this.requireHost().markLayoutReady();
+        return this.withEnvironment(await this.requireHost().markLayoutReady());
       case "open-settings":
-        return this.requireHost().openPluginSettings(requirePayloadString(request, "pluginId"));
+        return this.withEnvironment(
+          await this.requireHost().openPluginSettings(requirePayloadString(request, "pluginId")),
+        );
       case "open-view":
-        return this.requireHost().openPluginView(
-          requirePayloadString(request, "viewType"),
-          optionalPayloadString(request, "filePath"),
+        return this.withEnvironment(
+          await this.requireHost().openPluginView(
+            requirePayloadString(request, "viewType"),
+            optionalPayloadString(request, "filePath"),
+          ),
         );
       case "close-view":
-        return this.requireHost().closePluginView();
+        return this.withEnvironment(await this.requireHost().closePluginView());
       case "close":
         await this.close();
         return null;
@@ -172,6 +302,11 @@ export class PluginRendererService {
   async close(): Promise<void> {
     const host = this.host;
     this.host = null;
+    this.accessibilityOrderObserver?.disconnect();
+    this.accessibilityOrderObserver = null;
+    this.hostStyleNodes.clear();
+    this.environment = null;
+    this.environmentAcknowledgement = null;
     try {
       await host?.close();
     } finally {
@@ -218,5 +353,114 @@ export class PluginRendererService {
       throw new Error("Plugin renderer has not been initialized.");
     }
     return this.host;
+  }
+
+  private async snapshot(): Promise<RuntimeSnapshot> {
+    return this.withEnvironment(await this.requireHost().getSnapshot());
+  }
+
+  private withEnvironment(snapshot: RuntimeSnapshot): RuntimeSnapshot {
+    return this.environmentAcknowledgement
+      ? { ...snapshot, pluginEnvironment: { ...this.environmentAcknowledgement } }
+      : snapshot;
+  }
+
+  private async applyEnvironment(environment: PluginRendererEnvironment): Promise<RuntimeSnapshot> {
+    const host = this.requireHost();
+    if (
+      this.environment &&
+      (this.environment.vaultId !== environment.vaultId ||
+        this.environment.vaultGeneration !== environment.vaultGeneration)
+    ) {
+      throw new Error("Plugin renderer environment identity changed while the renderer was bound.");
+    }
+    if (this.environment && environment.sequence <= this.environment.sequence) {
+      this.environmentAcknowledgement = {
+        status: "stale",
+        vaultId: environment.vaultId,
+        vaultGeneration: environment.vaultGeneration,
+        sequence: environment.sequence,
+        cssChangeTriggered: false,
+      };
+      return this.snapshot();
+    }
+
+    const initial = this.environment === null;
+    const documentRef = requireDocument();
+    const appearance = ensureEnvironmentStyle(
+      documentRef,
+      compatibilityEnvironmentStyleIds.appearance,
+    );
+    const plugin = ensureEnvironmentStyle(documentRef, compatibilityEnvironmentStyleIds.plugin);
+    const accessibility = ensureEnvironmentStyle(
+      documentRef,
+      compatibilityEnvironmentStyleIds.accessibility,
+    );
+    appearance.textContent = environment.appearanceCss;
+    plugin.textContent = environment.pluginCss;
+    accessibility.textContent = environment.accessibilityCss;
+    applyThemeState(documentRef, environment.theme);
+    applyAccessibilityState(documentRef, environment.accessibility);
+    this.placeSourceNodes(documentRef, appearance, plugin, accessibility);
+    this.installAccessibilityOrderObserver(documentRef);
+    realizeEnvironmentStyles(documentRef);
+    await settleEnvironmentStyles(documentRef);
+    await this.ensureAccessibilityLast();
+    const cssChangeTriggered = !initial;
+    if (cssChangeTriggered) {
+      host.app.workspace.trigger("css-change");
+    }
+    this.environment = structuredClone(environment);
+    this.environmentAcknowledgement = {
+      status: "applied",
+      vaultId: environment.vaultId,
+      vaultGeneration: environment.vaultGeneration,
+      sequence: environment.sequence,
+      cssChangeTriggered,
+    };
+    return this.snapshot();
+  }
+
+  private placeSourceNodes(
+    documentRef: Document,
+    appearance: HTMLStyleElement,
+    plugin: HTMLStyleElement,
+    accessibility: HTMLStyleElement,
+  ): void {
+    const sourceIds = new Set<string>(Object.values(compatibilityEnvironmentStyleIds));
+    const firstDynamicStyle = Array.from(documentRef.head.querySelectorAll("style")).find(
+      (style) => !sourceIds.has(style.id) && !this.hostStyleNodes.has(style),
+    );
+    if (firstDynamicStyle) {
+      documentRef.head.insertBefore(appearance, firstDynamicStyle);
+      documentRef.head.insertBefore(plugin, firstDynamicStyle);
+    } else {
+      documentRef.head.append(appearance, plugin);
+    }
+    documentRef.head.append(accessibility);
+  }
+
+  private installAccessibilityOrderObserver(documentRef: Document): void {
+    if (this.accessibilityOrderObserver || typeof MutationObserver === "undefined") {
+      return;
+    }
+    this.accessibilityOrderObserver = new MutationObserver(() => {
+      void this.ensureAccessibilityLast();
+    });
+    this.accessibilityOrderObserver.observe(documentRef.head, { childList: true });
+  }
+
+  private async ensureAccessibilityLast(): Promise<void> {
+    if (typeof document === "undefined" || !document.head) {
+      return;
+    }
+    const accessibility = document.getElementById(compatibilityEnvironmentStyleIds.accessibility);
+    if (accessibility && document.head.lastElementChild !== accessibility) {
+      document.head.append(accessibility);
+    }
+    if (accessibility) {
+      realizeEnvironmentStyles(document);
+    }
+    await Promise.resolve();
   }
 }

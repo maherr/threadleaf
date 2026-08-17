@@ -54,6 +54,155 @@ function request(
 }
 
 describe("PluginRendererService", () => {
+  it("applies full environments through source-bearing nodes and settles one css-change per live update", async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-environment-service-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    const dom = new JSDOM(
+      "<!doctype html><head><style id='threadleaf-host-base'>.probe { color: rgb(1, 1, 1); }</style></head><body></body>",
+      {
+        url: "https://threadleaf.invalid/",
+      },
+    );
+    installObsidianDomCompatibility(dom.window);
+    exposeDom(dom);
+    const environment = (sequence: number, pluginCss: string) => ({
+      vaultId: "b".repeat(64),
+      vaultGeneration: 2,
+      sequence,
+      theme: "dark" as const,
+      appearanceCss: ".probe { --appearance-value: 11px; color: rgb(2, 2, 2); }",
+      pluginCss,
+      accessibilityCss: ":root { --accessibility-value: 13px !important; }",
+      accessibility: {
+        highContrast: false,
+        accent: "blue" as const,
+        uiFontScale: 1,
+        textFontScale: 1,
+        editorFontSize: 15,
+        editorLineHeight: 1.6,
+        reducedMotion: false,
+        reducedTransparency: false,
+      },
+    });
+    try {
+      await fs.mkdir(vaultPath, { recursive: true });
+      const service = new PluginRendererService();
+      await service.handle(
+        request("initialize", {
+          vaultPath,
+          packageJsonPath: path.resolve("package.json"),
+        }),
+      );
+      const changes: string[] = [];
+      const app = (
+        globalThis as typeof globalThis & {
+          app: { workspace: { on: (name: string, callback: () => void) => unknown } };
+        }
+      ).app;
+      app.workspace.on("css-change", () => changes.push("css-change"));
+      const first = await service.handle(
+        request("apply-environment", {
+          environment: environment(1, ".probe { color: rgb(3, 3, 3); --plugin-value: 17px; }"),
+        }),
+      );
+      expect(first?.pluginEnvironment).toEqual({
+        status: "applied",
+        vaultId: "b".repeat(64),
+        vaultGeneration: 2,
+        sequence: 1,
+        cssChangeTriggered: false,
+      });
+      expect(changes).toEqual([]);
+
+      const probe = dom.window.document.createElement("div");
+      probe.className = "probe";
+      probe.textContent = "Named probe";
+      dom.window.document.body.append(probe);
+      const dynamic = dom.window.document.createElement("style");
+      dynamic.id = "css-settings-manager";
+      dynamic.textContent = ".probe { color: rgb(5, 5, 5); }";
+      dom.window.document.head.append(dynamic);
+
+      const second = await service.handle(
+        request("apply-environment", {
+          environment: environment(2, ".probe { color: rgb(4, 4, 4); --plugin-value: 19px; }"),
+        }),
+      );
+      expect(second?.pluginEnvironment).toMatchObject({
+        status: "applied",
+        sequence: 2,
+        cssChangeTriggered: true,
+      });
+      expect(changes).toEqual(["css-change"]);
+      expect(
+        dom.window.document.querySelector("#threadleaf-compat-appearance-source")?.textContent,
+      ).toContain("--appearance-value: 11px");
+      expect(
+        dom.window.document.querySelector("#threadleaf-compat-plugin-source")?.textContent,
+      ).toContain("--plugin-value: 19px");
+      const appearanceSheet = Array.from(dom.window.document.styleSheets).find(
+        (sheet) =>
+          (sheet.ownerNode as HTMLElement | null)?.id === "threadleaf-compat-appearance-source",
+      );
+      expect((appearanceSheet?.ownerNode as HTMLElement | null)?.textContent).toContain(
+        "--appearance-value: 11px",
+      );
+      const order = Array.from(dom.window.document.head.querySelectorAll("style")).map(
+        (style) => style.id,
+      );
+      expect(order.indexOf("threadleaf-host-base")).toBeLessThan(
+        order.indexOf("threadleaf-compat-appearance-source"),
+      );
+      expect(order.indexOf("threadleaf-compat-appearance-source")).toBeLessThan(
+        order.indexOf("threadleaf-compat-plugin-source"),
+      );
+      expect(order.indexOf("threadleaf-compat-plugin-source")).toBeLessThan(
+        order.indexOf("css-settings-manager"),
+      );
+      expect(order.at(-1)).toBe("threadleaf-compat-accessibility");
+      expect(dom.window.getComputedStyle(probe).getPropertyValue("--plugin-value").trim()).toBe(
+        "19px",
+      );
+
+      const stale = await service.handle(
+        request("apply-environment", {
+          environment: environment(2, ".probe { --plugin-value: stale; }"),
+        }),
+      );
+      expect(stale?.pluginEnvironment).toMatchObject({ status: "stale", sequence: 2 });
+      expect(changes).toEqual(["css-change"]);
+      expect(
+        dom.window.document.querySelector("#threadleaf-compat-plugin-source")?.textContent,
+      ).toContain("19px");
+
+      const gap = await service.handle(
+        request("apply-environment", {
+          environment: environment(5, ".probe { --plugin-value: 23px; }"),
+        }),
+      );
+      expect(gap?.pluginEnvironment).toMatchObject({
+        status: "applied",
+        sequence: 5,
+        cssChangeTriggered: true,
+      });
+      expect(changes).toEqual(["css-change", "css-change"]);
+      expect(dom.window.getComputedStyle(probe).getPropertyValue("--plugin-value").trim()).toBe(
+        "23px",
+      );
+      await expect(
+        service.handle(
+          request("apply-environment", {
+            environment: { ...environment(6, ""), vaultId: "c".repeat(64) },
+          }),
+        ),
+      ).rejects.toThrow("identity changed");
+      await service.handle(request("close"));
+    } finally {
+      dom.window.close();
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   it("owns a DOM plugin lifecycle behind the renderer protocol", async () => {
     const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-renderer-service-"));
     const vaultPath = path.join(sandboxPath, "vault");

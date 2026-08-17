@@ -12,8 +12,10 @@ import {
   parsePluginRendererRequest,
   pluginRendererChannels,
 } from "../shared/plugin-runtime-protocol";
+import { installActiveWindowGlobal } from "./active-window";
 import { PluginRendererService } from "./plugin-renderer-service";
 
+installActiveWindowGlobal(window, globalThis);
 installObsidianDomCompatibility(window, globalThis);
 
 const service = new PluginRendererService({

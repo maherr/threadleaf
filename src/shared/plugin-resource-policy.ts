@@ -44,6 +44,7 @@ export const defaultPluginResourcePolicy: PluginResourcePolicy = {
     "close-view": 5_000,
     "get-snapshot": 5_000,
     initialize: 10_000,
+    "apply-environment": 10_000,
     "load-plugin": 30_000,
     "mark-layout-ready": 5_000,
     "open-settings": 10_000,

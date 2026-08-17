@@ -1,9 +1,186 @@
+import type { EffectiveAccessibilityPreferences } from "./accessibility-preferences";
 import type { PluginEditorContext, RuntimeSnapshot } from "./contracts";
 import type { PluginConstructionDispatch } from "./plugins";
 
 export interface PluginMutationWaitOptions {
   quietMs?: number;
   timeoutMs?: number;
+}
+
+/**
+ * A complete replacement of the isolated compatibility renderer environment.
+ * The main process owns these bytes and the renderer owns their DOM nodes.
+ */
+export interface PluginRendererEnvironment {
+  vaultId: string;
+  vaultGeneration: number;
+  sequence: number;
+  theme: "dark" | "light";
+  appearanceCss: string;
+  pluginCss: string;
+  accessibilityCss: string;
+  accessibility: EffectiveAccessibilityPreferences;
+}
+
+export const pluginRendererEnvironmentLimits = {
+  maxVaultIdLength: 128,
+  maxCssStringBytes: 4 * 1024 * 1024,
+  maxAccessibilityCssBytes: 256 * 1024,
+  maxTotalBytes: 8 * 1024 * 1024,
+  maxGeneration: Number.MAX_SAFE_INTEGER,
+  maxSequence: Number.MAX_SAFE_INTEGER,
+} as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function boundedString(
+  value: unknown,
+  field: string,
+  maximumBytes: number,
+  allowEmpty = true,
+): string {
+  if (typeof value !== "string" || (!allowEmpty && value.length === 0)) {
+    throw new Error(`Plugin renderer environment ${field} must be a string.`);
+  }
+  const bytes = new TextEncoder().encode(value).byteLength;
+  if (bytes > maximumBytes) {
+    throw new Error(`Plugin renderer environment ${field} exceeds its byte limit.`);
+  }
+  return value;
+}
+
+function boundedPositiveInteger(value: unknown, field: string, maximum: number): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1 || value > maximum) {
+    throw new Error(`Plugin renderer environment ${field} must be a positive safe integer.`);
+  }
+  return value;
+}
+
+function parseEffectiveAccessibility(value: unknown): EffectiveAccessibilityPreferences {
+  if (!isRecord(value)) {
+    throw new Error("Plugin renderer environment accessibility state must be an object.");
+  }
+  const expected = new Set([
+    "highContrast",
+    "accent",
+    "uiFontScale",
+    "textFontScale",
+    "editorFontSize",
+    "editorLineHeight",
+    "reducedMotion",
+    "reducedTransparency",
+  ]);
+  if (Object.keys(value).some((key) => !expected.has(key))) {
+    throw new Error("Plugin renderer environment accessibility state has unknown fields.");
+  }
+  if (
+    typeof value.highContrast !== "boolean" ||
+    typeof value.reducedMotion !== "boolean" ||
+    typeof value.reducedTransparency !== "boolean" ||
+    !["blue", "teal", "orange"].includes(value.accent as string)
+  ) {
+    throw new Error("Plugin renderer environment accessibility flags are malformed.");
+  }
+  const ranges: Record<string, [number, number]> = {
+    uiFontScale: [0.8, 1.6],
+    textFontScale: [0.8, 1.8],
+    editorFontSize: [11, 32],
+    editorLineHeight: [1.2, 2.4],
+  };
+  for (const [field, [minimum, maximum]] of Object.entries(ranges)) {
+    const candidate = value[field];
+    if (
+      typeof candidate !== "number" ||
+      !Number.isFinite(candidate) ||
+      candidate < minimum ||
+      candidate > maximum
+    ) {
+      throw new Error(`Plugin renderer environment accessibility ${field} is out of range.`);
+    }
+  }
+  return {
+    highContrast: value.highContrast,
+    accent: value.accent as EffectiveAccessibilityPreferences["accent"],
+    uiFontScale: value.uiFontScale as number,
+    textFontScale: value.textFontScale as number,
+    editorFontSize: value.editorFontSize as number,
+    editorLineHeight: value.editorLineHeight as number,
+    reducedMotion: value.reducedMotion,
+    reducedTransparency: value.reducedTransparency,
+  };
+}
+
+export function parsePluginRendererEnvironment(value: unknown): PluginRendererEnvironment {
+  if (!isRecord(value)) {
+    throw new Error("Plugin renderer environment must be an object.");
+  }
+  const expected = new Set([
+    "vaultId",
+    "vaultGeneration",
+    "sequence",
+    "theme",
+    "appearanceCss",
+    "pluginCss",
+    "accessibilityCss",
+    "accessibility",
+  ]);
+  if (Object.keys(value).some((key) => !expected.has(key))) {
+    throw new Error("Plugin renderer environment has unknown fields.");
+  }
+  const vaultId = boundedString(
+    value.vaultId,
+    "vaultId",
+    pluginRendererEnvironmentLimits.maxVaultIdLength,
+    false,
+  );
+  const vaultGeneration = boundedPositiveInteger(
+    value.vaultGeneration,
+    "vaultGeneration",
+    pluginRendererEnvironmentLimits.maxGeneration,
+  );
+  const sequence = boundedPositiveInteger(
+    value.sequence,
+    "sequence",
+    pluginRendererEnvironmentLimits.maxSequence,
+  );
+  if (value.theme !== "dark" && value.theme !== "light") {
+    throw new Error("Plugin renderer environment theme must be dark or light.");
+  }
+  const appearanceCss = boundedString(
+    value.appearanceCss,
+    "appearanceCss",
+    pluginRendererEnvironmentLimits.maxCssStringBytes,
+  );
+  const pluginCss = boundedString(
+    value.pluginCss,
+    "pluginCss",
+    pluginRendererEnvironmentLimits.maxCssStringBytes,
+  );
+  const accessibilityCss = boundedString(
+    value.accessibilityCss,
+    "accessibilityCss",
+    pluginRendererEnvironmentLimits.maxAccessibilityCssBytes,
+  );
+  const accessibility = parseEffectiveAccessibility(value.accessibility);
+  const totalBytes = [vaultId, appearanceCss, pluginCss, accessibilityCss].reduce(
+    (total, item) => total + new TextEncoder().encode(item).byteLength,
+    0,
+  );
+  if (totalBytes > pluginRendererEnvironmentLimits.maxTotalBytes) {
+    throw new Error("Plugin renderer environment exceeds its total byte limit.");
+  }
+  return {
+    vaultId,
+    vaultGeneration,
+    sequence,
+    theme: value.theme,
+    appearanceCss,
+    pluginCss,
+    accessibilityCss,
+    accessibility,
+  };
 }
 
 export const pluginRendererChannels = {
@@ -154,6 +331,7 @@ export const pluginRendererOperations = [
   "close-view",
   "get-snapshot",
   "initialize",
+  "apply-environment",
   "load-plugin",
   "mark-layout-ready",
   "open-settings",
@@ -228,6 +406,12 @@ export function parsePluginRendererResponse(value: unknown): PluginRendererRespo
     throw new Error("Plugin renderer failure response has no error message.");
   }
   return { id: candidate.id, ok: false, error: candidate.error };
+}
+
+export function requirePluginRendererEnvironment(
+  request: PluginRendererRequest,
+): PluginRendererEnvironment {
+  return parsePluginRendererEnvironment(request.payload?.environment);
 }
 
 export function requirePluginConstructionDispatch(

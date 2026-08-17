@@ -25,6 +25,7 @@ import {
   pluginRendererOperations,
 } from "../shared/plugin-resource-policy";
 import {
+  type PluginRendererEnvironment,
   type PluginRendererOperation,
   type PluginRendererRequest,
   type PluginRendererResponse,
@@ -249,6 +250,10 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
 
   getSnapshot(): Promise<RuntimeSnapshot> {
     return this.requestSnapshot("get-snapshot");
+  }
+
+  applyEnvironment(environment: PluginRendererEnvironment): Promise<RuntimeSnapshot> {
+    return this.requestSnapshot("apply-environment", { environment });
   }
 
   closePluginView(): Promise<RuntimeSnapshot> {
