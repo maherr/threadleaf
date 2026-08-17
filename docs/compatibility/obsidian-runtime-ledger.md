@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 78 (77 public, 1 internal extra)
+- Factory keys: 81 (80 public, 1 internal extra)
 
 ## Export status
 
@@ -164,15 +164,15 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | Workspace | class | partial | 678ad5eacec977ed |
 | WorkspaceContainer | class | missing | 111dc7e1f6366fe3 |
 | WorkspaceFloating | class | missing | e7ce5a480a9e4cc1 |
-| WorkspaceItem | class | missing | 792134b77a9c1bb5 |
-| WorkspaceLeaf | class | partial | ba2f830d93cd9670 |
+| WorkspaceItem | class | implemented | 792134b77a9c1bb5 |
+| WorkspaceLeaf | class | implemented | ba2f830d93cd9670 |
 | WorkspaceMobileDrawer | class | missing | d18a5e362fc9f67a |
-| WorkspaceParent | class | missing | 1fb7060d911d2603 |
+| WorkspaceParent | class | partial | 1fb7060d911d2603 |
 | WorkspaceRibbon | class | missing | ffebe640f57faebe |
 | WorkspaceRoot | class | missing | cbd16d72040e24ec |
 | WorkspaceSidedock | class | missing | 7290bfc648754714 |
 | WorkspaceSplit | class | partial | c27a20947773139a |
-| WorkspaceTabs | class | missing | 351384193e50748c |
+| WorkspaceTabs | class | implemented | 351384193e50748c |
 | WorkspaceWindow | class | missing | 4d8f442507ed4e2b |
 
 ## Class obligations

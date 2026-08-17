@@ -8,6 +8,9 @@ import { type App, TFile } from "./obsidian-compat";
 import type { CompatibilityEventRef } from "./obsidian-components";
 import { Events } from "./obsidian-events";
 import { Editor, isConstructedWorkspaceLeaf, WorkspaceLeaf } from "./obsidian-ui-compat";
+import { WorkspaceParent } from "./obsidian-workspace-items";
+
+export { WorkspaceItem, WorkspaceParent } from "./obsidian-workspace-items";
 
 type EventCallback = (...args: unknown[]) => unknown;
 type PaneType = "split" | "tab" | "window";
@@ -84,13 +87,15 @@ function workspaceContainer(): HTMLElement {
   return document.body;
 }
 
-export class WorkspaceSplit {
+export class WorkspaceSplit extends WorkspaceParent {
   readonly children: WorkspaceLeaf[] = [];
   readonly containerEl = createWorkspaceElement("workspace-split");
   direction: SplitDirection;
   readonly workspace: Workspace;
+  parent: WorkspaceParent | null = null;
 
   constructor(workspace: Workspace, direction: "horizontal" | "vertical") {
+    super();
     this.workspace = workspace;
     this.direction = direction;
   }
@@ -104,6 +109,16 @@ export class WorkspaceSplit {
   }
 }
 
+export class WorkspaceTabs extends WorkspaceParent {
+  readonly children: WorkspaceLeaf[] = [];
+  readonly parent: WorkspaceSplit;
+
+  constructor(parent: WorkspaceSplit) {
+    super();
+    this.parent = parent;
+  }
+}
+
 export class Workspace extends Events {
   private activeEditorState: MarkdownFileInfo | null = null;
   activeLeaf: WorkspaceLeaf | null = null;
@@ -114,6 +129,7 @@ export class Workspace extends Events {
   private readonly leafGroups = new Map<WorkspaceLeaf, WorkspaceLeafGroup>();
   private readonly leaves = new Set<WorkspaceLeaf>();
   private readonly listeners = new Map<string, Set<EventCallback>>();
+  private readonly leafParents = new Map<WorkspaceSplit, WorkspaceTabs>();
   private readonly rightLeaves = new Set<WorkspaceLeaf>();
   private leafFactory: WorkspaceLeafFactory | null = null;
   private linkResolver: WorkspaceLinkResolver | null = null;
@@ -122,6 +138,12 @@ export class Workspace extends Events {
   private layoutReadyState = false;
   private mostRecentFile: TFile | null = null;
   private pendingLeafGroup: WorkspaceLeafGroup | null = null;
+
+  constructor() {
+    super();
+    this.leafParents.set(this.rootSplit, new WorkspaceTabs(this.rootSplit));
+    this.leafParents.set(this.floatingSplit, new WorkspaceTabs(this.floatingSplit));
+  }
 
   get activeEditor(): MarkdownFileInfo | null {
     return this.activeEditorState;
@@ -200,6 +222,7 @@ export class Workspace extends Events {
 
   registerLeaf(leaf: WorkspaceLeaf): () => void {
     this.assertWorkspaceLeaf(leaf);
+    this.assignLeafParent(leaf, this.rootSplit);
     const group =
       this.pendingLeafGroup ?? this.groupForLeaf(this.activeLeaf) ?? this.createLeafGroup();
     this.assignLeafToGroup(leaf, group);
@@ -215,6 +238,7 @@ export class Workspace extends Events {
       const group = this.leafGroups.get(leaf);
       group?.leaves.delete(leaf);
       this.leafGroups.delete(leaf);
+      this.removeLeafFromParent(leaf);
       if (this.activeLeaf === leaf) {
         const nextLeaf = [...this.leaves].at(-1) ?? null;
         this.activeLeaf = null;
@@ -474,6 +498,7 @@ export class Workspace extends Events {
       throw new Error("Workspace leaf parent belongs to a different workspace.");
     }
     const leaf = this.createLeafInPane("tab", this.activeLeaf);
+    this.assignLeafParent(leaf, parent);
     const insertionIndex = Math.max(0, Math.min(index, parent.children.length));
     parent.children.splice(insertionIndex, 0, leaf);
     return leaf;
@@ -573,6 +598,37 @@ export class Workspace extends Events {
 
   private createLeafGroup(): WorkspaceLeafGroup {
     return { leaves: new Set<WorkspaceLeaf>() };
+  }
+
+  private tabsForSplit(split: WorkspaceSplit): WorkspaceTabs {
+    const existing = this.leafParents.get(split);
+    if (existing) {
+      return existing;
+    }
+    const tabs = new WorkspaceTabs(split);
+    this.leafParents.set(split, tabs);
+    return tabs;
+  }
+
+  private assignLeafParent(leaf: WorkspaceLeaf, split: WorkspaceSplit): void {
+    this.removeLeafFromParent(leaf);
+    const parent = this.tabsForSplit(split);
+    leaf.parent = parent;
+    if (!parent.children.includes(leaf)) {
+      parent.children.push(leaf);
+    }
+  }
+
+  private removeLeafFromParent(leaf: WorkspaceLeaf): void {
+    const parent = leaf.parent;
+    if (!parent) {
+      return;
+    }
+    const index = parent.children.indexOf(leaf);
+    if (index >= 0) {
+      parent.children.splice(index, 1);
+    }
+    leaf.parent = null;
   }
 
   private assignLeafToGroup(leaf: WorkspaceLeaf, group: WorkspaceLeafGroup): void {

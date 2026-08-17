@@ -791,6 +791,62 @@
         ]
       }
     },
+    "WorkspaceItem": {
+      "implementation": {
+        "source": "src/runtime/obsidian-workspace-items.ts",
+        "exportName": "WorkspaceItem"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.workspace-parents.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "440a2aaa1958e3044d27c8f899cf33c53247ce4b37db93b3d5e050c91d2c824f",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.workspace-parents.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "5dfae36937a15078a9cf4b381257324bb2ef15080d846628b1179c41cc53eee2",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.workspace-parents.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "c922ba6e05eb4393b612577c5495b3d32e698f60933097601beb19699599eb96",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.workspace-parents.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "WorkspaceParent": {
+      "implementation": {
+        "source": "src/runtime/obsidian-workspace-items.ts",
+        "exportName": "WorkspaceParent"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.workspace-parents.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {}
+    },
     "WorkspaceSplit": {
       "implementation": {
         "source": "src/runtime/obsidian-workspace-compat.ts",
@@ -803,6 +859,31 @@
         }
       ],
       "coverage": {}
+    },
+    "WorkspaceTabs": {
+      "implementation": {
+        "source": "src/runtime/obsidian-workspace-compat.ts",
+        "exportName": "WorkspaceTabs"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.workspace-parents.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "0aec706ba975b7ef072b1ae50c7540efdb6d2d17ee04290990b569a5c34a4f3d",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.workspace-parents.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
     },
     "Workspace": {
       "implementation": {
@@ -3110,6 +3191,51 @@
       ],
       "coverage": {
         "obligations": [
+          {
+            "signatureHash": "20409d8b1eb66ea96957e5152d576154d6be4e65130e7a131cf7e58b178f8626",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.workspace-parents.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "1d5be4619631f1cf322a27ccc9d429db122f7582255dced2e458977cb4f00fe0",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.workspace-parents.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "6aa3987becb4ca44782864b9fafaee57317a4851644f46ee4e700c1d14823c18",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.workspace-parents.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "c611e1034a1ee92932400c125fb8490fc009f4fc71a6d6da9df4feff946dc77e",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.workspace-parents.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "191f27e51854f462e579c5ba23e702298a879c99bfad9c7761707af875552d56",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.workspace-parents.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
           {
             "signatureHash": "1bdb6c07678e8f29e39defd801cc4ed87d82912bd12c77874686412c2ff6c6e1",
             "evidence": [

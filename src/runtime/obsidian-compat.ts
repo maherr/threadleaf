@@ -69,7 +69,10 @@ import {
 import {
   CompatibilityIntegrationRegistry,
   Workspace,
+  WorkspaceItem,
+  WorkspaceParent,
   WorkspaceSplit,
+  WorkspaceTabs,
 } from "./obsidian-workspace-compat";
 
 export interface PluginManifest {
@@ -2611,8 +2614,11 @@ export interface ObsidianCompatibilityModule {
   View: typeof View;
   Vault: typeof Vault;
   Workspace: typeof Workspace;
+  WorkspaceItem: typeof WorkspaceItem;
   WorkspaceLeaf: typeof WorkspaceLeaf;
+  WorkspaceParent: typeof WorkspaceParent;
   WorkspaceSplit: typeof WorkspaceSplit;
+  WorkspaceTabs: typeof WorkspaceTabs;
   addIcon(id: string, svgContent: string): void;
   debounce: typeof debounce;
   getIcon(id: string): SVGSVGElement | null;
@@ -3095,8 +3101,11 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     Vault,
     View,
     Workspace,
+    WorkspaceItem,
     WorkspaceLeaf,
+    WorkspaceParent,
     WorkspaceSplit,
+    WorkspaceTabs,
     addIcon,
     getIcon,
     getLanguage,

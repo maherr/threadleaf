@@ -1,8 +1,8 @@
 import type { App, Plugin, TFile } from "./obsidian-compat";
 import { BaseComponent, type CompatibilityEventRef, Component } from "./obsidian-components";
-import { Events } from "./obsidian-events";
 import { createCompatibleIcon } from "./obsidian-icons";
-import type { OpenViewState } from "./obsidian-workspace-compat";
+import type { OpenViewState, WorkspaceTabs } from "./obsidian-workspace-compat";
+import { WorkspaceItem } from "./obsidian-workspace-items";
 
 function currentDocument(): Document {
   if (typeof document === "undefined") {
@@ -1414,7 +1414,7 @@ export function isConstructedWorkspaceLeaf(leaf: WorkspaceLeaf): boolean {
   return constructedWorkspaceLeaves.has(leaf);
 }
 
-export class WorkspaceLeaf extends Events {
+export class WorkspaceLeaf extends WorkspaceItem {
   readonly app: App;
   readonly containerEl: HTMLElement;
   readonly id: string;
@@ -1422,6 +1422,7 @@ export class WorkspaceLeaf extends Events {
   readonly tabHeaderInnerTitleEl: HTMLElement;
   view: View | null = null;
   hoverPopover: null = null;
+  parent: WorkspaceTabs | null = null;
   private pinned = false;
   private ephemeralState: Record<string, unknown> = {};
   private readonly releaseWorkspaceRegistration: () => void;

@@ -264,6 +264,94 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
     });
   });
 
+  /** @compatibility-test-id obsidian-runtime.workspace-parents.v1 */
+  it('proves workspace item and leaf parent topology through require("obsidian")', async () => {
+    await withTestDocument(async () => {
+      const sandboxPath = await fs.mkdtemp(
+        path.join(os.tmpdir(), "threadleaf-runtime-ledger-workspace-parents-"),
+      );
+      const pluginPath = path.join(sandboxPath, "workspace-parents-ledger-fixture");
+      try {
+        await fs.mkdir(pluginPath, { recursive: true });
+        await fs.writeFile(
+          path.join(pluginPath, "manifest.json"),
+          JSON.stringify({
+            id: "workspace-parents-ledger-fixture",
+            name: "Workspace parents ledger fixture",
+            version: "1.0.0",
+          }),
+        );
+        await fs.writeFile(
+          path.join(pluginPath, "main.js"),
+          [
+            'const { Plugin, WorkspaceItem, WorkspaceParent, WorkspaceSplit, WorkspaceTabs } = require("obsidian");',
+            "class LedgerPlugin extends Plugin {",
+            "  async onload() {",
+            "    const leaf = this.app.workspace.getLeaf(false);",
+            "    const root = this.app.workspace.rootSplit;",
+            "    const tabs = leaf.parent;",
+            "    const item = new WorkspaceItem();",
+            "    item.parent = tabs;",
+            "    const parent = new WorkspaceParent();",
+            '    await leaf.setViewState({ type: "empty", state: { marker: true } });',
+            "    leaf.togglePinned();",
+            '    const other = this.app.workspace.getLeaf("split");',
+            "    leaf.setGroupMember(other);",
+            "    const leafState = leaf.getViewState();",
+            "    globalThis.__threadleafRuntimeLedgerWorkspaceParentsProbe = {",
+            "      rootIsWorkspaceSplit: root instanceof WorkspaceSplit,",
+            "      leafIsWorkspaceItem: leaf instanceof WorkspaceItem,",
+            "      parentIsWorkspaceItem: parent instanceof WorkspaceItem,",
+            "      leafParentIsTabs: tabs instanceof WorkspaceTabs,",
+            "      tabsParentIsRoot: tabs.parent === root,",
+            "      leafParentContainsLeaf: tabs.children.includes(leaf),",
+            "      leafRootIsRoot: leaf.getRoot() === root,",
+            "      leafContainerIsRoot: leaf.getContainer() === root,",
+            "      itemRootIsRoot: item.getRoot() === root,",
+            "      hoverPopoverIsNull: leaf.hoverPopover === null,",
+            '      viewStateIsEmpty: leafState.type === "empty",',
+            "      viewStateStateIsPreserved: leafState.state.marker === true,",
+            "      viewStateIsPinned: leafState.pinned === true,",
+            "      viewStateGroupIsOther: leafState.group === other,",
+            "    };",
+            "  }",
+            "}",
+            "module.exports = LedgerPlugin;",
+            "",
+          ].join("\n"),
+        );
+        const host = new PluginHost(fixtureVault);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerWorkspaceParentsProbe?: unknown })
+              .__threadleafRuntimeLedgerWorkspaceParentsProbe,
+          ).toEqual({
+            rootIsWorkspaceSplit: true,
+            leafIsWorkspaceItem: true,
+            parentIsWorkspaceItem: true,
+            leafParentIsTabs: true,
+            tabsParentIsRoot: true,
+            leafParentContainsLeaf: true,
+            leafRootIsRoot: true,
+            leafContainerIsRoot: true,
+            itemRootIsRoot: true,
+            hoverPopoverIsNull: true,
+            viewStateIsEmpty: true,
+            viewStateStateIsPreserved: true,
+            viewStateIsPinned: true,
+            viewStateGroupIsOther: true,
+          });
+        } finally {
+          await host.close();
+        }
+      } finally {
+        Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerWorkspaceParentsProbe");
+        await fs.rm(sandboxPath, { recursive: true, force: true });
+      }
+    });
+  });
+
   /** @compatibility-test-id obsidian-runtime.utility-functions.v1 */
   it('proves public link and search utilities through require("obsidian")', async () => {
     const sandboxPath = await fs.mkdtemp(

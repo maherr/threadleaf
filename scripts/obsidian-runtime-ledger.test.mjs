@@ -31,17 +31,17 @@ assert.deepEqual(ledger.counts, {
   functions: 47,
   enums: 1,
   variables: 8,
-  implemented: 33,
+  implemented: 36,
   partial: 12,
   unsupported: 0,
-  missing: 113,
+  missing: 110,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
-  implementedObligations: 316,
+  implementedObligations: 325,
 });
-assert.equal(ledger.factory.keys.length, 78);
+assert.equal(ledger.factory.keys.length, 81);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
 assert.equal(
   ledger.exports.some((entry) => entry.name === "sleep"),
@@ -98,8 +98,11 @@ assert.deepEqual(
     ["Vault", "partial"],
     ["View", "partial"],
     ["Workspace", "partial"],
-    ["WorkspaceLeaf", "partial"],
+    ["WorkspaceItem", "implemented"],
+    ["WorkspaceLeaf", "implemented"],
+    ["WorkspaceParent", "partial"],
     ["WorkspaceSplit", "partial"],
+    ["WorkspaceTabs", "implemented"],
   ],
 );
 
