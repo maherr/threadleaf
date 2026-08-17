@@ -22,7 +22,6 @@ const viewPlugin = ViewPlugin.fromClass(
         pane: view.dom.closest("[data-pane-id]")?.dataset.paneId ?? null,
         type: "create",
       });
-      view.dom.classList.add("threadleaf-trusted-view-fixture");
       this.view = view;
     }
 
@@ -37,13 +36,16 @@ const viewPlugin = ViewPlugin.fromClass(
 
     destroy() {
       evidence().destroyed += 1;
-      this.view.dom.classList.remove("threadleaf-trusted-view-fixture");
     }
   },
   {
     eventHandlers: {},
   },
 );
+
+const viewEditorAttributes = EditorView.editorAttributes.of({
+  class: "threadleaf-trusted-view-fixture",
+});
 
 module.exports = class ThreadleafTrustedViewFixture extends Plugin {
   onload() {
@@ -58,6 +60,6 @@ module.exports = class ThreadleafTrustedViewFixture extends Plugin {
       editorViewIsHostTable: hostView?.EditorView === EditorView,
       viewPluginIsHostTable: hostView?.ViewPlugin === ViewPlugin,
     };
-    this.registerEditorExtension(viewPlugin);
+    this.registerEditorExtension([viewPlugin, viewEditorAttributes]);
   }
 };

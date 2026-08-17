@@ -170,6 +170,7 @@ function state(compatibilityMode: "enabled" | "restricted" = "enabled"): Migrati
   return {
     settings: updateVaultPlugins(createDefaultAppSettings(), vaultA, {
       compatibilityMode,
+      compatibilityTopology: "isolated",
       enabledPluginIds: [],
       capabilityGrantsByPlugin: {},
     }),

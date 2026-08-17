@@ -23,7 +23,11 @@ import type {
 import { type KernelFaultInjector, VaultKernel } from "../kernel/vault-kernel";
 import type { VaultChangeBatch } from "../kernel/watch-protocol";
 import { PluginHost, type PluginModuleResolver } from "../runtime/plugin-host";
-import type { PluginRuntimeFactory, PluginRuntimePort } from "../runtime/plugin-runtime-port";
+import {
+  isFatalPluginRuntimeError,
+  type PluginRuntimeFactory,
+  type PluginRuntimePort,
+} from "../runtime/plugin-runtime-port";
 import { MAX_VAULT_ATTACHMENT_BYTES } from "../shared/attachment-limits";
 import { isExternalAttachmentTarget } from "../shared/attachment-targets";
 import type {
@@ -4753,6 +4757,9 @@ export class WorkspaceRuntime {
   }
 
   private recordWatcherError(error: unknown): void {
+    if (isFatalPluginRuntimeError(error)) {
+      return;
+    }
     this.#watcherError = error instanceof Error ? error.message : String(error);
   }
 

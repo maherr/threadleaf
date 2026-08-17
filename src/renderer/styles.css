@@ -7339,7 +7339,35 @@ button.inspector-item:hover {
   line-height: 1.5;
 }
 
-.plugin-mode-card .secondary-button,
+.plugin-profile-control {
+  display: grid;
+  flex: 0 1 280px;
+  gap: 5px;
+  min-width: min(280px, 42vw);
+}
+
+.plugin-profile-control > span {
+  color: var(--accent-strong);
+  font: 8px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.plugin-profile-control select {
+  min-height: 34px;
+  padding: 0 31px 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  color: var(--ink);
+  background: var(--surface-sunken);
+  font: 9px var(--mono);
+}
+
+.plugin-profile-control select:focus-visible {
+  outline: 3px solid var(--signal);
+  outline-offset: 1px;
+}
+
 .plugin-summary-row .secondary-button {
   min-height: 32px;
   flex: 0 0 auto;
@@ -9390,7 +9418,6 @@ button.inspector-item:hover {
     width: auto;
   }
 
-  .plugin-mode-card .secondary-button,
   .plugin-summary-row .secondary-button {
     align-self: start;
   }

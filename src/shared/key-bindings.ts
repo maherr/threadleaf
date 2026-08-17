@@ -394,6 +394,7 @@ export function pluginsForVault(settings: AppSettings, vaultId: string): VaultPl
   return plugins
     ? {
         compatibilityMode: plugins.compatibilityMode,
+        compatibilityTopology: plugins.compatibilityTopology,
         enabledPluginIds: [...plugins.enabledPluginIds],
         capabilityGrantsByPlugin: Object.fromEntries(
           Object.entries(plugins.capabilityGrantsByPlugin).map(([pluginId, grant]) => [

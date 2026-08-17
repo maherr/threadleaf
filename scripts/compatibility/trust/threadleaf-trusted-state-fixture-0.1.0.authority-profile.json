@@ -8,11 +8,11 @@
     "manifestVersion": "0.1.0",
     "distributionTag": "0.1.0",
     "manifestSha256": "6cddabcd0e357820b065eec3f105e0691fa069d90271d534ae67af9005ce8f12",
-    "mainSha256": "653f75e8277d916188d2f35ab814c4057a5b0bbb413cb2b1edf680f281c49bb7",
+    "mainSha256": "cabe901388ab9af85c5e37eba210db334cc9c34cccfecaeeaacb2b75cf9a1493",
     "stylesSha256": null,
-    "packageTreeSha256": "6ce0d885ccda956ff292fad3e037cbe98a32613cb4c494587f214c49667cbddc"
+    "packageTreeSha256": "0fa7cb4f0c95c2832c60346430e2b34061582e44c30ef0fda237e3762d16b4c1"
   },
-  "packageIdentityDigest": "29c6d355fa7fd1f8013f20002e8fca2e113a63f071ebbb861f7ebfc5dbb8ef7c",
+  "packageIdentityDigest": "90929f532620d2748d3d4cac977a8dbd8c42161c4aa891ae2c52f9c1ced14d55",
   "expectedStaticCapabilities": ["editor-extension"],
   "requiredAuthorities": [
     "network",
@@ -24,5 +24,5 @@
   ],
   "executionProfile": "trusted-node-renderer",
   "allowedPlatforms": ["linux", "darwin", "win32"],
-  "authorityDigest": "34d176cf96bf2cdf3306141a978e0a5d486d6fe23f6fc3049e8a2e9a9e79c412"
+  "authorityDigest": "2cc1150cf7c68615fa60a082d119d0f13ac250880e34a67baf9f54959b9ec2d1"
 }

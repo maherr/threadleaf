@@ -176,6 +176,7 @@ describe("AppSettingsController", () => {
 
     const snapshot = await controller.setVaultPlugins(vaultId, {
       compatibilityMode: "enabled",
+      compatibilityTopology: "isolated",
       enabledPluginIds: ["obsidian-excalidraw-plugin"],
       capabilityGrantsByPlugin: {
         "obsidian-excalidraw-plugin": {
@@ -188,6 +189,7 @@ describe("AppSettingsController", () => {
     expect(snapshot.settings.appearanceByVault).toEqual({});
     expect(controller.getVaultPlugins(vaultId)).toEqual({
       compatibilityMode: "enabled",
+      compatibilityTopology: "isolated",
       enabledPluginIds: ["obsidian-excalidraw-plugin"],
       capabilityGrantsByPlugin: {
         "obsidian-excalidraw-plugin": {

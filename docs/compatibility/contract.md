@@ -325,6 +325,48 @@ plugin. Breaches produce structured diagnostics and terminate only the owning co
 renderer, after which explicit reload is required. This is a trusted-host availability control,
 not OS sandboxing or hard isolation from Node-capable plugin code.
 
+## Trusted-workspace compatibility topology
+
+The desktop offers three meaningful compatibility choices: Off, Isolated compatibility, and Full
+trusted compatibility. They are stored as the existing `CompatibilityMode` (`restricted` or
+`enabled`) plus the per-vault `CompatibilityTopology` (`isolated` or `trusted-workspace`). Existing
+vaults migrate to restricted/isolated. Trusted-workspace is effective only when compatibility is
+enabled and the topology is explicitly selected.
+
+Isolated compatibility keeps the primary Electron renderer sandboxed and gives each plugin its own
+trusted renderer. Full trusted compatibility instead recreates the main `BrowserWindow` with
+`contextIsolation: true`, `nodeIntegration: true`, and `sandbox: false`. Threadleaf's native
+renderer, its real primary and secondary CodeMirror `EditorView`s, and trusted plugin bundles then
+share the page's main JavaScript/DOM realm. This is deliberate desktop compatibility, not plugin
+containment: per-plugin process, CPU, and memory isolation are unavailable in this topology and
+must not be claimed. Navigation, popup, permission, sender, vault, revision, and generation
+guards remain active.
+
+The trusted page receives an immutable host-module table for the eleven approved CodeMirror/Lezer
+roots: `@codemirror/autocomplete`, `@codemirror/collab`, `@codemirror/commands`,
+`@codemirror/language`, `@codemirror/lint`, `@codemirror/search`, `@codemirror/state`,
+`@codemirror/view`, `@lezer/common`, `@lezer/highlight`, and `@lezer/lr`. A trusted `require()`
+returns those exact renderer-owned namespace objects for approved roots; it never loads a second
+Node copy or crosses a serialization boundary. The conformance gate checks strict identity for
+the defining CodeMirror exports and accepts a function-bearing extension in the actual native
+editor state.
+
+Each real workspace pane owns a dedicated compatibility `Compartment` in both its primary and
+secondary `EditorView`. Registrations are retained as live function-bearing extensions and are
+ordered by active plugin order, then registration order. Owner unload removes only that owner's
+extensions; vault switch and main-renderer replacement remove all owners and reconstruct them from
+fresh main-process decisions. A missing table entry, mismatched extension instance, stale grant,
+or renderer-dead pending operation fails with an explicit diagnostic.
+
+Trusted construction is a main-process decision. The main process captures and identity-verifies
+the complete plugin package closure, passes the verified bytes to the page, and remains authoritative
+for grants, package discovery, vault reads/writes, persistence, and reconstruction. Trusted page
+bootstrapping may use `unsafe-eval` only in the trusted document for the CommonJS loader; the
+isolated document CSP remains restrictive. A crash rejects pending work as renderer-dead, preserves
+exact vault and plugin bytes, recreates the effective window topology, re-resolves grants, and
+remounts both native editor extensions. The Linux/Xvfb trusted-workspace gate proves this sequence,
+both themes, ordinary command-plugin control, and denied remote navigation/popups/permissions.
+
 ## Native extension capability fixture
 
 Native Threadleaf extensions use the separate version 1 capability host described in

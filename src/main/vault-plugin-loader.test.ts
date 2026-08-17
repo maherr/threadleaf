@@ -56,6 +56,7 @@ async function grantedPreference(
   const discovery = await discoverVaultPlugins(vaultPath);
   return {
     compatibilityMode,
+    compatibilityTopology: "isolated",
     enabledPluginIds,
     capabilityGrantsByPlugin: Object.fromEntries(
       discovery.plugins.flatMap((plugin) =>
@@ -150,6 +151,7 @@ describe("vault plugin loader", () => {
       vaultId: "9".repeat(64),
       preference: {
         compatibilityMode: "enabled",
+        compatibilityTopology: "isolated",
         enabledPluginIds: ["drawing"],
         capabilityGrantsByPlugin: {},
       },
@@ -160,6 +162,7 @@ describe("vault plugin loader", () => {
       vaultId: "9".repeat(64),
       preference: {
         compatibilityMode: "enabled",
+        compatibilityTopology: "isolated",
         enabledPluginIds: ["drawing"],
         capabilityGrantsByPlugin: {
           drawing: { bundleSha256: "0".repeat(64), capabilities: ["vault-read", "network"] },
@@ -230,6 +233,7 @@ describe("vault plugin loader", () => {
       vaultId: "c".repeat(64),
       preference: {
         compatibilityMode: "enabled",
+        compatibilityTopology: "isolated",
         enabledPluginIds: ["valid", "not-installed"],
         capabilityGrantsByPlugin: (await grantedPreference(["valid"])).capabilityGrantsByPlugin,
       },

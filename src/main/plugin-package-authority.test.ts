@@ -147,6 +147,7 @@ describe("managed plugin package inspection authority", () => {
       vaultId,
       preference: {
         compatibilityMode: "enabled",
+        compatibilityTopology: "isolated",
         enabledPluginIds: [pluginId],
         capabilityGrantsByPlugin: {
           [pluginId]: {
@@ -186,6 +187,7 @@ describe("managed plugin package inspection authority", () => {
       vaultId,
       preference: {
         compatibilityMode: "enabled",
+        compatibilityTopology: "isolated",
         enabledPluginIds: [pluginId],
         capabilityGrantsByPlugin: {
           [pluginId]: {

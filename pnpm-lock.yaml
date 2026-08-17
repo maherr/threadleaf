@@ -8,6 +8,12 @@ importers:
 
   .:
     dependencies:
+      '@codemirror/autocomplete':
+        specifier: 6.20.3
+        version: 6.20.3
+      '@codemirror/collab':
+        specifier: 6.1.1
+        version: 6.1.1
       '@codemirror/commands':
         specifier: 6.10.4
         version: 6.10.4
@@ -17,6 +23,12 @@ importers:
       '@codemirror/language':
         specifier: 6.12.4
         version: 6.12.4
+      '@codemirror/lint':
+        specifier: 6.9.7
+        version: 6.9.7
+      '@codemirror/search':
+        specifier: 6.7.1
+        version: 6.7.1
       '@codemirror/state':
         specifier: 6.7.1
         version: 6.7.1
@@ -173,6 +185,9 @@ packages:
 
   '@codemirror/autocomplete@6.20.3':
     resolution: {integrity: sha512-tlosUqb+3BbxCxZdu4tKeRghPFC+QM7q4X5YhKV2eCmPG+1r2F3f4AaSz5sCrFqUtX4Jh20VFTKecl16MgiV9g==}
+
+  '@codemirror/collab@6.1.1':
+    resolution: {integrity: sha512-tkIn9Jguh98ie12dbBuba3lE8LHUkaMrIFuCVeVGhncSczFdKmX25vC12+58+yqQW5AXi3py6jWY0W+jelyglA==}
 
   '@codemirror/commands@6.10.4':
     resolution: {integrity: sha512-Ryk9y9T0FFVF0cUGhAknveAyUOl/A1qReTFi+qPKtOh2Z9F4AUBz3XOrYD4ZEgZirdugVzHvd/2/Wcwy5OliTg==}
@@ -975,6 +990,7 @@ packages:
   '@xmldom/xmldom@0.8.13':
     resolution: {integrity: sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw==}
     engines: {node: '>=10.0.0'}
+    deprecated: this version has critical issues, please update to the latest version
 
   abbrev@4.0.0:
     resolution: {integrity: sha512-a1wflyaL0tHtJSmLSOVybYhy22vRih4eduhhrkcjgrWGnRfrZtovJ2FRjxuTtkkj47O/baf0R86QU5OuYpz8fA==}
@@ -2532,6 +2548,10 @@ snapshots:
       '@codemirror/state': 6.7.1
       '@codemirror/view': 6.43.8
       '@lezer/common': 1.5.2
+
+  '@codemirror/collab@6.1.1':
+    dependencies:
+      '@codemirror/state': 6.7.1
 
   '@codemirror/commands@6.10.4':
     dependencies:

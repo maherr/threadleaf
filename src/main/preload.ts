@@ -72,7 +72,11 @@ import type {
   PluginPackagePreviewRequest,
   PluginPackagePreviewResponse,
 } from "../shared/plugin-packages";
-import type { CompatibilityMode, PluginCatalogResponse } from "../shared/plugins";
+import type {
+  CompatibilityMode,
+  CompatibilityProfile,
+  PluginCatalogResponse,
+} from "../shared/plugins";
 import type { PublishNoteExportRequest, PublishNoteExportResponse } from "../shared/publish-export";
 import type { SupportBundleExportResponse } from "../shared/support-bundle";
 import type {
@@ -242,6 +246,12 @@ const bridge: ThreadleafBridge = {
       ipcChannels.setCompatibilityMode,
       expectedVaultId,
       mode,
+    ) as Promise<PluginUpdateResponse>,
+  setCompatibilityProfile: (expectedVaultId, profile: CompatibilityProfile) =>
+    ipcRenderer.invoke(
+      ipcChannels.setCompatibilityProfile,
+      expectedVaultId,
+      profile,
     ) as Promise<PluginUpdateResponse>,
   setPluginCapabilityGrant: (expectedVaultId, pluginId, expectedBundleSha256, granted) =>
     ipcRenderer.invoke(
@@ -730,4 +740,70 @@ const bridge: ThreadleafBridge = {
   },
 };
 
-contextBridge.exposeInMainWorld("threadleaf", bridge);
+if (process.argv.includes("--threadleaf-trusted-workspace")) {
+  try {
+    const { readFileSync } = require("node:fs") as typeof import("node:fs");
+    const { join } = require("node:path") as typeof import("node:path");
+    const createTrustedCryptoFacade = () => {
+      const crypto = require("node:crypto") as typeof import("node:crypto");
+      return {
+        createHash: (algorithm: string, options?: unknown) => {
+          const hash = crypto.createHash(
+            algorithm,
+            options as Parameters<typeof crypto.createHash>[1],
+          );
+          const facade = {
+            update: (data: string | Uint8Array, inputEncoding?: BufferEncoding) => {
+              if (inputEncoding === undefined) {
+                hash.update(data as Parameters<typeof hash.update>[0]);
+              } else {
+                hash.update(data as Parameters<typeof hash.update>[0], inputEncoding);
+              }
+              return facade;
+            },
+            digest: (encoding?: "base64" | "base64url" | "hex") =>
+              encoding === undefined ? hash.digest() : hash.digest(encoding),
+          };
+          return facade;
+        },
+        randomUUID: crypto.randomUUID,
+      };
+    };
+    const trustedNodeRequire = (request: string): unknown => {
+      if (request === "crypto" || request === "node:crypto") {
+        return createTrustedCryptoFacade();
+      }
+      return require(request);
+    };
+    contextBridge.exposeInMainWorld("__threadleafTrustedRuntime", {
+      hostBundle: readFileSync(join(__dirname, "trusted-plugin-host.cjs"), "utf8"),
+      ipcRenderer: {
+        invoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args),
+        on: (channel: string, listener: (_event: unknown, value: unknown) => void) => {
+          ipcRenderer.on(channel, (_event, value) => listener(undefined, value));
+        },
+        send: (channel: string, ...args: unknown[]) => ipcRenderer.send(channel, ...args),
+      },
+      nodeRequire: trustedNodeRequire,
+      nodeResolve: (request: string, options?: { paths?: string[] }) =>
+        require.resolve(request, options),
+      nodeResolveFrom: (modulePath: string, request: string, options?: { paths?: string[] }) =>
+        require("node:module").createRequire(modulePath).resolve(request, options),
+      nodeIsBuiltin: (request: string) => require("node:module").isBuiltin(request),
+    });
+  } catch (error) {
+    console.error("Threadleaf could not expose the trusted workspace bridge:", error);
+  }
+}
+
+try {
+  contextBridge.exposeInMainWorld("threadleaf", bridge);
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error("Threadleaf could not expose its renderer bridge:", error);
+  try {
+    contextBridge.exposeInMainWorld("__threadleafPreloadError", message);
+  } catch {
+    // The error is already reported to the preload console.
+  }
+}

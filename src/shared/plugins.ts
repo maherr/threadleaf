@@ -2,6 +2,8 @@ import { pluginCompatibilityRegistry } from "../generated/plugin-compatibility-r
 import type { PluginDiagnosticCode } from "./plugin-diagnostics";
 
 export const compatibilityModes = ["restricted", "enabled"] as const;
+export const compatibilityTopologies = ["isolated", "trusted-workspace"] as const;
+export const compatibilityProfiles = ["off", "isolated", "trusted-workspace"] as const;
 export const maxPluginBundleBytes = 16 * 1024 * 1024;
 export const pluginCapabilityIds = [
   "vault-read",
@@ -24,6 +26,8 @@ export const reviewedAuthorityExecutionProfiles = [
 export const reviewedAuthorityPlatforms = ["linux", "darwin", "win32"] as const;
 
 export type CompatibilityMode = (typeof compatibilityModes)[number];
+export type CompatibilityTopology = (typeof compatibilityTopologies)[number];
+export type CompatibilityProfile = (typeof compatibilityProfiles)[number];
 export type PluginCapabilityId = (typeof pluginCapabilityIds)[number];
 export type ReviewedAuthorityExecutionProfile = (typeof reviewedAuthorityExecutionProfiles)[number];
 export type ReviewedAuthorityPlatform = (typeof reviewedAuthorityPlatforms)[number];
@@ -168,9 +172,22 @@ export interface PluginConstructionRequest {
   packageIdentityDigest: string;
 }
 
+/**
+ * Main-process-owned bytes consumed by the trusted page realm. The page never re-discovers or
+ * reads a plugin package from the filesystem; it receives this bounded, identity-pinned closure
+ * as part of the one-shot construction dispatch.
+ */
+export interface PluginConstructionPackageFile {
+  path: string;
+  sha256: string;
+  size: number;
+  bytes: ArrayBuffer;
+}
+
 export interface PluginConstructionDispatch {
   pluginDirectory: string;
   policy: PluginConstructionPolicy;
+  packageFiles?: PluginConstructionPackageFile[];
 }
 
 export interface SealedPluginPackageRecord {
@@ -285,6 +302,7 @@ export type PluginCapabilityGrantState = "unavailable" | "required" | "granted" 
 
 export interface VaultPluginSettings {
   compatibilityMode: CompatibilityMode;
+  compatibilityTopology: CompatibilityTopology;
   enabledPluginIds: string[];
   capabilityGrantsByPlugin: Record<string, PluginCapabilityGrant>;
 }
@@ -341,6 +359,7 @@ export type PluginCatalogResponse =
 
 export const defaultVaultPluginSettings: Readonly<VaultPluginSettings> = {
   compatibilityMode: "restricted",
+  compatibilityTopology: "isolated",
   enabledPluginIds: [],
   capabilityGrantsByPlugin: {},
 };
@@ -456,6 +475,12 @@ export function parseVaultPluginSettings(value: unknown): VaultPluginSettings {
   ) {
     throw new Error("Vault plugin settings require restricted or enabled compatibility mode.");
   }
+  const compatibilityTopology = value.compatibilityTopology ?? "isolated";
+  if (!compatibilityTopologies.includes(compatibilityTopology as CompatibilityTopology)) {
+    throw new Error(
+      "Vault plugin settings require isolated or trusted-workspace compatibility topology.",
+    );
+  }
   if (!Array.isArray(value.enabledPluginIds) || value.enabledPluginIds.length > 128) {
     throw new Error("Vault plugin settings may enable at most 128 plugins.");
   }
@@ -498,13 +523,39 @@ export function parseVaultPluginSettings(value: unknown): VaultPluginSettings {
   }
   return {
     compatibilityMode: value.compatibilityMode as CompatibilityMode,
+    compatibilityTopology: compatibilityTopology as CompatibilityTopology,
     enabledPluginIds,
     capabilityGrantsByPlugin,
   };
 }
 
+export function compatibilityProfileForVaultPluginSettings(
+  settings: VaultPluginSettings,
+): CompatibilityProfile {
+  if (settings.compatibilityMode === "restricted") {
+    return "off";
+  }
+  return settings.compatibilityTopology;
+}
+
+export function applyCompatibilityProfile(
+  settings: VaultPluginSettings,
+  profile: CompatibilityProfile,
+): VaultPluginSettings {
+  return parseVaultPluginSettings({
+    ...settings,
+    compatibilityMode: profile === "off" ? "restricted" : "enabled",
+    ...(profile === "off" ? {} : { compatibilityTopology: profile }),
+  });
+}
+
 export function createDefaultVaultPluginSettings(): VaultPluginSettings {
-  return { compatibilityMode: "restricted", enabledPluginIds: [], capabilityGrantsByPlugin: {} };
+  return {
+    compatibilityMode: "restricted",
+    compatibilityTopology: "isolated",
+    enabledPluginIds: [],
+    capabilityGrantsByPlugin: {},
+  };
 }
 
 export function pluginCapabilityGrantMatches(

@@ -12,12 +12,12 @@ Threadleaf starts as an Electron and TypeScript desktop application. Existing pl
 assume Chromium, the DOM, Node.js, and Electron behavior. Matching that environment reduces the
 compatibility problem before optimization begins.
 
-The primary application renderer remains isolated with `contextIsolation`, no Node integration,
-and Chromium sandboxing. DOM-dependent community plugins cannot execute in the main-process host or
-inside that sanitized renderer. Each enabled community plugin runs in its own explicitly trusted
-`WebContentsView` with Node integration, a unique transient session partition, denied browser
-permissions, blocked navigation and popups, and `connect-src 'none'` for browser requests. This
-does not sandbox Node-capable plugin I/O. The main process communicates with each realm through
+The default isolated topology keeps the primary application renderer isolated with
+`contextIsolation`, no Node integration, and Chromium sandboxing. DOM-dependent community plugins
+run in their own explicitly trusted `WebContentsView` with Node integration, a unique transient
+session partition, denied browser permissions, blocked navigation and popups, and
+`connect-src 'none'` for browser requests. This does not sandbox Node-capable plugin I/O. The main
+process communicates with each realm through
 validated typed request and response messages, times out every operation, attributes renderer
 exits, and never gives the primary renderer Node authority. A timeout, invalid protocol response,
 failed send, or renderer exit is fatal only to the owning plugin process. Threadleaf forcibly
@@ -63,6 +63,41 @@ integrity-checked root. Grant and revocation history is append-only. Safe mode, 
 rotation, profile or package drift, history corruption, stale epochs, and mutable-source changes all
 fail closed before construction or force unload during reconciliation. This is a same-user trust and
 reproducibility boundary, not isolation from Node-capable plugin I/O.
+
+### Trusted-workspace topology
+
+Compatibility settings are per vault and have two orthogonal fields: `restricted | enabled`
+mode and `isolated | trusted-workspace` topology. The product presents these as Off, Isolated
+compatibility, and Full trusted compatibility; existing settings migrate to restricted/isolated.
+The effective topology is trusted-workspace only when both fields permit it. A topology change or
+vault switch across effective topologies settles editor autosaves, drains or rejects plugin work,
+tears down owner-scoped compatibility resources, destroys the old `BrowserWindow`, and recreates
+the main window before loading the target vault.
+
+Full trusted compatibility uses a conditional main `BrowserWindow` with
+`contextIsolation: true`, `nodeIntegration: true`, and `sandbox: false`. The preload remains
+isolated and exposes the typed Threadleaf bridge, while native Threadleaf renderer code, the real
+primary and secondary CodeMirror editors, and trusted plugin bundles execute in the page's main
+world. Thus plugin `globalThis`, DOM constructors, callbacks, and editor extensions share one
+JavaScript/DOM realm. This is an honest desktop escape, not per-plugin containment; the UI labels
+that loss of process isolation and the default isolated topology remains the safer choice.
+
+The trusted host receives a frozen renderer-owned table containing the exact in-memory namespace
+instances for the approved CodeMirror and Lezer roots. Resolver calls for those roots return that
+table only, never a second Node copy, facade, or serialized namespace. Function-bearing plugin
+extensions enter a dedicated compatibility `Compartment` on every real primary and secondary
+`EditorView`, ordered by active plugin and registration sequence. Unloading an owner removes only
+its registrations; window replacement removes every owner and reconstructs them from fresh main
+process construction decisions. Missing module-table entries and cross-instance extensions fail
+closed with diagnostics.
+
+Trusted construction consumes a main-process-captured, identity-verified package-byte closure.
+The page does not scan plugin directories or become the authority for grants, policy, package
+identity, vault bytes, or persistence. Trusted-mode-only page bootstrapping may enable
+`unsafe-eval` for the CommonJS loader; the default isolated document CSP is unchanged. If the
+trusted renderer dies, pending operations reject as renderer-dead, the main process preserves the
+kernel and exact vault bytes, recreates the same topology, re-resolves every package grant, and
+remounts the native editor extensions once.
 
 ### Filesystem authority
 

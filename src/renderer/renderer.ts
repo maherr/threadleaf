@@ -1,9 +1,9 @@
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { Compartment, EditorState, Transaction } from "@codemirror/state";
-import type { ViewUpdate } from "@codemirror/view";
+import { Compartment, EditorState, type Extension, Transaction } from "@codemirror/state";
+import { EditorView, type ViewUpdate } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
-import { basicSetup, EditorView } from "codemirror";
+import { basicSetup } from "codemirror";
 import { splitMarkdownDestinationTarget } from "../kernel/markdown-links";
 import {
   type AccessibilityAccent,
@@ -99,6 +99,8 @@ import type {
   PluginPackageReview,
 } from "../shared/plugin-packages";
 import {
+  type CompatibilityProfile,
+  compatibilityProfileForVaultPluginSettings,
   createDefaultVaultPluginSettings,
   type PluginCatalogSnapshot,
   type PluginPackageSummary,
@@ -186,6 +188,10 @@ import {
 } from "./quick-switcher-model";
 import { RecoveryViewController } from "./recovery-view";
 import { type MarkdownTaskSelection, markdownTaskToggleChanges } from "./task-toggle";
+import {
+  setTrustedEditorDispatcher,
+  setTrustedEditorExtensionSink,
+} from "./trusted-plugin-runtime";
 import {
   renderDocumentViewToolbarLabel,
   renderUnavailableNoticeToolbarLabel,
@@ -390,7 +396,7 @@ const elements = {
   accessibilityStatus: getElement("accessibility-status"),
   accessibilityDiagnostics: getElement("accessibility-diagnostics"),
   pluginModeState: getElement("plugin-mode-state"),
-  pluginModeToggle: getButton("plugin-mode-toggle"),
+  pluginCompatibilityProfile: getSelect("plugin-compatibility-profile"),
   pluginInstalledCount: getElement("plugin-installed-count"),
   pluginReloadAll: getButton("plugin-reload-all"),
   pluginSearch: getInput("plugin-search"),
@@ -1481,7 +1487,9 @@ const sourceHighlight = HighlightStyle.define([
 ]);
 const editorAccess = new Compartment();
 const editorPresentation = new Compartment();
+const editorCompatibility = new Compartment();
 let editorReadOnly = false;
+let trustedEditorExtensions: Extension = [];
 
 function livePreviewOptions(paneId: WorkspacePaneId): LivePreviewOptions {
   const sourceNotePath = (): string | null => {
@@ -1604,6 +1612,7 @@ function editorExtensions(paneId: WorkspacePaneId) {
       EditorView.editable.of(!editorReadOnly),
     ]),
     editorPresentation.of(editorPresentationExtension(paneId)),
+    editorCompatibility.of(trustedEditorExtensions),
     syntaxHighlighting(sourceHighlight),
     EditorView.contentAttributes.of({
       "aria-label": "Markdown editor",
@@ -1685,6 +1694,28 @@ for (const paneId of ["primary", "secondary"] as const) {
 editor = paneSession("primary").editor as EditorView;
 editorsReady = true;
 captureActivePaneSession();
+
+setTrustedEditorExtensionSink((extensions) => {
+  trustedEditorExtensions = extensions as Extension;
+  for (const paneId of ["primary", "secondary"] as const) {
+    const editorView = paneSession(paneId).editor;
+    if (!editorView) {
+      continue;
+    }
+    editorView.dispatch({
+      effects: editorCompatibility.reconfigure(extensions as Extension),
+    });
+  }
+});
+setTrustedEditorDispatcher((paneId, content) => {
+  const editorView = paneSession(paneId).editor;
+  if (!editorView) {
+    throw new Error(`Trusted editor pane is unavailable: ${paneId}`);
+  }
+  editorView.dispatch({
+    changes: { from: 0, to: editorView.state.doc.length, insert: content },
+  });
+});
 
 function getElement(id: string): HTMLElement {
   const element = document.getElementById(id);
@@ -6645,6 +6676,7 @@ function pluginPreferencesEqual(left: VaultPluginSettings, right: VaultPluginSet
   );
   return (
     left.compatibilityMode === right.compatibilityMode &&
+    left.compatibilityTopology === right.compatibilityTopology &&
     left.enabledPluginIds.length === right.enabledPluginIds.length &&
     left.enabledPluginIds.every((id, index) => id === right.enabledPluginIds[index]) &&
     leftGrantIds.length === rightGrantIds.length &&
@@ -7223,12 +7255,35 @@ function applyPluginCatalog(catalog: PluginCatalogSnapshot): void {
   if (catalog.vaultId !== currentSnapshot?.vault.id) {
     return;
   }
+  const loadedRuntimePluginIds = new Set(
+    (currentSnapshot.plugins ?? [])
+      .filter((plugin) => plugin.state === "loaded")
+      .map((plugin) => plugin.id),
+  );
+  if (
+    catalog.plugins.some(
+      (plugin) =>
+        loadedRuntimePluginIds.has(plugin.id) && plugin.capabilityGrantState !== "granted",
+    )
+  ) {
+    return;
+  }
   pluginCatalog = catalog;
   pluginStyle.textContent = catalog.css;
   setAccessibilityRootAttributes(effectiveCurrentAccessibilityPreferences());
   const warningKey = catalog.warnings.join("\n");
   if (warningKey && warningKey !== lastPluginWarning) {
     showToast(catalog.warnings[0] ?? "A compatibility plugin needs attention.");
+  } else if (!warningKey && lastPluginWarning) {
+    const previousWarning = lastPluginWarning.split("\n", 1)[0] ?? "";
+    if (!elements.toast.hidden && elements.toast.textContent === previousWarning) {
+      if (toastTimer !== undefined) {
+        window.clearTimeout(toastTimer);
+        toastTimer = undefined;
+      }
+      elements.toast.hidden = true;
+      elements.toast.textContent = "";
+    }
   }
   lastPluginWarning = warningKey;
   refreshAccessibilityDiagnostics();
@@ -7369,6 +7424,22 @@ async function setCompatibilityMode(mode: VaultPluginSettings["compatibilityMode
   );
   if (changed) {
     showToast(enabled ? "Community plugins enabled." : "Restricted mode enabled.");
+  }
+}
+
+async function setCompatibilityProfile(profile: CompatibilityProfile): Promise<void> {
+  const labels: Record<CompatibilityProfile, string> = {
+    off: "Off",
+    isolated: "Isolated compatibility",
+    "trusted-workspace": "Full trusted compatibility",
+  };
+  const changed = await updatePlugins(
+    (vaultId) => window.threadleaf.setCompatibilityProfile(vaultId, profile),
+    `Switching to ${labels[profile]}…`,
+    `${labels[profile]} is active.`,
+  );
+  if (changed) {
+    showToast(`${labels[profile]} selected for this vault.`);
   }
 }
 
@@ -8480,6 +8551,7 @@ function renderPluginSettings(): void {
   const preference = currentPluginPreference();
   const safeMode = catalog?.safeMode ?? false;
   const restricted = preference.compatibilityMode === "restricted";
+  const profile = compatibilityProfileForVaultPluginSettings(preference);
   const disabled = pluginBusy || !vaultId || readOnlyVault();
   const installed = catalog?.plugins ?? [];
   const managedPackages = catalog?.managedPackages ?? [];
@@ -8487,14 +8559,18 @@ function renderPluginSettings(): void {
 
   elements.pluginModeState.textContent = safeMode
     ? "Safe mode"
-    : restricted
-      ? "Restricted"
-      : "Enabled";
-  elements.pluginModeState.dataset.state = safeMode ? "safe" : restricted ? "default" : "active";
-  elements.pluginModeToggle.textContent = restricted
-    ? "Turn off restricted mode"
-    : "Turn on restricted mode";
-  elements.pluginModeToggle.disabled = disabled || safeMode;
+    : profile === "off"
+      ? "Off"
+      : profile === "isolated"
+        ? "Isolated"
+        : "Full trusted";
+  elements.pluginModeState.dataset.state = safeMode
+    ? "safe"
+    : profile === "off"
+      ? "default"
+      : "active";
+  elements.pluginCompatibilityProfile.value = profile;
+  elements.pluginCompatibilityProfile.disabled = disabled || safeMode;
   elements.pluginInstalledCount.textContent = `${installed.length} installed`;
   elements.pluginReloadAll.disabled = disabled || safeMode || restricted;
   elements.pluginSearch.disabled = disabled;
@@ -14317,10 +14393,13 @@ elements.migrationApply.addEventListener("click", () => {
 elements.migrationRollback.addEventListener("click", () => {
   void rollbackMigrationReview();
 });
-elements.pluginModeToggle.addEventListener("click", () => {
-  void setCompatibilityMode(
-    currentPluginPreference().compatibilityMode === "restricted" ? "enabled" : "restricted",
-  );
+elements.pluginCompatibilityProfile.addEventListener("change", () => {
+  const profile = elements.pluginCompatibilityProfile.value;
+  if (profile !== "off" && profile !== "isolated" && profile !== "trusted-workspace") {
+    renderPluginSettings();
+    return;
+  }
+  void setCompatibilityProfile(profile);
 });
 elements.pluginReloadAll.addEventListener("click", () => void reloadPlugins());
 elements.pluginSearch.addEventListener("input", renderPluginSettings);

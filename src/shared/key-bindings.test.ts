@@ -119,12 +119,14 @@ describe("key bindings", () => {
       pluginsByVault: {
         [firstVaultId]: {
           compatibilityMode: "enabled",
+          compatibilityTopology: "isolated",
           enabledPluginIds: ["obsidian-excalidraw-plugin"],
         },
       },
     });
     const updated = updateVaultPlugins(parsed, secondVaultId, {
       compatibilityMode: "restricted",
+      compatibilityTopology: "isolated",
       enabledPluginIds: ["omnisearch"],
       capabilityGrantsByPlugin: {
         omnisearch: {
@@ -141,6 +143,7 @@ describe("key bindings", () => {
     expect(updated.pluginsByVault[firstVaultId]?.capabilityGrantsByPlugin).toEqual({});
     expect(updated.pluginsByVault[secondVaultId]).toEqual({
       compatibilityMode: "restricted",
+      compatibilityTopology: "isolated",
       enabledPluginIds: ["omnisearch"],
       capabilityGrantsByPlugin: {
         omnisearch: {
@@ -160,6 +163,7 @@ describe("key bindings", () => {
       pluginsByVault: {
         [vaultId]: {
           compatibilityMode: "enabled",
+          compatibilityTopology: "isolated",
           enabledPluginIds: ["fixture"],
           capabilityGrantsByPlugin: {
             fixture: {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyCompatibilityProfile,
+  compatibilityProfileForVaultPluginSettings,
   createDefaultVaultPluginSettings,
   createPluginCompatibilityReport,
   isPluginDistributionPathIncluded,
@@ -29,9 +31,36 @@ describe("plugin compatibility settings", () => {
   it("defaults to restricted mode with no selected compatibility plugins", () => {
     expect(createDefaultVaultPluginSettings()).toEqual({
       compatibilityMode: "restricted",
+      compatibilityTopology: "isolated",
       enabledPluginIds: [],
       capabilityGrantsByPlugin: {},
     });
+  });
+
+  it("maps the three product profiles onto the orthogonal stored settings", () => {
+    const current = {
+      ...createDefaultVaultPluginSettings(),
+      compatibilityMode: "enabled" as const,
+      compatibilityTopology: "trusted-workspace" as const,
+      enabledPluginIds: ["fixture"],
+    };
+
+    expect(compatibilityProfileForVaultPluginSettings(current)).toBe("trusted-workspace");
+    expect(applyCompatibilityProfile(current, "off")).toMatchObject({
+      compatibilityMode: "restricted",
+      compatibilityTopology: "trusted-workspace",
+    });
+    expect(applyCompatibilityProfile(current, "isolated")).toMatchObject({
+      compatibilityMode: "enabled",
+      compatibilityTopology: "isolated",
+    });
+    expect(applyCompatibilityProfile(current, "trusted-workspace")).toMatchObject({
+      compatibilityMode: "enabled",
+      compatibilityTopology: "trusted-workspace",
+    });
+    expect(
+      compatibilityProfileForVaultPluginSettings(applyCompatibilityProfile(current, "off")),
+    ).toBe("off");
   });
 
   it("parses current and historical Obsidian plugin manifest fields", () => {
@@ -126,6 +155,7 @@ describe("plugin compatibility settings", () => {
       }),
     ).toEqual({
       compatibilityMode: "enabled",
+      compatibilityTopology: "isolated",
       enabledPluginIds: ["fixture"],
       capabilityGrantsByPlugin: {},
     });
@@ -143,6 +173,20 @@ describe("plugin compatibility settings", () => {
       bundleSha256: "a".repeat(64),
       capabilities: ["vault-read", "network"],
     });
+    expect(
+      parseVaultPluginSettings({
+        compatibilityMode: "enabled",
+        compatibilityTopology: "trusted-workspace",
+        enabledPluginIds: [],
+      }).compatibilityTopology,
+    ).toBe("trusted-workspace");
+    expect(() =>
+      parseVaultPluginSettings({
+        compatibilityMode: "enabled",
+        compatibilityTopology: "unknown",
+        enabledPluginIds: [],
+      }),
+    ).toThrow("compatibility topology");
     expect(() =>
       parseVaultPluginSettings({
         compatibilityMode: "enabled",

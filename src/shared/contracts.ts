@@ -31,7 +31,12 @@ import type { PluginMutationWaitOptions, PluginRendererOperation } from "./plugi
 export type { PluginMutationWaitOptions } from "./plugin-runtime-protocol";
 
 import type { PluginDiagnosticCode } from "./plugin-diagnostics";
-import type { CompatibilityMode, PluginCatalogResponse, PluginCatalogSnapshot } from "./plugins";
+import type {
+  CompatibilityMode,
+  CompatibilityProfile,
+  PluginCatalogResponse,
+  PluginCatalogSnapshot,
+} from "./plugins";
 import type { PublishNoteExportRequest, PublishNoteExportResponse } from "./publish-export";
 import type { SupportBundleExportResponse } from "./support-bundle";
 import type {
@@ -1667,6 +1672,10 @@ export interface ThreadleafBridge {
   setCompatibilityMode(
     expectedVaultId: string,
     mode: CompatibilityMode,
+  ): Promise<PluginUpdateResponse>;
+  setCompatibilityProfile(
+    expectedVaultId: string,
+    profile: CompatibilityProfile,
   ): Promise<PluginUpdateResponse>;
   setPluginCapabilityGrant(
     expectedVaultId: string,

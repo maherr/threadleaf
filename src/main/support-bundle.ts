@@ -118,6 +118,7 @@ export function createSupportBundleData(input: SupportBundleInput) {
     ? pluginsForVault(settings.settings, vaultId)
     : {
         compatibilityMode: "restricted" as const,
+        compatibilityTopology: "isolated" as const,
         enabledPluginIds: [],
         capabilityGrantsByPlugin: {},
       };

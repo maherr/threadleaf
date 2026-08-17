@@ -118,7 +118,8 @@ function isMainTarget(target) {
   return (
     target?.type === "page" &&
     typeof target.url === "string" &&
-    target.url.endsWith("/dist/renderer/index.html") &&
+    (target.url.endsWith("/dist/renderer/index.html") ||
+      target.url.endsWith("/dist/renderer/index-trusted.html")) &&
     typeof target.webSocketDebuggerUrl === "string"
   );
 }
@@ -238,27 +239,43 @@ async function waitForReady(expectedPath = vaultPath, expectedPluginIds = []) {
 }
 
 async function captureTree(rootPath) {
-  const files = new Map();
-  const visit = async (directory, relative = "") => {
-    const entries = await fs.readdir(directory, { withFileTypes: true });
-    for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
-      const nextRelative = relative ? path.join(relative, entry.name) : entry.name;
-      const fullPath = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
-        await visit(fullPath, nextRelative);
-      } else if (entry.isFile()) {
-        const bytes = await fs.readFile(fullPath);
-        files.set(nextRelative.split(path.sep).join("/"), {
-          bytes: bytes.byteLength,
-          sha256: sha256(bytes),
-        });
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const files = new Map();
+    const visit = async (directory, relative = "") => {
+      const entries = await fs.readdir(directory, { withFileTypes: true });
+      for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+        const nextRelative = relative ? path.join(relative, entry.name) : entry.name;
+        const fullPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          await visit(fullPath, nextRelative);
+        } else if (entry.isFile()) {
+          const bytes = await fs.readFile(fullPath);
+          files.set(nextRelative.split(path.sep).join("/"), {
+            bytes: bytes.byteLength,
+            sha256: sha256(bytes),
+          });
+        }
       }
+    };
+    try {
+      await visit(rootPath);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+      await delay(25);
+      continue;
     }
-  };
-  await visit(rootPath);
-  return Object.fromEntries(
-    [...files.entries()].sort(([left], [right]) => left.localeCompare(right)),
-  );
+    const transient = [...files.keys()].some((filePath) =>
+      /(?:^|\/)\.threadleaf-(?:write|rollback|claim)-[^/]+\.tmp$/iu.test(filePath),
+    );
+    if (transient) {
+      await delay(25);
+      continue;
+    }
+    return Object.fromEntries(
+      [...files.entries()].sort(([left], [right]) => left.localeCompare(right)),
+    );
+  }
+  throw new Error(`Vault tree did not settle while capturing ${rootPath}.`);
 }
 
 async function pluginHashes() {
@@ -335,7 +352,7 @@ async function copyFixtureVaults() {
   await fs.writeFile(path.join(secondVaultPath, "Second Vault.md"), "# Second vault\n", "utf8");
 }
 
-async function launchApplication() {
+async function launchApplication(expectedTopology) {
   port = await availablePort();
   child = spawn(
     "xvfb-run",
@@ -378,7 +395,14 @@ async function launchApplication() {
     child.once("spawn", resolve);
     child.once("error", reject);
   });
-  await bindMainTarget(await waitForMainTarget());
+  const initialTarget = await waitForMainTarget();
+  await bindMainTarget(initialTarget);
+  if (
+    expectedTopology === "trusted-workspace" &&
+    initialTarget.url.endsWith("/dist/renderer/index.html")
+  ) {
+    await bindMainTarget(await waitForMainTarget(initialTarget.webSocketDebuggerUrl));
+  }
   await waitFor(async () => {
     const current = await snapshot();
     return current?.workspace?.state === "ready" ? current : null;
@@ -439,8 +463,60 @@ async function reconnectAfterRendererReplacement(previousWebSocketUrl) {
   return replacement;
 }
 
+async function exposeCompatibilityProfileControl() {
+  const exposed = await evaluate(`(() => {
+    const dialog = document.querySelector('#shortcut-settings');
+    const trigger = document.querySelector('#settings-trigger');
+    const navigation = document.querySelector('#settings-nav-plugins');
+    if (!(dialog instanceof HTMLDialogElement) || !(trigger instanceof HTMLElement) || !(navigation instanceof HTMLElement)) {
+      return false;
+    }
+    if (!dialog.open) trigger.click();
+    navigation.click();
+    return true;
+  })()`);
+  assert(exposed === true, "The community-plugin settings page was not reachable.");
+  return waitFor(
+    async () =>
+      evaluate(`(() => {
+        const dialog = document.querySelector('#shortcut-settings');
+        const page = document.querySelector('[data-settings-page="plugins"]');
+        const select = document.querySelector('#plugin-compatibility-profile');
+        return Boolean(dialog?.open && page && !page.hidden && select);
+      })()`),
+    "The community-plugin compatibility profile control did not become visible",
+  );
+}
+
+async function chooseCompatibilityProfile(profile) {
+  phase = `user-facing compatibility profile: ${profile}`;
+  await exposeCompatibilityProfileControl();
+  const previousWebSocketUrl = mainTarget?.webSocketDebuggerUrl ?? null;
+  const changed = await evaluate(`(() => {
+    const select = document.querySelector('#plugin-compatibility-profile');
+    if (!(select instanceof HTMLSelectElement)) return false;
+    select.value = ${JSON.stringify(profile)};
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`);
+  assert(changed === true, "The compatibility profile control was not reachable.");
+  await reconnectAfterRendererReplacement(previousWebSocketUrl);
+  await waitFor(
+    async () =>
+      (await evaluate("document.querySelector('#plugin-compatibility-profile')?.value ?? null")) ===
+      profile,
+    `The compatibility profile control did not settle on ${profile}`,
+  );
+}
+
+async function pointPickerAt(expectedPath) {
+  await fs.rm(pickerLink, { force: true });
+  await fs.symlink(expectedPath, pickerLink);
+}
+
 async function chooseVault(expectedPath) {
   const previousWebSocketUrl = mainTarget?.webSocketDebuggerUrl ?? null;
+  await pointPickerAt(expectedPath);
   let settled = false;
   const responsePromise = evaluate("window.threadleaf.chooseVault()")
     .then((value) => {
@@ -483,6 +559,17 @@ async function grantPlugins(vaultId, hashes) {
       `Authority grant failed for ${pluginId}: ${JSON.stringify(response)}`,
     );
   }
+  const catalog = await evaluate(`window.threadleaf.getPlugins(${JSON.stringify(vaultId)})`);
+  assert(
+    catalog?.status === "ready",
+    `Final plugin catalog was not ready: ${JSON.stringify(catalog)}`,
+  );
+  assert(
+    !catalog.catalog.warnings.some((warning) =>
+      warning.includes("exact bundle authority review is stale"),
+    ),
+    `Final plugin catalog retained a stale authority warning: ${JSON.stringify(catalog.catalog.warnings)}`,
+  );
 }
 
 async function editorSurfaceCounts() {
@@ -578,10 +665,8 @@ async function assertTrustedRealm(vaultId) {
 async function dispatchNativeEditors() {
   phase = "real native editor dispatch delivery";
   const before = await evaluate("window.__threadleafTrustedGate.state.transitions");
-  await evaluate('window.__threadleafTrustedWorkspaceTest.dispatch("primary", "trusted-primary")');
-  await evaluate(
-    'window.__threadleafTrustedWorkspaceTest.dispatch("secondary", "trusted-secondary")',
-  );
+  await evaluate('window.__threadleafTrustedWorkspaceDispatch("primary", "trusted-primary")');
+  await evaluate('window.__threadleafTrustedWorkspaceDispatch("secondary", "trusted-secondary")');
   await waitFor(async () => {
     const gate = await evaluate("window.__threadleafTrustedGate");
     const panes = new Set(
@@ -711,6 +796,29 @@ async function captureThemes() {
   return captures;
 }
 
+async function captureProfileSurface() {
+  phase = "trusted compatibility profile screenshot";
+  const visible = await exposeCompatibilityProfileControl();
+  assert(visible === true, "The trusted compatibility profile settings page was not visible.");
+  const result = await cdp.send("Page.captureScreenshot", {
+    format: "png",
+    fromSurface: true,
+    captureBeyondViewport: false,
+  });
+  const bytes = Buffer.from(result.data, "base64");
+  assert(
+    bytes.length > 1_024,
+    "The trusted compatibility profile screenshot was unexpectedly small.",
+  );
+  if (screenshotDirectory) {
+    await fs.mkdir(screenshotDirectory, { recursive: true });
+    await fs.writeFile(path.join(screenshotDirectory, "trusted-workspace-profile.png"), bytes, {
+      mode: 0o600,
+    });
+  }
+  return sha256(bytes);
+}
+
 async function crashTrustedRenderer(vaultId) {
   phase = "trusted main renderer crash and rebind";
   const previousWebSocketUrl = mainTarget.webSocketDebuggerUrl;
@@ -820,6 +928,10 @@ async function assertIsolatedMode() {
     !(await evaluate("window.__threadleafTrustedWorkspaceTest")),
     "Isolated mode exposed the trusted renderer probe.",
   );
+  assert(
+    !(await evaluate("window.__threadleafTrustedWorkspaceDispatch")),
+    "Isolated mode exposed the trusted editor dispatch probe.",
+  );
   const counts = await editorSurfaceCounts();
   assert(
     counts.primaryState === 0 &&
@@ -874,22 +986,53 @@ async function main() {
   const secondVaultId = sha256(Buffer.from(canonicalSecondVaultPath));
   await writeVaultSettings("trusted-workspace", hashes, firstVaultId, secondVaultId);
   await fs.symlink(secondVaultPath, pickerLink);
-  const vaultBytesBefore = await captureTree(vaultPath);
 
   phase = "trusted launch";
-  await launchApplication();
+  await launchApplication("trusted-workspace");
   const initial = await waitForReady(vaultPath);
   await grantPlugins(initial.vault.id, hashes);
   await waitForReady(vaultPath, Object.keys(hashes));
+  await waitFor(
+    async () => evaluate("document.querySelector('#toast')?.hidden === true"),
+    "The trusted launch left a plugin warning toast visible after authority settled",
+  );
   await assertTrustedRealm(initial.vault.id);
   await dispatchNativeEditors();
+  await waitFor(
+    async () =>
+      (await fs.readFile(path.join(vaultPath, "Linked Note.md"), "utf8")) === "trusted-primary"
+        ? true
+        : null,
+    "The native editor dispatch did not settle its required fixture edit",
+  );
+  const vaultBytesBefore = await captureTree(vaultPath);
   await unloadAndReloadOwner(initial.vault.id);
   await assertNavigationAndPermissionGuards();
+  await waitFor(
+    async () => evaluate("document.querySelector('#toast')?.hidden === true"),
+    "The trusted compatibility surface did not settle its startup notification",
+  );
+
+  await chooseCompatibilityProfile("isolated");
+  await assertIsolatedMode();
+  await chooseCompatibilityProfile("trusted-workspace");
+  await waitForReady(vaultPath, Object.keys(hashes));
+  await assertTrustedRealm(firstVaultId);
+  const trustedProfileScreenshot = await captureProfileSurface();
+  await waitFor(
+    async () => evaluate("document.querySelector('#settings-close')?.disabled === false"),
+    "The compatibility settings dialog stayed busy after the profile settled",
+  );
+  await evaluate("document.querySelector('#settings-close')?.click(); true");
+  await waitFor(
+    async () => evaluate("document.querySelector('#shortcut-settings')?.open !== true"),
+    "The compatibility settings dialog did not close before theme capture",
+  );
   const trustedScreenshots = await captureThemes();
 
   phase = "trusted vault switch to isolated second vault";
   await chooseVault(secondVaultPath);
-  const second = await snapshot();
+  const second = await waitForReady(secondVaultPath);
   assert(
     second.plugins?.every((plugin) => plugin.state !== "loaded"),
     "Vault switch retained an old loaded plugin owner.",
@@ -907,9 +1050,13 @@ async function main() {
   );
   await chooseVault(vaultPath);
   await waitForReady(vaultPath, Object.keys(hashes));
+  const vaultBytesAfterSwitch = await captureTree(vaultPath);
   assert(
-    JSON.stringify(await captureTree(vaultPath)) === JSON.stringify(vaultBytesBefore),
-    "Vault bytes changed across trusted owner teardown and vault switching.",
+    JSON.stringify(vaultBytesAfterSwitch) === JSON.stringify(vaultBytesBefore),
+    `Vault bytes changed across trusted owner teardown and vault switching: ${JSON.stringify({
+      before: vaultBytesBefore,
+      after: vaultBytesAfterSwitch,
+    })}`,
   );
   await crashTrustedRenderer(firstVaultId);
   assert(
@@ -920,12 +1067,13 @@ async function main() {
 
   phase = "isolated launch";
   await writeVaultSettings("isolated", hashes, firstVaultId, secondVaultId);
-  await launchApplication();
+  await launchApplication("isolated");
   await assertIsolatedMode();
   console.log(
     JSON.stringify({
       status: "passed",
       trustedScreenshots,
+      trustedProfileScreenshot,
       trustedRenderer: "shared-main-world",
       isolatedPluginRenderers: (await targets()).filter((target) =>
         target.url?.endsWith("/plugin-host.html"),

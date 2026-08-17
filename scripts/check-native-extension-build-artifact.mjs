@@ -129,10 +129,12 @@ async function main() {
     "plugin-renderer",
     "preload",
     "private-state-lock",
+    "trusted-plugin-host",
   ];
-  const entryBlock = tsup.slice(tsup.indexOf("entry:"), tsup.indexOf("outDir:"));
-  const declaredEntries = [...entryBlock.matchAll(/^\s*"?([A-Za-z0-9-]+)"?:\s*"/gm)]
-    .map(([, name]) => name)
+  const declaredEntries = [...tsup.matchAll(/entry:\s*\{([\s\S]*?)\}/gu)]
+    .flatMap(([, entryBlock]) =>
+      [...entryBlock.matchAll(/^\s*"?([A-Za-z0-9-]+)"?:\s*"/gmu)].map(([, name]) => name),
+    )
     .sort();
   if (declaredEntries.length === 0) {
     fail("could not read the tsup entry list, so bundle coverage cannot be verified");

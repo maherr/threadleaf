@@ -28,9 +28,10 @@ import { parseVaultGraphRequest } from "../application/vault-graph";
 import { WorkspaceController } from "../application/workspace-controller";
 import { atomicWriteFile, readStableFile } from "../kernel/durability";
 import { VaultPathPolicy } from "../kernel/path-policy";
-import { FixedStateRoot } from "../kernel/ports";
+import { FixedStateRoot, type VaultReadPort } from "../kernel/ports";
 import { acquireStateLock } from "../private-state-lock";
 import { IsolatedPluginRuntime } from "../runtime/isolated-plugin-runtime";
+import { isFatalPluginRuntimeError } from "../runtime/plugin-runtime-port";
 import { RecoveringPluginRuntime } from "../runtime/recovering-plugin-runtime";
 import {
   accessibilityAccentChoices,
@@ -78,6 +79,8 @@ import {
   parsePluginVaultCreateBinaryRequest,
   parsePluginVaultCreateFolderRequest,
   parsePluginVaultCreateRequest,
+  parsePluginVaultListMarkdownPathsRequest,
+  parsePluginVaultReadTextRequest,
   parsePluginVaultRenameRequest,
   parsePluginVaultTrashRequest,
   parsePluginVaultWriteBinaryRequest,
@@ -85,15 +88,20 @@ import {
   pluginRendererChannels,
 } from "../shared/plugin-runtime-protocol";
 import {
+  applyCompatibilityProfile,
   type CompatibilityMode,
+  type CompatibilityProfile,
   compatibilityModes,
+  compatibilityProfiles,
   isPluginConstructionRefusal,
   type PluginCapabilityGrantState,
   type PluginCatalogResponse,
+  type PluginConstructionDispatch,
   type PluginConstructionPath,
   type PluginConstructionRequest,
   parsePluginId,
   pluginCapabilityGrantMatches,
+  type VaultPluginSettings,
 } from "../shared/plugins";
 import {
   maximumPublishNoteHtmlBytes,
@@ -154,7 +162,11 @@ import {
   type PluginConstructionAuthoritySession,
   PluginConstructionAuthorityStore,
 } from "./plugin-construction-authority-store";
-import { PluginConstructionPolicyResolver } from "./plugin-construction-policy";
+import {
+  capturePluginPackageTree,
+  inspectCapturedPluginPackage,
+  PluginConstructionPolicyResolver,
+} from "./plugin-construction-policy";
 import { assertMainRendererPluginIpcSender } from "./plugin-ipc-sender-guard";
 import { PluginPackageManager } from "./plugin-package-manager";
 import {
@@ -171,6 +183,7 @@ import {
   readDevelopmentSupportBundlePath,
 } from "./support-bundle";
 import { ThemePackageManager } from "./theme-package-manager";
+import { TrustedWorkspacePluginRuntime } from "./trusted-workspace-plugin-runtime";
 import { loadVaultAppearance } from "./vault-appearance-loader";
 import { VaultAppearanceWatcher } from "./vault-appearance-watcher";
 import {
@@ -228,6 +241,7 @@ if (nativeLockProbeIndex >= 0) {
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 let mainWindow: BrowserWindow | null = null;
+let mainWindowTrustedWorkspace = false;
 let applicationQuitAuthorized = false;
 const rendererAutosaveFlush = new RendererAutosaveFlushCoordinator({
   send: (senderId, request) => {
@@ -267,11 +281,15 @@ let noteBookmarkController: NoteBookmarkController;
 let pluginPackageManager: PluginPackageManager;
 let pluginConstructionAuthorityStore: PluginConstructionAuthorityStore;
 const pluginConstructionAuthoritySessions = new Map<string, PluginConstructionAuthoritySession>();
+let activeTrustedWorkspaceRuntime: TrustedWorkspacePluginRuntime | null = null;
+let activeTrustedWorkspaceReadPort: (VaultReadPort & { vaultPath: string }) | null = null;
 let appearancePackageSource: OpenAppearancePackageSource;
 let themePackageManager: ThemePackageManager;
 let workspaceLayoutController!: WorkspaceLayoutController;
 let workspaceStateStore: FileWorkspaceStateStore;
 let privateMutationTail: Promise<void> = Promise.resolve();
+let mainWorkspaceTransition: Promise<void> | null = null;
+let mainRendererRecovery: Promise<void> | null = null;
 let initialWorkspaceActivation: Promise<void> | null = null;
 let initialWorkspaceRecoveryPending = false;
 let attachedPluginView: WebContentsView | null = null;
@@ -929,6 +947,14 @@ function isMainRendererSender(webContents: WebContents): boolean {
   );
 }
 
+function isTrustedWorkspaceRendererSender(webContents: WebContents): boolean {
+  return mainWindowTrustedWorkspace && isMainRendererSender(webContents);
+}
+
+function isPluginRuntimeSender(webContents: WebContents): boolean {
+  return isCompatibilityPluginSender(webContents) || isTrustedWorkspaceRendererSender(webContents);
+}
+
 function createVaultAttachmentShellPort(): VaultAttachmentShellPort {
   const diagnosticReceiver =
     process.env.THREADLEAF_TEST_NATIVE_ATTACHMENT_RECEIVER === "stdout-v1" &&
@@ -1249,6 +1275,42 @@ function pluginSafeMode(): boolean {
   return process.argv.includes("--safe-plugins") || process.env.THREADLEAF_SAFE_PLUGINS === "1";
 }
 
+function trustedWorkspaceEnabledForPreference(preference: VaultPluginSettings): boolean {
+  return (
+    preference.compatibilityMode === "enabled" &&
+    preference.compatibilityTopology === "trusted-workspace" &&
+    !pluginSafeMode()
+  );
+}
+
+function trustedWorkspaceEnabledForVault(vaultId: string): boolean {
+  return trustedWorkspaceEnabledForPreference(settingsController.getVaultPlugins(vaultId));
+}
+
+async function ensureMainWindowTopology(
+  trustedWorkspace: boolean,
+  forceRecreate = false,
+): Promise<void> {
+  const current = mainWindow;
+  if (
+    current &&
+    !current.isDestroyed() &&
+    !current.webContents.isDestroyed() &&
+    mainWindowTrustedWorkspace === trustedWorkspace &&
+    !forceRecreate
+  ) {
+    return;
+  }
+  if (!current || current.isDestroyed()) {
+    await createWindow(trustedWorkspace);
+    return;
+  }
+  await createWindow(trustedWorkspace);
+  if (!current.isDestroyed()) {
+    current.destroy();
+  }
+}
+
 function activePluginConstructionAuthoritySession(
   expectedVaultId: string,
 ): PluginConstructionAuthoritySession {
@@ -1276,6 +1338,38 @@ async function preparePluginConstructionRequest(
     reportedMainSha256: report.bundleSha256,
     constructionPath,
   });
+}
+
+async function attachTrustedPackageFiles(
+  dispatch: PluginConstructionDispatch,
+): Promise<PluginConstructionDispatch> {
+  const captured = await capturePluginPackageTree(dispatch.pluginDirectory);
+  if (captured.canonicalRoot !== dispatch.pluginDirectory) {
+    throw new Error("Trusted plugin construction resolved a different package root.");
+  }
+  const inspected = inspectCapturedPluginPackage(
+    captured,
+    dispatch.policy.packageIdentity.distributionTag,
+  );
+  if (
+    inspected.identityDigest !== dispatch.policy.packageIdentityDigest ||
+    inspected.identity.packageTreeSha256 !== dispatch.policy.packageIdentity.packageTreeSha256
+  ) {
+    throw new Error("Trusted plugin package bytes changed after the main-process allow decision.");
+  }
+  return {
+    ...dispatch,
+    packageFiles: captured.files.map((file) => {
+      const bytes = captured.bytesByPath.get(file.path);
+      if (!bytes) {
+        throw new Error(`Trusted plugin package capture omitted ${file.path}.`);
+      }
+      return {
+        ...file,
+        bytes: Uint8Array.from(bytes).buffer,
+      };
+    }),
+  };
 }
 
 async function resolvePluginCatalogAuthority(
@@ -1387,6 +1481,9 @@ function serializePluginCatalogOperation<T>(
     // Keep the original exception in the main-process log/cause only. IPC receives the
     // bounded category and validated subject needed for a useful Settings action.
     console.error("Threadleaf plugin catalog operation failed:", error);
+    if (isFatalPluginRuntimeError(error)) {
+      throw error;
+    }
     throw pluginDiagnosticError(attachedPluginDiagnosticCode(error) ?? code, subject, error);
   });
 }
@@ -1438,6 +1535,9 @@ async function currentAppearancePackages(expectedVaultId: string) {
 }
 
 async function currentPluginCatalog(expectedVaultId: string): Promise<PluginCatalogResponse> {
+  if (initialWorkspaceActivation) {
+    await initialWorkspaceActivation;
+  }
   if (workspaceController.vaultId !== expectedVaultId) {
     return { status: "stale-vault", vaultId: workspaceController.vaultId };
   }
@@ -1663,6 +1763,9 @@ async function reconcileCompatibilityPlugins(
     try {
       snapshot = await workspaceController.loadPlugin(request);
     } catch (error) {
+      if (isFatalPluginRuntimeError(error)) {
+        throw error;
+      }
       const code = isPluginConstructionRefusal(error)
         ? error.code
         : (attachedPluginDiagnosticCode(error) ?? "runtime-load-failed");
@@ -1700,6 +1803,50 @@ async function pluginUpdateResponse(
     : response;
 }
 
+async function updateCompatibilitySettings(
+  expectedVaultId: string,
+  nextSettings: VaultPluginSettings,
+): Promise<PluginUpdateResponse> {
+  if (workspaceController.vaultId !== expectedVaultId) {
+    return { status: "stale-vault", vaultId: workspaceController.vaultId };
+  }
+  const previousTrustedWorkspace = trustedWorkspaceEnabledForVault(expectedVaultId);
+  const nextTrustedWorkspace = trustedWorkspaceEnabledForPreference(nextSettings);
+  const operation = async (): Promise<PluginUpdateResponse> => {
+    if (previousTrustedWorkspace !== nextTrustedWorkspace) {
+      await requestWindowAutosaveFlush(mainWindow, "vault-switch");
+    }
+    const settings = await settingsController.setVaultPlugins(expectedVaultId, nextSettings);
+    if (previousTrustedWorkspace !== nextTrustedWorkspace) {
+      const vaultPath = workspaceController.vaultPath;
+      const opened = await workspaceController.switchVault(vaultPath);
+      if (opened.vault.mode === "kernel-backed" && opened.vault.id) {
+        await themePackageManager.recoverVault(workspaceController.vaultPath, opened.vault.id);
+      }
+    }
+    return pluginUpdateResponse(expectedVaultId, settings);
+  };
+
+  if (previousTrustedWorkspace === nextTrustedWorkspace) {
+    return operation();
+  }
+
+  mainWorkspaceTransition = Promise.resolve();
+  const transition = operation();
+  const settledTransition = transition.then(
+    () => undefined,
+    () => undefined,
+  );
+  mainWorkspaceTransition = settledTransition;
+  try {
+    return await transition;
+  } finally {
+    if (mainWorkspaceTransition === settledTransition) {
+      mainWorkspaceTransition = null;
+    }
+  }
+}
+
 async function createWorkspaceController(): Promise<WorkspaceController> {
   const configuredPath = readDevelopmentVaultPath(app.isPackaged, process.env);
   const fixtureVaultPath = app.isPackaged
@@ -1721,7 +1868,7 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
       }
     },
     workspaceSettingsForVault: (vaultId) => settingsController.getVaultWorkspaceSettings(vaultId),
-    pluginRuntimeFactory: async (vaultPath) => {
+    pluginRuntimeFactory: async (vaultPath, _actions, vault) => {
       const pluginOperationTimeout = developmentPluginOperationTimeout();
       const canonicalVaultPath = await fs.realpath(vaultPath);
       const vaultIdentityPath =
@@ -1736,6 +1883,39 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
       const constructionPolicyResolver = new PluginConstructionPolicyResolver({
         readAuthoritySnapshot: (request) => authoritySession.readAuthoritySnapshot(request),
       });
+      const trustedWorkspace = trustedWorkspaceEnabledForVault(vaultId);
+      await ensureMainWindowTopology(trustedWorkspace, trustedWorkspace);
+      if (trustedWorkspace) {
+        if (!vault) {
+          throw new Error("Trusted workspace compatibility requires the kernel read port.");
+        }
+        activeTrustedWorkspaceReadPort = {
+          vaultPath,
+          getName: () => vault.getName(),
+          listMarkdownPaths: (relativeDirectory) => vault.listMarkdownPaths(relativeDirectory),
+          readText: (relativePath) => vault.readText(relativePath),
+        };
+        if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+          throw new Error("Trusted workspace compatibility requires a live main renderer.");
+        }
+        try {
+          const runtime = await TrustedWorkspacePluginRuntime.open(mainWindow.webContents, {
+            attachTrustedPackageFiles,
+            constructionPolicyResolver,
+            hostFactoryPath: join(__dirname, "trusted-plugin-host.cjs"),
+            packageJsonPath: join(app.getAppPath(), "package.json"),
+            vaultPath,
+            ...(pluginOperationTimeout ? { operationTimeoutMs: pluginOperationTimeout } : {}),
+          });
+          activeTrustedWorkspaceRuntime = runtime;
+          return runtime;
+        } catch (error) {
+          activeTrustedWorkspaceReadPort = null;
+          throw error;
+        }
+      }
+      activeTrustedWorkspaceRuntime = null;
+      activeTrustedWorkspaceReadPort = null;
       return IsolatedPluginRuntime.open({
         create: () =>
           RecoveringPluginRuntime.open({
@@ -1864,8 +2044,8 @@ function registerIpcHandlers(): void {
   ipcMain.handle(ipcChannels.downloadAppUpdate, () => appUpdateController.downloadUpdate());
   ipcMain.handle(ipcChannels.installAppUpdate, () => appUpdateController.installUpdate());
   ipcMain.handle(pluginRendererChannels.vaultCreate, async (event, value: unknown) => {
-    if (!isCompatibilityPluginSender(event.sender)) {
-      throw new Error("Plugin vault creates require the active compatibility renderer.");
+    if (!isPluginRuntimeSender(event.sender)) {
+      throw new Error("Plugin vault creates require the active compatibility runtime.");
     }
     const request = parsePluginVaultCreateRequest(value);
     if (resolve(request.vaultPath) !== resolve(workspaceController.vaultPath)) {
@@ -1878,8 +2058,8 @@ function registerIpcHandlers(): void {
     );
   });
   ipcMain.handle(pluginRendererChannels.vaultCreateBinary, async (event, value: unknown) => {
-    if (!isCompatibilityPluginSender(event.sender)) {
-      throw new Error("Plugin binary vault creates require the active compatibility renderer.");
+    if (!isPluginRuntimeSender(event.sender)) {
+      throw new Error("Plugin binary vault creates require the active compatibility runtime.");
     }
     const request = parsePluginVaultCreateBinaryRequest(value);
     if (resolve(request.vaultPath) !== resolve(workspaceController.vaultPath)) {
@@ -1892,8 +2072,8 @@ function registerIpcHandlers(): void {
     );
   });
   ipcMain.handle(pluginRendererChannels.vaultCreateFolder, async (event, value: unknown) => {
-    if (!isCompatibilityPluginSender(event.sender)) {
-      throw new Error("Plugin vault folder creates require the active compatibility renderer.");
+    if (!isPluginRuntimeSender(event.sender)) {
+      throw new Error("Plugin vault folder creates require the active compatibility runtime.");
     }
     const request = parsePluginVaultCreateFolderRequest(value);
     if (resolve(request.vaultPath) !== resolve(workspaceController.vaultPath)) {
@@ -1901,9 +2081,31 @@ function registerIpcHandlers(): void {
     }
     return workspaceController.createPluginFolder(request.folderPath, workspaceController.vaultId);
   });
+  ipcMain.handle(pluginRendererChannels.vaultListMarkdownPaths, async (event, value: unknown) => {
+    if (!isPluginRuntimeSender(event.sender)) {
+      throw new Error("Plugin vault reads require the active compatibility runtime.");
+    }
+    const request = parsePluginVaultListMarkdownPathsRequest(value);
+    const readPort = activeTrustedWorkspaceReadPort;
+    if (!readPort || resolve(request.vaultPath) !== resolve(readPort.vaultPath)) {
+      throw new Error("Plugin vault reads may target only the active vault.");
+    }
+    return readPort.listMarkdownPaths(request.relativeDirectory);
+  });
+  ipcMain.handle(pluginRendererChannels.vaultReadText, async (event, value: unknown) => {
+    if (!isPluginRuntimeSender(event.sender)) {
+      throw new Error("Plugin vault reads require the active compatibility runtime.");
+    }
+    const request = parsePluginVaultReadTextRequest(value);
+    const readPort = activeTrustedWorkspaceReadPort;
+    if (!readPort || resolve(request.vaultPath) !== resolve(readPort.vaultPath)) {
+      throw new Error("Plugin vault reads may target only the active vault.");
+    }
+    return readPort.readText(request.filePath);
+  });
   ipcMain.handle(pluginRendererChannels.vaultRename, async (event, value: unknown) => {
-    if (!isCompatibilityPluginSender(event.sender)) {
-      throw new Error("Plugin vault renames require the active compatibility renderer.");
+    if (!isPluginRuntimeSender(event.sender)) {
+      throw new Error("Plugin vault renames require the active compatibility runtime.");
     }
     const request = parsePluginVaultRenameRequest(value);
     if (resolve(request.vaultPath) !== resolve(workspaceController.vaultPath)) {
@@ -1917,8 +2119,8 @@ function registerIpcHandlers(): void {
     );
   });
   ipcMain.handle(pluginRendererChannels.vaultTrash, async (event, value: unknown) => {
-    if (!isCompatibilityPluginSender(event.sender)) {
-      throw new Error("Plugin vault trash requires the active compatibility renderer.");
+    if (!isPluginRuntimeSender(event.sender)) {
+      throw new Error("Plugin vault trash requires the active compatibility runtime.");
     }
     const request = parsePluginVaultTrashRequest(value);
     if (resolve(request.vaultPath) !== resolve(workspaceController.vaultPath)) {
@@ -1931,8 +2133,8 @@ function registerIpcHandlers(): void {
     );
   });
   ipcMain.handle(pluginRendererChannels.vaultWrite, async (event, value: unknown) => {
-    if (!isCompatibilityPluginSender(event.sender)) {
-      throw new Error("Plugin vault writes require the active compatibility renderer.");
+    if (!isPluginRuntimeSender(event.sender)) {
+      throw new Error("Plugin vault writes require the active compatibility runtime.");
     }
     const request = parsePluginVaultWriteRequest(value);
     if (resolve(request.vaultPath) !== resolve(workspaceController.vaultPath)) {
@@ -1946,8 +2148,8 @@ function registerIpcHandlers(): void {
     );
   });
   ipcMain.handle(pluginRendererChannels.vaultWriteBinary, async (event, value: unknown) => {
-    if (!isCompatibilityPluginSender(event.sender)) {
-      throw new Error("Plugin binary vault writes require the active compatibility renderer.");
+    if (!isPluginRuntimeSender(event.sender)) {
+      throw new Error("Plugin binary vault writes require the active compatibility runtime.");
     }
     const request = parsePluginVaultWriteBinaryRequest(value);
     if (resolve(request.vaultPath) !== resolve(workspaceController.vaultPath)) {
@@ -1964,6 +2166,10 @@ function registerIpcHandlers(): void {
     if (initialWorkspaceRecoveryPending && initialWorkspaceActivation) {
       await initialWorkspaceActivation;
     }
+    const transitions = [mainWorkspaceTransition, mainRendererRecovery].filter(
+      (value): value is Promise<void> => value !== null,
+    );
+    await Promise.all(transitions);
     const snapshot = await workspaceSnapshotWithLayout(await workspaceController.getSnapshot());
     return workspaceOpenTransferTracker ? workspaceOpenTransferTracker.prepare(snapshot) : snapshot;
   });
@@ -2445,11 +2651,38 @@ function registerIpcHandlers(): void {
           return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
         }
         const current = settingsController.getVaultPlugins(expectedVaultId);
-        const settings = await settingsController.setVaultPlugins(expectedVaultId, {
+        return updateCompatibilitySettings(expectedVaultId, {
           ...current,
           compatibilityMode: mode as CompatibilityMode,
         });
-        return pluginUpdateResponse(expectedVaultId, settings);
+      }, "package-operation-failed");
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.setCompatibilityProfile,
+    (event, expectedVaultId: unknown, profile: unknown) => {
+      assertMainRendererPluginIpcSender(
+        isMainRendererSender(event.sender),
+        "Compatibility profile changes",
+      );
+      if (
+        typeof expectedVaultId !== "string" ||
+        typeof profile !== "string" ||
+        !compatibilityProfiles.includes(profile as CompatibilityProfile)
+      ) {
+        throw new Error(
+          "Compatibility profile requires a vault identity and off, isolated, or trusted-workspace.",
+        );
+      }
+      return serializePluginCatalogOperation(async () => {
+        if (workspaceController.vaultId !== expectedVaultId) {
+          return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+        }
+        const current = settingsController.getVaultPlugins(expectedVaultId);
+        return updateCompatibilitySettings(
+          expectedVaultId,
+          applyCompatibilityProfile(current, profile as CompatibilityProfile),
+        );
       }, "package-operation-failed");
     },
   );
@@ -3177,19 +3410,32 @@ function registerIpcHandlers(): void {
       }
     }
     try {
-      return {
-        status: "opened",
-        snapshot: await serializePluginOperation(async () => {
-          const opened = await workspaceController.switchVault(selectedPath);
-          if (opened.vault.mode === "kernel-backed" && opened.vault.id) {
-            await themePackageManager.recoverVault(workspaceController.vaultPath, opened.vault.id);
-          }
-          const snapshot = await reconcileCompatibilityPlugins(
-            opened.vault.id ?? workspaceController.vaultId,
-          );
-          return workspaceSnapshotWithLayout(snapshot);
-        }),
-      } as const;
+      const transition = serializePluginOperation(async () => {
+        await requestWindowAutosaveFlush(mainWindow, "vault-switch");
+        const opened = await workspaceController.switchVault(selectedPath);
+        if (opened.vault.mode === "kernel-backed" && opened.vault.id) {
+          await themePackageManager.recoverVault(workspaceController.vaultPath, opened.vault.id);
+        }
+        const snapshot = await reconcileCompatibilityPlugins(
+          opened.vault.id ?? workspaceController.vaultId,
+        );
+        return workspaceSnapshotWithLayout(snapshot);
+      });
+      const settledTransition = transition.then(
+        () => undefined,
+        () => undefined,
+      );
+      mainWorkspaceTransition = settledTransition;
+      try {
+        return {
+          status: "opened",
+          snapshot: await transition,
+        } as const;
+      } finally {
+        if (mainWorkspaceTransition === settledTransition) {
+          mainWorkspaceTransition = null;
+        }
+      }
     } catch (error) {
       return {
         status: "failed",
@@ -4015,7 +4261,7 @@ function registerIpcHandlers(): void {
   });
 }
 
-async function createWindow(): Promise<void> {
+async function createWindow(trustedWorkspace = false): Promise<void> {
   detachPluginView();
   const restoredBounds = restoreWorkspaceWindowBounds(
     workspaceLayoutController.snapshot().mainWindowBounds,
@@ -4035,13 +4281,19 @@ async function createWindow(): Promise<void> {
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
+      nodeIntegration: trustedWorkspace,
+      sandbox: !trustedWorkspace,
+      ...(trustedWorkspace ? { additionalArguments: ["--threadleaf-trusted-workspace"] } : {}),
     },
   });
   mainWindow = window;
+  mainWindowTrustedWorkspace = trustedWorkspace;
   const rendererId = window.webContents.id;
   installMainWindowNavigationGuards(window.webContents);
+  window.webContents.session.setPermissionCheckHandler(() => false);
+  window.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) =>
+    callback(false),
+  );
 
   let boundsTimer: NodeJS.Timeout | undefined;
   let autosaveBridgeReady = false;
@@ -4071,7 +4323,14 @@ async function createWindow(): Promise<void> {
   window.on("move", persistBounds);
   window.on("resize", persistBounds);
   window.on("blur", () => {
-    if (!autosaveBridgeReady || applicationQuitAuthorized) return;
+    if (
+      mainWindow !== window ||
+      !autosaveBridgeReady ||
+      applicationQuitAuthorized ||
+      mainWorkspaceTransition
+    ) {
+      return;
+    }
     void requestWindowAutosaveFlush(window, "window-blur").catch((error) =>
       console.error("Threadleaf could not flush autosave on window blur:", error),
     );
@@ -4103,6 +4362,9 @@ async function createWindow(): Promise<void> {
     if (applicationQuitAuthorized || closeAfterAutosave) {
       return;
     }
+    if (mainWindow !== window) {
+      return;
+    }
     recoverMainRenderer({ reason: details.reason, exitCode: details.exitCode });
   });
   window.on("unresponsive", () => {
@@ -4117,19 +4379,53 @@ async function createWindow(): Promise<void> {
     if (mainWindow === window) {
       attachedPluginView = null;
       mainWindow = null;
+      mainWindowTrustedWorkspace = false;
     }
   });
-  await window.loadFile(join(__dirname, "..", "renderer", "index.html"));
+  await window.loadFile(
+    join(__dirname, "..", "renderer", trustedWorkspace ? "index-trusted.html" : "index.html"),
+  );
   setPluginSurfacePresentationVisible(true);
 }
 
 async function replaceMainWindowAfterCrash(): Promise<void> {
-  const stoppedWindow = mainWindow;
-  if (!stoppedWindow || stoppedWindow.isDestroyed()) {
-    throw new Error("The stopped main window is no longer available.");
+  if (mainRendererRecovery) {
+    await mainRendererRecovery;
+    return;
   }
-  await createWindow();
-  stoppedWindow.destroy();
+  let resolveRecovery!: () => void;
+  let rejectRecovery!: (error: unknown) => void;
+  const recovery = new Promise<void>((resolve, reject) => {
+    resolveRecovery = resolve;
+    rejectRecovery = reject;
+  });
+  mainRendererRecovery = recovery;
+  try {
+    const stoppedWindow = mainWindow;
+    if (!stoppedWindow || stoppedWindow.isDestroyed()) {
+      throw new Error("The stopped main window is no longer available.");
+    }
+    const trustedWorkspace = mainWindowTrustedWorkspace;
+    await createWindow(trustedWorkspace);
+    stoppedWindow.destroy();
+    if (trustedWorkspace && activeTrustedWorkspaceRuntime && mainWindow) {
+      await activeTrustedWorkspaceRuntime.rebind(mainWindow.webContents);
+      await reconcileCompatibilityPlugins(
+        workspaceController.vaultId,
+        false,
+        undefined,
+        "renderer-death-restoration",
+      );
+    }
+    resolveRecovery();
+  } catch (error) {
+    rejectRecovery(error);
+    throw error;
+  } finally {
+    if (mainRendererRecovery === recovery) {
+      mainRendererRecovery = null;
+    }
+  }
 }
 
 const recoverMainRenderer = createMainRendererRecoveryHandler({
@@ -4259,7 +4555,7 @@ async function startApplicationWhenReady(): Promise<void> {
 
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      await createWindow();
+      await createWindow(trustedWorkspaceEnabledForVault(workspaceController.vaultId));
     }
   });
 }

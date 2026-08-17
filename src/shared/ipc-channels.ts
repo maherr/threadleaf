@@ -43,6 +43,7 @@ export const ipcChannels = {
   applyPluginPackage: "threadleaf:apply-plugin-package",
   cancelPluginPackageReview: "threadleaf:cancel-plugin-package-review",
   setCompatibilityMode: "threadleaf:set-compatibility-mode",
+  setCompatibilityProfile: "threadleaf:set-compatibility-profile",
   setPluginCapabilityGrant: "threadleaf:set-plugin-capability-grant",
   setPluginEnabled: "threadleaf:set-plugin-enabled",
   reloadPlugins: "threadleaf:reload-plugins",

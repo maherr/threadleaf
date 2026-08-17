@@ -1515,15 +1515,22 @@
 
             <article class="plugin-mode-card">
               <span class="plugin-mode-copy">
-                <strong>Restricted mode</strong>
+                <strong>Compatibility posture</strong>
                 <small>
-                  Turn on restricted mode to use Threadleaf without running community plugin code.
-                  Installed packages remain untouched in the vault.
+                  Off keeps community plugins unloaded. Isolated compatibility runs each plugin in
+                  its separate renderer. Full trusted compatibility shares Threadleaf’s main page
+                  realm and grants plugins Node access; use it only for plugins that require that
+                  compatibility level.
                 </small>
               </span>
-              <button class="secondary-button" id="plugin-mode-toggle" type="button">
-                Turn off restricted mode
-              </button>
+              <label class="plugin-profile-control">
+                <span>Vault profile</span>
+                <select id="plugin-compatibility-profile">
+                  <option value="off">Off</option>
+                  <option value="isolated">Isolated compatibility</option>
+                  <option value="trusted-workspace">Full trusted compatibility</option>
+                </select>
+              </label>
             </article>
 
             <div class="plugin-summary-row">

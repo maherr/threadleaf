@@ -678,6 +678,11 @@ interface ExtensionRegistration extends OwnedRegistration {
   viewType: string;
 }
 
+interface EditorExtensionRegistration extends OwnedRegistration {
+  extension: unknown;
+  sequence: number;
+}
+
 interface MarkdownProcessorRegistration extends OwnedRegistration {
   codeBlockLanguage: string | null;
   codeBlockProcessor: MarkdownCodeBlockProcessor | null;
@@ -697,7 +702,7 @@ interface SettingTabRegistration extends OwnedRegistration {
 }
 
 export class CompatibilityIntegrationRegistry {
-  private readonly editorExtensions = new Set<unknown>();
+  private readonly editorExtensions: EditorExtensionRegistration[] = [];
   private readonly editorSuggests = new Set<unknown>();
   private readonly extensions: ExtensionRegistration[] = [];
   private readonly markdownPostProcessors: MarkdownProcessorRegistration[] = [];
@@ -707,6 +712,9 @@ export class CompatibilityIntegrationRegistry {
   private readonly views = new Map<string, ViewRegistration>();
   private readonly icons = new Map<string, string>();
   private nextMarkdownProcessorSequence = 0;
+  private nextEditorExtensionSequence = 0;
+  private editorExtensionOwnerOrder: readonly string[] = [];
+  private editorExtensionChangeListener: ((extensions: readonly unknown[]) => void) | null = null;
 
   registerView(ownerId: string, type: string, creator: (leaf: unknown) => unknown): () => void {
     if (this.views.has(type)) {
@@ -754,9 +762,58 @@ export class CompatibilityIntegrationRegistry {
     return () => this.editorSuggests.delete(editorSuggest);
   }
 
-  registerEditorExtension(editorExtension: unknown): () => void {
-    this.editorExtensions.add(editorExtension);
-    return () => this.editorExtensions.delete(editorExtension);
+  setEditorExtensionChangeListener(
+    listener: ((extensions: readonly unknown[]) => void) | null,
+  ): void {
+    this.editorExtensionChangeListener = listener;
+    if (listener) {
+      listener(this.getEditorExtensions());
+    }
+  }
+
+  setEditorExtensionOwnerOrder(ownerIds: readonly string[]): void {
+    this.editorExtensionOwnerOrder = [...ownerIds];
+    this.notifyEditorExtensionChange();
+  }
+
+  getEditorExtensions(): unknown[] {
+    const ownerOrder = new Map(
+      this.editorExtensionOwnerOrder.map((ownerId, index) => [ownerId, index]),
+    );
+    return [...this.editorExtensions]
+      .sort(
+        (left, right) =>
+          (ownerOrder.get(left.ownerId) ?? Number.MAX_SAFE_INTEGER) -
+            (ownerOrder.get(right.ownerId) ?? Number.MAX_SAFE_INTEGER) ||
+          left.sequence - right.sequence,
+      )
+      .map(({ extension }) => extension);
+  }
+
+  registerEditorExtension(ownerId: string, editorExtension: unknown): () => void;
+  registerEditorExtension(editorExtension: unknown): () => void;
+  registerEditorExtension(
+    ownerOrExtension: string | unknown,
+    maybeEditorExtension?: unknown,
+  ): () => void {
+    const registration: EditorExtensionRegistration = {
+      ownerId: typeof ownerOrExtension === "string" ? ownerOrExtension : "",
+      extension: typeof ownerOrExtension === "string" ? maybeEditorExtension : ownerOrExtension,
+      sequence: this.nextEditorExtensionSequence++,
+    };
+    this.editorExtensions.push(registration);
+    this.notifyEditorExtensionChange();
+    return () => {
+      const index = this.editorExtensions.indexOf(registration);
+      if (index >= 0) {
+        this.editorExtensions.splice(index, 1);
+        this.notifyEditorExtensionChange();
+      }
+    };
+  }
+
+  private notifyEditorExtensionChange(): void {
+    this.editorExtensionChangeListener?.(this.getEditorExtensions());
   }
 
   registerMarkdownPostProcessor(

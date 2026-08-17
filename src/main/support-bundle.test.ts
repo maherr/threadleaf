@@ -296,6 +296,7 @@ function settingsFixture(): AppSettingsSnapshot {
       pluginsByVault: {
         [vaultId]: {
           compatibilityMode: "enabled",
+          compatibilityTopology: "isolated",
           enabledPluginIds: ["PRIVATE_PLUGIN_ID"],
           capabilityGrantsByPlugin: {
             PRIVATE_PLUGIN_ID: {

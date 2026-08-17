@@ -266,10 +266,10 @@ export class FileSystemAdapter {
   private readonly canonicalRootPath: string;
   private readonly vault: Vault;
 
-  constructor(vault: Vault) {
+  constructor(vault: Vault, reader = false) {
     this.vault = vault;
     this.basePath = vault.rootPath;
-    this.canonicalRootPath = realpathSync(vault.rootPath);
+    this.canonicalRootPath = reader ? vault.rootPath : realpathSync(vault.rootPath);
   }
 
   getName(): string {
@@ -473,16 +473,39 @@ export class Vault {
   private mutationSequence = 0;
   private mutationVersion = 0;
   private readonly revisions = new Map<string, string>();
+  private readerFiles: TFile[] | null = null;
+  private readerInitialization: Promise<void> | null = null;
 
   constructor(rootPath: string, reader?: VaultReadPort, writer?: CompatibilityVaultWritePort) {
-    this.rootPath = realpathSync(path.resolve(rootPath));
+    this.rootPath = reader ? path.resolve(rootPath) : realpathSync(path.resolve(rootPath));
     this.#reader = reader;
     this.#writer = writer;
-    this.adapter = new FileSystemAdapter(this);
+    this.adapter = new FileSystemAdapter(this, reader !== undefined);
   }
 
   getName(): string {
     return path.basename(this.rootPath);
+  }
+
+  async initialize(): Promise<void> {
+    if (!this.#reader || this.readerFiles) {
+      return;
+    }
+    if (this.readerInitialization) {
+      return this.readerInitialization;
+    }
+    this.readerInitialization = (async () => {
+      const paths = await this.#reader?.listMarkdownPaths();
+      const now = Date.now();
+      this.readerFiles = (paths ?? []).map(
+        (filePath) => new TFile(filePath, this, { ctime: now, mtime: now, size: 0 }),
+      );
+    })();
+    try {
+      await this.readerInitialization;
+    } finally {
+      this.readerInitialization = null;
+    }
   }
 
   on(name: string, callback: VaultEventCallback, context?: unknown): VaultEventRef {
@@ -509,6 +532,12 @@ export class Vault {
   }
 
   getFiles(): TFile[] {
+    if (this.#reader) {
+      if (!this.readerFiles) {
+        throw new Error("The compatibility vault file inventory has not been initialized.");
+      }
+      return [...this.readerFiles];
+    }
     const files: TFile[] = [];
     this.collectFiles(this.rootPath, files);
     return files.sort((left, right) => left.path.localeCompare(right.path));
@@ -519,6 +548,23 @@ export class Vault {
   }
 
   getAllFolders(includeRoot = false): TFolder[] {
+    if (this.#reader) {
+      if (!this.readerFiles) {
+        throw new Error("The compatibility vault file inventory has not been initialized.");
+      }
+      const folderPaths = new Set<string>();
+      for (const file of this.readerFiles) {
+        let parentPath = path.posix.dirname(file.path);
+        while (parentPath !== ".") {
+          folderPaths.add(parentPath);
+          parentPath = path.posix.dirname(parentPath);
+        }
+      }
+      return [
+        ...(includeRoot ? [this.folderForPath("")] : []),
+        ...[...folderPaths].sort().map((folderPath) => this.folderForPath(folderPath)),
+      ];
+    }
     const folders: TFolder[] = includeRoot ? [this.folderForPath("")] : [];
     const collect = (absoluteDirectory: string): void => {
       for (const entry of readdirSync(absoluteDirectory, { withFileTypes: true })) {
@@ -590,6 +636,22 @@ export class Vault {
 
   getAbstractFileByPath(filePath: string): TAbstractFile | null {
     const normalized = normalizePath(filePath);
+    if (this.#reader) {
+      if (!this.readerFiles) {
+        throw new Error("The compatibility vault file inventory has not been initialized.");
+      }
+      const file = this.readerFiles.find((candidate) => candidate.path === normalized);
+      if (file) {
+        return file;
+      }
+      if (
+        normalized === "" ||
+        this.readerFiles.some((candidate) => candidate.path.startsWith(`${normalized}/`))
+      ) {
+        return this.folderForPath(normalized);
+      }
+      return null;
+    }
     let stats: ReturnType<typeof statSync>;
     try {
       stats = statSync(this.resolveVaultPath(normalized));
@@ -648,6 +710,9 @@ export class Vault {
   }
 
   async readBinary(file: TFile): Promise<ArrayBuffer> {
+    if (this.#reader) {
+      throw new Error("Plugin binary reads are not yet available through the trusted read port.");
+    }
     const bytes = await fs.readFile(this.resolveVaultPath(file.path));
     this.revisions.set(file.path, revisionOf(bytes));
     return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
@@ -2339,7 +2404,7 @@ export class Plugin extends Component {
   }
 
   registerEditorExtension(extension: unknown): void {
-    this.register(this.app.compatibility.registerEditorExtension(extension));
+    this.register(this.app.compatibility.registerEditorExtension(this.manifest.id, extension));
   }
 
   registerEditorSuggest(editorSuggest: EditorSuggest<unknown>): void {

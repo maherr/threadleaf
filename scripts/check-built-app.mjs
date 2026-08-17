@@ -32,6 +32,7 @@ await Promise.all([
   access(path.join(projectRoot, "dist", "main", "preload.cjs")),
   access(path.join(projectRoot, "dist", "native", "threadleaf-state-lock.node")),
   access(path.join(projectRoot, "dist", "renderer", "plugin-host.html")),
+  access(path.join(projectRoot, "dist", "renderer", "index-trusted.html")),
   ...assetPaths.map((assetPath) => access(path.resolve(rendererDirectory, assetPath))),
 ]);
 

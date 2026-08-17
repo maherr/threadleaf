@@ -107,6 +107,10 @@ const compatibilityHostModuleRoots = [
 
 export type PluginModuleResolver = NodeJS.Require;
 
+export interface PluginHostOptions {
+  onEditorExtensionsChange?(extensions: readonly unknown[]): void;
+}
+
 export const maxConsumedPluginConstructionAttempts = 4_096;
 
 const networkBuiltinRoots = new Set(["dgram", "dns", "http", "http2", "https", "net", "tls"]);
@@ -161,6 +165,8 @@ export class PluginHost implements PluginRuntimePort {
   private nativeMarkdownView: MarkdownView | null = null;
   private readonly pluginModuleResolver: PluginModuleResolver | undefined;
   private readonly consumedConstructionAttempts = new Set<string>();
+  private readonly onEditorExtensionsChange: ((extensions: readonly unknown[]) => void) | undefined;
+  private editorExtensionNoticeRecorded = false;
 
   constructor(
     vaultPath: string,
@@ -168,15 +174,30 @@ export class PluginHost implements PluginRuntimePort {
     actions = new ActionRegistry(),
     pluginModuleResolver?: PluginModuleResolver,
     writer?: CompatibilityVaultWritePort,
+    options?: PluginHostOptions,
   ) {
     this.vault = new Vault(vaultPath, reader, writer);
     this.pluginModuleResolver = pluginModuleResolver;
+    this.onEditorExtensionsChange = options?.onEditorExtensionsChange;
     const commands = new CommandRegistry(actions);
     const notices = new NoticeBus((message) => this.record("notice", message));
     this.app = new App(this.vault, commands, notices);
     this.app.workspace.setLeafFactory((containerEl) => new WorkspaceLeaf(this.app, containerEl));
     this.app.workspace.setLayoutReadyErrorHandler((_error) => {
       this.record("error", createPluginDiagnostic("runtime-load-failed").message);
+    });
+    this.app.compatibility.setEditorExtensionChangeListener((extensions) => {
+      if (this.onEditorExtensionsChange) {
+        this.onEditorExtensionsChange(extensions);
+        return;
+      }
+      if (extensions.length > 0 && !this.editorExtensionNoticeRecorded) {
+        this.editorExtensionNoticeRecorded = true;
+        this.record(
+          "runtime",
+          "Editor extensions are registered but unavailable in isolated compatibility mode.",
+        );
+      }
     });
     this.record("runtime", `Opened synthetic vault ${this.vault.getName()} in read-only mode.`);
   }
@@ -187,6 +208,7 @@ export class PluginHost implements PluginRuntimePort {
 
   async loadAuthorizedPlugin(dispatch: PluginConstructionDispatch): Promise<RuntimeSnapshot> {
     try {
+      await this.vault.initialize();
       return await this.loadPluginUnsafe(dispatch);
     } catch (error) {
       if (isPluginConstructionRefusal(error)) {
@@ -201,11 +223,28 @@ export class PluginHost implements PluginRuntimePort {
   private async loadPluginUnsafe(dispatch: PluginConstructionDispatch): Promise<RuntimeSnapshot> {
     this.assertConstructionDispatch(dispatch);
     const { pluginDirectory, policy } = dispatch;
-    const resolvedDirectory = await this.assertSealedPackageRoot(pluginDirectory);
-    const manifestPath = await this.canonicalPluginFile(resolvedDirectory, "manifest.json");
-    const entryPath = await this.canonicalPluginFile(resolvedDirectory, "main.js");
-    const verifiedFiles = await this.verifyPackageIdentity(resolvedDirectory, policy);
-    const manifest = this.readManifest(manifestPath, resolvedDirectory, verifiedFiles);
+    const resolvedDirectory = dispatch.packageFiles
+      ? pluginDirectory
+      : await this.assertSealedPackageRoot(pluginDirectory);
+    const manifestPath = path.join(resolvedDirectory, "manifest.json");
+    const entryPath = path.join(resolvedDirectory, "main.js");
+    const packageBytes = dispatch.packageFiles
+      ? new Map(dispatch.packageFiles.map((file) => [file.path, new Uint8Array(file.bytes)]))
+      : undefined;
+    const verifiedFiles = dispatch.packageFiles
+      ? new Map(
+          dispatch.packageFiles.map(({ path: filePath, sha256, size }) => [
+            filePath,
+            { sha256, size },
+          ]),
+        )
+      : await this.verifyPackageIdentity(resolvedDirectory, policy);
+    const manifest = this.readManifest(
+      manifestPath,
+      resolvedDirectory,
+      verifiedFiles,
+      packageBytes,
+    );
     if (
       manifest.id !== policy.packageIdentity.pluginId ||
       manifest.version !== policy.packageIdentity.manifestVersion
@@ -232,6 +271,7 @@ export class PluginHost implements PluginRuntimePort {
       },
     };
     this.plugins.set(manifest.id, record);
+    this.syncEditorExtensionOwnerOrder();
     this.lastPluginId = manifest.id;
     this.record("plugin", `Discovered ${manifest.name} ${manifest.version}.`);
 
@@ -242,6 +282,7 @@ export class PluginHost implements PluginRuntimePort {
         resolvedDirectory,
         policy,
         verifiedFiles,
+        packageBytes,
       );
       instance = new PluginClass(this.app, manifest);
       if (!(instance instanceof Plugin)) {
@@ -275,6 +316,7 @@ export class PluginHost implements PluginRuntimePort {
       record.instance = null;
       if (isPluginConstructionRefusal(error)) {
         this.plugins.delete(manifest.id);
+        this.syncEditorExtensionOwnerOrder();
         if (this.lastPluginId === manifest.id) {
           this.lastPluginId = null;
         }
@@ -610,6 +652,7 @@ export class PluginHost implements PluginRuntimePort {
     }
     record.instance = null;
     this.app.plugins.unregister(record.summary.id);
+    this.syncEditorExtensionOwnerOrder();
     record.summary = {
       ...record.summary,
       state: "unloaded",
@@ -646,6 +689,10 @@ export class PluginHost implements PluginRuntimePort {
     return this.getSnapshot();
   }
 
+  private syncEditorExtensionOwnerOrder(): void {
+    this.app.compatibility.setEditorExtensionOwnerOrder([...this.plugins.keys()]);
+  }
+
   async close(): Promise<void> {
     await this.closePluginView();
     await this.unloadAllPlugins();
@@ -668,6 +715,7 @@ export class PluginHost implements PluginRuntimePort {
   }
 
   async getSnapshot(): Promise<RuntimeSnapshot> {
+    await this.vault.initialize();
     const plugins = [...this.plugins.values()]
       .map(({ summary }) => ({ ...summary }))
       .sort((left, right) => left.name.localeCompare(right.name, "en-US", { numeric: true }));
@@ -721,8 +769,14 @@ export class PluginHost implements PluginRuntimePort {
     sealedPackageRoot: string,
     policy: PluginConstructionDispatch["policy"],
     verifiedFiles: ReadonlyMap<string, VerifiedPluginPackageFile>,
+    packageBytes?: ReadonlyMap<string, Uint8Array>,
   ): Promise<PluginConstructor> {
-    const bundleBytes = this.readVerifiedModuleBytes(entryPath, sealedPackageRoot, verifiedFiles);
+    const bundleBytes = this.readVerifiedModuleBytes(
+      entryPath,
+      sealedPackageRoot,
+      verifiedFiles,
+      packageBytes,
+    );
     const compatibilityModule = createObsidianCompatibilityModule(this.app);
     const moduleCache = new Map<string, CommonJsModuleRecord>();
     const loadSealedModule = (modulePath: string, knownBytes?: Uint8Array): unknown => {
@@ -778,7 +832,8 @@ export class PluginHost implements PluginRuntimePort {
           );
         }
         const bytes =
-          knownBytes ?? this.readVerifiedModuleBytes(modulePath, sealedPackageRoot, verifiedFiles);
+          knownBytes ??
+          this.readVerifiedModuleBytes(modulePath, sealedPackageRoot, verifiedFiles, packageBytes);
         if (path.extname(modulePath) === ".json") {
           moduleRecord.exports = JSON.parse(
             new TextDecoder("utf-8", { fatal: true }).decode(bytes),
@@ -822,7 +877,8 @@ export class PluginHost implements PluginRuntimePort {
     filePath: string,
     sealedPackageRoot: string,
     verifiedFiles: ReadonlyMap<string, VerifiedPluginPackageFile>,
-  ): Buffer {
+    packageBytes?: ReadonlyMap<string, Uint8Array>,
+  ): Uint8Array {
     const relativePath = path.relative(sealedPackageRoot, filePath).split(path.sep).join("/");
     const expected = verifiedFiles.get(relativePath);
     if (!expected || expected.size > maxPluginBundleBytes) {
@@ -830,6 +886,20 @@ export class PluginHost implements PluginRuntimePort {
         new Error("Plugin dependency is absent from the verified sealed package manifest."),
         "managed-package-changed",
       );
+    }
+    if (packageBytes) {
+      const bytes = packageBytes.get(relativePath);
+      if (
+        !bytes ||
+        bytes.byteLength !== expected.size ||
+        createHash("sha256").update(bytes).digest("hex") !== expected.sha256
+      ) {
+        throw withPluginDiagnosticCode(
+          new Error("Trusted plugin package bytes failed their main-process identity check."),
+          "managed-package-changed",
+        );
+      }
+      return new Uint8Array(bytes);
     }
     if (constants.O_NOFOLLOW === undefined && process.platform !== "win32") {
       throw new Error("Plugin dependency verification requires no-follow file opens.");
@@ -1135,11 +1205,17 @@ export class PluginHost implements PluginRuntimePort {
     manifestPath: string,
     sealedPackageRoot: string,
     verifiedFiles: ReadonlyMap<string, VerifiedPluginPackageFile>,
+    packageBytes?: ReadonlyMap<string, Uint8Array>,
   ): PluginManifest {
     const manifest = parsePluginManifest(
       JSON.parse(
         new TextDecoder("utf-8", { fatal: true }).decode(
-          this.readVerifiedModuleBytes(manifestPath, sealedPackageRoot, verifiedFiles),
+          this.readVerifiedModuleBytes(
+            manifestPath,
+            sealedPackageRoot,
+            verifiedFiles,
+            packageBytes,
+          ),
         ),
       ),
     );
@@ -1165,18 +1241,6 @@ export class PluginHost implements PluginRuntimePort {
       );
     }
     return canonicalCandidate;
-  }
-
-  private async canonicalPluginFile(directoryPath: string, filename: string): Promise<string> {
-    const candidatePath = await fs.realpath(path.join(directoryPath, filename));
-    if (!isPathInside(directoryPath, candidatePath)) {
-      throw new Error(`${filename} resolves outside its plugin directory.`);
-    }
-    const stat = await fs.stat(candidatePath);
-    if (!stat.isFile()) {
-      throw new Error(`${filename} is not a regular file.`);
-    }
-    return candidatePath;
   }
 
   private record(kind: RuntimeEventKind, message: string): void {

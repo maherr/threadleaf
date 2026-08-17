@@ -208,6 +208,11 @@ normal external vault backup and the privacy-safe feedback workflow.
       supported method, event, component, and lifecycle edge.
 - [ ] Add workspace views, Markdown processors, menus, ribbons, status items, modal and setting
       components, plugin settings views, and CodeMirror editor extensions.
+- [x] Add the first trusted-workspace compatibility slice: per-vault topology migration, conditional
+      main-window recreation, shared page realm, exact renderer-owned CodeMirror/Lezer identity,
+      native primary and secondary editor extensions, owner cleanup, vault-switch teardown, crash
+      rebind, main-owned package-byte closure, isolated-mode regression, denied remote surfaces,
+      both-theme screenshots, and a disposable Electron/CDP gate.
 - [x] Discover `.obsidian/plugins/<id>/manifest.json`, `main.js`, and optional `styles.css` through
       contained bounded reads, with deterministic identity and explicit invalid-package evidence.
 - [x] Keep Threadleaf's enabled-plugin set in private per-vault settings without treating existing

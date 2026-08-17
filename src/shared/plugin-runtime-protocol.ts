@@ -13,6 +13,8 @@ export const pluginRendererChannels = {
   vaultCreate: "threadleaf:plugin-renderer-vault-create",
   vaultCreateBinary: "threadleaf:plugin-renderer-vault-create-binary",
   vaultCreateFolder: "threadleaf:plugin-renderer-vault-create-folder",
+  vaultListMarkdownPaths: "threadleaf:plugin-renderer-vault-list-markdown-paths",
+  vaultReadText: "threadleaf:plugin-renderer-vault-read-text",
   vaultRename: "threadleaf:plugin-renderer-vault-rename",
   vaultTrash: "threadleaf:plugin-renderer-vault-trash",
   vaultWrite: "threadleaf:plugin-renderer-vault-write",
@@ -46,6 +48,16 @@ export type PluginVaultCreateBinaryResponse = PluginVaultCreateResponse;
 
 export interface PluginVaultCreateFolderRequest {
   folderPath: string;
+  vaultPath: string;
+}
+
+export interface PluginVaultListMarkdownPathsRequest {
+  relativeDirectory?: string;
+  vaultPath: string;
+}
+
+export interface PluginVaultReadTextRequest {
+  filePath: string;
   vaultPath: string;
 }
 
@@ -98,6 +110,44 @@ export interface PluginVaultTrashRequest {
 }
 
 export type PluginVaultTrashResponse = PluginVaultRenameResponse;
+
+export function parsePluginVaultListMarkdownPathsRequest(
+  value: unknown,
+): PluginVaultListMarkdownPathsRequest {
+  if (!value || typeof value !== "object") {
+    throw new Error("Plugin vault Markdown-path request must be an object.");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.vaultPath !== "string" ||
+    candidate.vaultPath.length === 0 ||
+    (candidate.relativeDirectory !== undefined && typeof candidate.relativeDirectory !== "string")
+  ) {
+    throw new Error("Plugin vault Markdown-path requests require a vault path and directory.");
+  }
+  return {
+    vaultPath: candidate.vaultPath,
+    ...(candidate.relativeDirectory === undefined
+      ? {}
+      : { relativeDirectory: candidate.relativeDirectory }),
+  };
+}
+
+export function parsePluginVaultReadTextRequest(value: unknown): PluginVaultReadTextRequest {
+  if (!value || typeof value !== "object") {
+    throw new Error("Plugin vault text-read request must be an object.");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.vaultPath !== "string" ||
+    candidate.vaultPath.length === 0 ||
+    typeof candidate.filePath !== "string" ||
+    candidate.filePath.length === 0
+  ) {
+    throw new Error("Plugin vault text reads require vault and file paths.");
+  }
+  return { vaultPath: candidate.vaultPath, filePath: candidate.filePath };
+}
 
 export const pluginRendererOperations = [
   "close",
