@@ -28,9 +28,15 @@ import {
   type PluginRuntimeFactory,
   type PluginRuntimePort,
 } from "../runtime/plugin-runtime-port";
-import { MAX_VAULT_ATTACHMENT_BYTES } from "../shared/attachment-limits";
+import {
+  MAX_VAULT_ATTACHMENT_BATCH_BYTES,
+  MAX_VAULT_ATTACHMENT_BATCH_ITEMS,
+  MAX_VAULT_ATTACHMENT_BYTES,
+} from "../shared/attachment-limits";
 import { isExternalAttachmentTarget } from "../shared/attachment-targets";
 import type {
+  AttachmentBatchInsertOutcome,
+  AttachmentBatchInsertResponse,
   AttachmentInsertOutcome,
   AttachmentInsertResponse,
   AttachmentMoveOutcome,
@@ -118,7 +124,11 @@ import {
   type WorkspaceTreeIndex,
 } from "../shared/workspace-tree";
 import { ActionRegistry } from "./action-registry";
-import { insertExternalAttachment } from "./attachment-insert";
+import {
+  type AttachmentBatchInsertItemRequest,
+  insertExternalAttachment,
+  insertExternalAttachments,
+} from "./attachment-insert";
 import { moveBinaryAttachment, movedAttachmentPath } from "./attachment-move";
 import { inspectMissingAttachmentRelinkOffer, relinkMissingAttachment } from "./attachment-relink";
 import { restoreMissingAttachment } from "./attachment-restore";
@@ -550,6 +560,14 @@ interface InsertAttachmentRequest {
   confirmationId: string | null;
 }
 
+interface InsertAttachmentBatchRequest {
+  sourceNotePath: string;
+  items: AttachmentBatchInsertItemRequest[];
+  expectedSourceRevision: string;
+  expectedVaultId: string;
+  confirmationId: string | null;
+}
+
 interface DeleteNoteRequest {
   path: string;
   expectedRevision: string;
@@ -752,6 +770,75 @@ function parseInsertAttachmentRequest(payload: unknown): InsertAttachmentRequest
     expectedVaultId: payload.expectedVaultId,
     selectionStart: payload.selectionStart as number,
     selectionEnd: payload.selectionEnd as number,
+    confirmationId:
+      "confirmationId" in payload && typeof payload.confirmationId === "string"
+        ? payload.confirmationId
+        : null,
+  };
+}
+
+function parseInsertAttachmentBatchRequest(payload: unknown): InsertAttachmentBatchRequest {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("sourceNotePath" in payload) ||
+    typeof payload.sourceNotePath !== "string" ||
+    !("items" in payload) ||
+    !Array.isArray(payload.items) ||
+    payload.items.length === 0 ||
+    payload.items.length > MAX_VAULT_ATTACHMENT_BATCH_ITEMS ||
+    !("expectedSourceRevision" in payload) ||
+    typeof payload.expectedSourceRevision !== "string" ||
+    !("expectedVaultId" in payload) ||
+    typeof payload.expectedVaultId !== "string" ||
+    ("confirmationId" in payload &&
+      !(payload.confirmationId === null || typeof payload.confirmationId === "string"))
+  ) {
+    throw new Error(
+      "Attachment batches require a string note, revision, and vault plus 1-32 bounded items and an optional confirmation.",
+    );
+  }
+  const items: AttachmentBatchInsertItemRequest[] = [];
+  let totalByteLength = 0;
+  for (const entry of payload.items) {
+    if (
+      typeof entry !== "object" ||
+      entry === null ||
+      !("targetPath" in entry) ||
+      typeof entry.targetPath !== "string" ||
+      !("sourceFileName" in entry) ||
+      typeof entry.sourceFileName !== "string" ||
+      !("bytes" in entry) ||
+      !(entry.bytes instanceof Uint8Array) ||
+      entry.bytes.byteLength > MAX_VAULT_ATTACHMENT_BYTES ||
+      !("selectionStart" in entry) ||
+      !Number.isSafeInteger(entry.selectionStart) ||
+      (entry.selectionStart as number) < 0 ||
+      !("selectionEnd" in entry) ||
+      !Number.isSafeInteger(entry.selectionEnd) ||
+      (entry.selectionEnd as number) < 0
+    ) {
+      throw new Error(
+        "Each attachment batch item requires bounded strings, bytes, and non-negative selection offsets.",
+      );
+    }
+    totalByteLength += entry.bytes.byteLength;
+    if (totalByteLength > MAX_VAULT_ATTACHMENT_BATCH_BYTES) {
+      throw new Error("Attachment batches exceed the combined byte limit.");
+    }
+    items.push({
+      targetPath: entry.targetPath,
+      sourceFileName: entry.sourceFileName,
+      bytes: new Uint8Array(entry.bytes),
+      selectionStart: entry.selectionStart as number,
+      selectionEnd: entry.selectionEnd as number,
+    });
+  }
+  return {
+    sourceNotePath: payload.sourceNotePath,
+    items,
+    expectedSourceRevision: payload.expectedSourceRevision,
+    expectedVaultId: payload.expectedVaultId,
     confirmationId:
       "confirmationId" in payload && typeof payload.confirmationId === "string"
         ? payload.confirmationId
@@ -1494,6 +1581,13 @@ export class WorkspaceRuntime {
         source: "workspace",
         execute: (payload) =>
           this.insertAttachmentThroughKernel(parseInsertAttachmentRequest(payload)),
+      }),
+      this.actions.register("threadleaf-workspace", {
+        id: "workspace.insert-attachment-batch",
+        name: "Insert external attachment batch",
+        source: "workspace",
+        execute: (payload) =>
+          this.insertAttachmentBatchThroughKernel(parseInsertAttachmentBatchRequest(payload)),
       }),
       this.actions.register("threadleaf-workspace", {
         id: "workspace.delete-note",
@@ -2363,6 +2457,26 @@ export class WorkspaceRuntime {
         expectedVaultId,
         selectionStart,
         selectionEnd,
+        confirmationId: confirmationId ?? null,
+      },
+    );
+    return { outcome, snapshot: await this.publishSnapshot() };
+  }
+
+  async insertAttachmentBatch(
+    sourceNotePath: string,
+    items: AttachmentBatchInsertItemRequest[],
+    expectedSourceRevision: string,
+    expectedVaultId: string,
+    confirmationId?: string,
+  ): Promise<AttachmentBatchInsertResponse> {
+    const outcome = await this.actions.dispatch<AttachmentBatchInsertOutcome>(
+      "workspace.insert-attachment-batch",
+      {
+        sourceNotePath,
+        items,
+        expectedSourceRevision,
+        expectedVaultId,
         confirmationId: confirmationId ?? null,
       },
     );
@@ -4190,6 +4304,57 @@ export class WorkspaceRuntime {
       await this.withIndexMutation(() => this.reconcileNoteWrite(execution.writeConflict));
       const { writeConflict: _writeConflict, ...outcome } = execution;
       return outcome;
+    }
+    if (execution.status === "committed") {
+      await this.withIndexMutation(() =>
+        this.reconcileNoteWrite({
+          status: "committed",
+          path: execution.path,
+          revision: execution.revision,
+          transactionId: execution.transactionId,
+        }),
+      );
+    }
+    return execution;
+  }
+
+  private async insertAttachmentBatchThroughKernel(
+    request: InsertAttachmentBatchRequest,
+  ): Promise<AttachmentBatchInsertOutcome> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      return {
+        status: "refused",
+        sourceNotePath: request.sourceNotePath,
+        targetPaths: request.items.map((item) => item.targetPath),
+        sourceFileNames: request.items.map((item) => item.sourceFileName),
+        reason: "stale-vault",
+        message: "The active vault changed before this attachment batch could be inserted.",
+      };
+    }
+    this.assertWritable("insert external attachment batches");
+    const expectedGeneration = await this.withIndexStateLock(
+      async () => this.indexReactor.index.generation,
+    );
+    const execution = await insertExternalAttachments(
+      this.kernel,
+      {
+        sourceNotePath: request.sourceNotePath,
+        items: request.items,
+        expectedSourceRevision: request.expectedSourceRevision,
+        linkStyle: this.#workspaceSettings.linkStyle,
+        ...(request.confirmationId ? { confirmationId: request.confirmationId } : {}),
+      },
+      {
+        generation: expectedGeneration,
+        currentGeneration: () => this.indexReactor.index.generation,
+      },
+    );
+    if (
+      execution.status === "committed" ||
+      execution.status === "conflict-copy" ||
+      execution.status === "manual-conflict"
+    ) {
+      this.invalidateVisibleInventory();
     }
     if (execution.status === "committed") {
       await this.withIndexMutation(() =>

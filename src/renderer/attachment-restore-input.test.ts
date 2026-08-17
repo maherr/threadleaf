@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   type AttachmentRestoreFileInput,
+  canAcceptAttachmentBatchFileDrag,
   canAcceptSingleAttachmentFileDrag,
   hasAttachmentRestoreFileTransfer,
+  selectAttachmentBatchRestoreFiles,
   selectSingleAttachmentRestoreFile,
   stageAttachmentRestoreFile,
+  stageAttachmentRestoreFiles,
 } from "./attachment-restore-input";
 
 function file(
@@ -59,6 +62,35 @@ describe("attachment restore external-file input", () => {
         [{ kind: "file", webkitGetAsEntry: () => ({ isDirectory: true }) }],
       ),
     ).toEqual({ status: "directory" });
+  });
+
+  it("selects and stages a bounded ordered batch without changing file bytes", async () => {
+    const first = file("first.png", [0, 0xff, 1]);
+    const second = file("second.png", [2, 3, 0x80]);
+    expect(
+      canAcceptAttachmentBatchFileDrag([
+        { kind: "file", webkitGetAsEntry: () => ({ isDirectory: false }) },
+        { kind: "file", webkitGetAsEntry: () => ({ isDirectory: false }) },
+      ]),
+    ).toBe(true);
+    expect(
+      selectAttachmentBatchRestoreFiles(
+        [first, second],
+        [
+          { kind: "file", webkitGetAsEntry: () => ({ isDirectory: false }) },
+          { kind: "file", webkitGetAsEntry: () => ({ isDirectory: false }) },
+        ],
+      ),
+    ).toEqual({ status: "ready", files: [first, second] });
+    const staged = await stageAttachmentRestoreFiles([first, second]);
+    expect(staged).toMatchObject({
+      status: "ready",
+      totalByteLength: 6,
+      files: [{ sourceFileName: "first.png" }, { sourceFileName: "second.png" }],
+    });
+    if (staged.status !== "ready") throw new Error("Expected a staged batch.");
+    expect([...new Uint8Array(staged.files[0]?.bytes ?? new ArrayBuffer(0))]).toEqual([0, 0xff, 1]);
+    expect([...new Uint8Array(staged.files[1]?.bytes ?? new ArrayBuffer(0))]).toEqual([2, 3, 0x80]);
   });
 
   it("distinguishes file-shaped transfers from text and URL flavors before final validation", () => {

@@ -33,7 +33,9 @@ describe("editor attachment insertion UI", () => {
     );
     expect(paste.indexOf("event.preventDefault()")).toBeGreaterThan(paste.indexOf("return false"));
     expect(paste).toContain("view.state.selection.main");
-    expect(paste).toContain("selection.from, selection.to");
+    expect(paste).toContain("selection.from");
+    expect(paste).toContain("selection.to");
+    expect(paste).toContain("stageEditorAttachmentInsertBatch");
   });
 
   it("stages bounded File bytes before autosave and opens a two-step proof dialog", () => {

@@ -47,6 +47,24 @@ function request(revision: string) {
   };
 }
 
+function batchRequest(revision: string) {
+  return {
+    sourceNotePath: "Notes/Current.md",
+    sourceNoteRevision: revision,
+    nextSourceContent: "# Current\n![[../Assets/first.png]]\n![[../Assets/second.png]]\n",
+    items: [
+      {
+        targetPath: "Assets/first.png",
+        attachmentBytes: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x01]),
+      },
+      {
+        targetPath: "Assets/second.png",
+        attachmentBytes: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x02]),
+      },
+    ],
+  };
+}
+
 describe.runIf(process.platform === "linux")("VaultKernel attachment insertion", () => {
   it("publishes exact attachment bytes before changing the source note", async () => {
     await fs.writeFile(path.join(vaultPath, "Notes", "Current.md"), "# Current\n", "utf8");
@@ -402,5 +420,120 @@ describe.runIf(process.platform === "linux")("VaultKernel attachment insertion",
       "# Current\n",
     );
     await expect(fs.stat(journalPath)).resolves.toBeTruthy();
+  });
+
+  it("publishes a bounded ordered batch before one source-note write", async () => {
+    await fs.writeFile(path.join(vaultPath, "Notes", "Current.md"), "# Current\n", "utf8");
+    const kernel = await openKernel();
+    const source = await kernel.readText("Notes/Current.md");
+
+    await expect(
+      kernel.insertAttachmentsWithReference(batchRequest(source.revision)),
+    ).resolves.toMatchObject({
+      status: "committed",
+      path: "Notes/Current.md",
+      attachments: [
+        { attachmentPath: "Assets/first.png" },
+        { attachmentPath: "Assets/second.png" },
+      ],
+      transactionId: expect.any(String),
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Assets", "first.png"))).resolves.toEqual(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x01]),
+    );
+    await expect(fs.readFile(path.join(vaultPath, "Assets", "second.png"))).resolves.toEqual(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x02]),
+    );
+    await expect(fs.readFile(path.join(vaultPath, "Notes", "Current.md"), "utf8")).resolves.toBe(
+      "# Current\n![[../Assets/first.png]]\n![[../Assets/second.png]]\n",
+    );
+  });
+
+  it.each([
+    ["attachment-batch:after-intent", "rolled-back"],
+    ["attachment-batch:after-stage", "committed"],
+    ["attachment-batch:after-item-publish", "committed"],
+    ["attachment-batch:after-publish", "committed"],
+    ["attachment-batch:before-note-write", "committed"],
+    ["attachment-batch:after-note-write", "committed"],
+    ["attachment-batch:after-commit", "committed"],
+  ] as const)("recovers the ordered batch after %s", async (faultPoint, expectedOutcome) => {
+    await fs.writeFile(path.join(vaultPath, "Notes", "Current.md"), "# Current\n", "utf8");
+    const interrupted = await openKernel((point) => {
+      if (point === faultPoint) throw new Error(`interrupted at ${faultPoint}`);
+    });
+    const source = await interrupted.readText("Notes/Current.md");
+    await expect(
+      interrupted.insertAttachmentsWithReference(batchRequest(source.revision)),
+    ).rejects.toThrow(`interrupted at ${faultPoint}`);
+
+    const recovered = await openKernel();
+    expect(recovered.startupRecoveryActions).toMatchObject([
+      {
+        kind: "attachment-batch-insert",
+        outcome: expectedOutcome,
+        path: "Notes/Current.md",
+        paths: ["Assets/first.png", "Assets/second.png"],
+      },
+    ]);
+    await expect(fs.readFile(path.join(vaultPath, "Notes", "Current.md"), "utf8")).resolves.toBe(
+      expectedOutcome === "committed"
+        ? "# Current\n![[../Assets/first.png]]\n![[../Assets/second.png]]\n"
+        : "# Current\n",
+    );
+    await expect(fs.readdir(path.join(recovered.stateRoot, "journal"))).resolves.toEqual([]);
+    await expect(fs.readdir(path.join(recovered.stateRoot, "transactions"))).resolves.toEqual([]);
+  });
+
+  it("preflights every target and never leaves an earlier item behind on a collision", async () => {
+    await fs.writeFile(path.join(vaultPath, "Notes", "Current.md"), "# Current\n", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Assets", "second.png"), "external winner", "utf8");
+    const kernel = await openKernel();
+    const source = await kernel.readText("Notes/Current.md");
+
+    await expect(
+      kernel.insertAttachmentsWithReference(batchRequest(source.revision)),
+    ).resolves.toMatchObject({ status: "refused", reason: "target-present" });
+    await expect(fs.stat(path.join(vaultPath, "Assets", "first.png"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(fs.readFile(path.join(vaultPath, "Notes", "Current.md"), "utf8")).resolves.toBe(
+      "# Current\n",
+    );
+    await expect(fs.readFile(path.join(vaultPath, "Assets", "second.png"), "utf8")).resolves.toBe(
+      "external winner",
+    );
+  });
+
+  it("preserves a complete conflict copy when the source changes after the batch publishes", async () => {
+    await fs.writeFile(path.join(vaultPath, "Notes", "Current.md"), "# Current\n", "utf8");
+    const kernel = await openKernel(async (point) => {
+      if (point === "attachment-batch:before-note-write") {
+        await fs.writeFile(
+          path.join(vaultPath, "Notes", "Current.md"),
+          "# External winner\n",
+          "utf8",
+        );
+      }
+    });
+    const source = await kernel.readText("Notes/Current.md");
+    const result = await kernel.insertAttachmentsWithReference(batchRequest(source.revision));
+
+    expect(result).toMatchObject({
+      status: "conflict",
+      path: "Notes/Current.md",
+      conflictPath: expect.stringMatching(/\.threadleaf-conflict-/u),
+      attachments: [
+        { attachmentPath: "Assets/first.png" },
+        { attachmentPath: "Assets/second.png" },
+      ],
+    });
+    if (result.status !== "conflict") throw new Error("Expected a batch conflict copy.");
+    await expect(fs.readFile(path.join(vaultPath, result.conflictPath), "utf8")).resolves.toBe(
+      "# Current\n![[../Assets/first.png]]\n![[../Assets/second.png]]\n",
+    );
+    await expect(fs.readFile(path.join(vaultPath, "Notes", "Current.md"), "utf8")).resolves.toBe(
+      "# External winner\n",
+    );
   });
 });

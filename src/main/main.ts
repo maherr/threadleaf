@@ -43,7 +43,11 @@ import {
   type AppearanceSnapshot,
   parseVaultAppearanceSettings,
 } from "../shared/appearance";
-import { MAX_VAULT_ATTACHMENT_BYTES } from "../shared/attachment-limits";
+import {
+  MAX_VAULT_ATTACHMENT_BATCH_BYTES,
+  MAX_VAULT_ATTACHMENT_BATCH_ITEMS,
+  MAX_VAULT_ATTACHMENT_BYTES,
+} from "../shared/attachment-limits";
 import {
   type AutosaveFlushReason,
   type AutosaveFlushResult,
@@ -3801,6 +3805,89 @@ function registerIpcHandlers(): void {
         expectedVaultId,
         selectionStart as number,
         selectionEnd as number,
+        confirmationId,
+      );
+    },
+  );
+  ipcMain.handle(
+    ipcChannels.insertAttachmentBatch,
+    (
+      event,
+      sourceNotePath: unknown,
+      items: unknown,
+      expectedSourceRevision: unknown,
+      expectedVaultId: unknown,
+      confirmationId: unknown,
+    ) => {
+      if (!isMainRendererSender(event.sender)) {
+        throw new Error("Attachment batch insertion is available only to the owned main renderer.");
+      }
+      if (
+        typeof sourceNotePath !== "string" ||
+        !Array.isArray(items) ||
+        items.length === 0 ||
+        items.length > MAX_VAULT_ATTACHMENT_BATCH_ITEMS ||
+        typeof expectedSourceRevision !== "string" ||
+        typeof expectedVaultId !== "string" ||
+        !(confirmationId === undefined || typeof confirmationId === "string") ||
+        sourceNotePath.length > 4_096 ||
+        expectedSourceRevision.length > 128 ||
+        expectedVaultId.length > 128 ||
+        (typeof confirmationId === "string" && confirmationId.length > 128)
+      ) {
+        throw new Error(
+          "Attachment batch insertion requires bounded note, revision, vault, and confirmation values plus 1-32 items.",
+        );
+      }
+      let totalByteLength = 0;
+      const copiedItems: Array<{
+        targetPath: string;
+        sourceFileName: string;
+        bytes: Uint8Array;
+        selectionStart: number;
+        selectionEnd: number;
+      }> = [];
+      for (const item of items) {
+        if (
+          typeof item !== "object" ||
+          item === null ||
+          !("targetPath" in item) ||
+          typeof item.targetPath !== "string" ||
+          !("sourceFileName" in item) ||
+          typeof item.sourceFileName !== "string" ||
+          !("bytes" in item) ||
+          !(item.bytes instanceof ArrayBuffer) ||
+          !("selectionStart" in item) ||
+          !Number.isSafeInteger(item.selectionStart) ||
+          (item.selectionStart as number) < 0 ||
+          !("selectionEnd" in item) ||
+          !Number.isSafeInteger(item.selectionEnd) ||
+          (item.selectionEnd as number) < 0 ||
+          item.targetPath.length > 4_096 ||
+          Buffer.byteLength(item.sourceFileName, "utf8") > 255 ||
+          item.bytes.byteLength > MAX_VAULT_ATTACHMENT_BYTES
+        ) {
+          throw new Error(
+            "Each attachment batch item requires bounded strings, an ArrayBuffer, and non-negative selection offsets.",
+          );
+        }
+        totalByteLength += item.bytes.byteLength;
+        if (totalByteLength > MAX_VAULT_ATTACHMENT_BATCH_BYTES) {
+          throw new Error("Attachment batch bytes exceed the combined payload limit.");
+        }
+        copiedItems.push({
+          targetPath: item.targetPath,
+          sourceFileName: item.sourceFileName,
+          bytes: new Uint8Array(item.bytes.slice(0)),
+          selectionStart: item.selectionStart as number,
+          selectionEnd: item.selectionEnd as number,
+        });
+      }
+      return workspaceController.insertAttachmentBatch(
+        sourceNotePath,
+        copiedItems,
+        expectedSourceRevision,
+        expectedVaultId,
         confirmationId,
       );
     },

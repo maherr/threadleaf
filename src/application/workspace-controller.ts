@@ -9,6 +9,7 @@ import type {
 import type { PluginModuleResolver } from "../runtime/plugin-host";
 import type { PluginRuntimeFactory } from "../runtime/plugin-runtime-port";
 import type {
+  AttachmentBatchInsertResponse,
   AttachmentInsertResponse,
   AttachmentMoveResponse,
   AttachmentOperation,
@@ -221,6 +222,19 @@ export interface WorkspaceRuntimePort {
     selectionEnd: number,
     confirmationId?: string,
   ): Promise<AttachmentInsertResponse>;
+  insertAttachmentBatch?(
+    sourceNotePath: string,
+    items: Array<{
+      targetPath: string;
+      sourceFileName: string;
+      bytes: Uint8Array;
+      selectionStart: number;
+      selectionEnd: number;
+    }>,
+    expectedSourceRevision: string,
+    expectedVaultId: string,
+    confirmationId?: string,
+  ): Promise<AttachmentBatchInsertResponse>;
   deleteNote(
     filePath: string,
     expectedRevision: string,
@@ -1129,6 +1143,59 @@ export class WorkspaceController {
       expectedVaultId,
       selectionStart,
       selectionEnd,
+      confirmationId,
+    );
+    if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {
+      if (
+        response.outcome.status === "committed" ||
+        response.outcome.status === "conflict-copy" ||
+        response.outcome.status === "manual-conflict"
+      ) {
+        return {
+          ...response,
+          snapshot: await this.#runtime.getSnapshot(),
+          affectedVaultId: runtime.vaultId,
+          affectedVaultName: displaySafeVaultName(response.snapshot.vault.name),
+        };
+      }
+      return { outcome: staleOutcome(), snapshot: await this.#runtime.getSnapshot() };
+    }
+    return response;
+  }
+
+  async insertAttachmentBatch(
+    sourceNotePath: string,
+    items: Array<{
+      targetPath: string;
+      sourceFileName: string;
+      bytes: Uint8Array;
+      selectionStart: number;
+      selectionEnd: number;
+    }>,
+    expectedSourceRevision: string,
+    expectedVaultId: string,
+    confirmationId?: string,
+  ): Promise<AttachmentBatchInsertResponse> {
+    const runtime = this.activeRuntime("insert an external attachment batch");
+    if (!runtime.insertAttachmentBatch) {
+      throw new Error("The active workspace does not support attachment batch insertion.");
+    }
+    const staleOutcome = () => ({
+      status: "refused" as const,
+      sourceNotePath,
+      targetPaths: items.map((item) => item.targetPath),
+      sourceFileNames: items.map((item) => item.sourceFileName),
+      reason: "stale-vault" as const,
+      message: "The active vault changed before this attachment batch could be inserted.",
+    });
+    if (runtime.vaultId !== expectedVaultId) {
+      return { outcome: staleOutcome(), snapshot: await runtime.getSnapshot() };
+    }
+    const response = await runtime.insertAttachmentBatch(
+      sourceNotePath,
+      items,
+      expectedSourceRevision,
+      expectedVaultId,
       confirmationId,
     );
     if (this.#runtime !== runtime || this.#runtime.vaultId !== expectedVaultId) {

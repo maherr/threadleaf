@@ -1316,6 +1316,86 @@ export interface AttachmentInsertResponse {
   affectedVaultName?: string;
 }
 
+export interface AttachmentBatchInsertItemPreview {
+  sourceFileName: string;
+  targetPath: string;
+  byteLength: number;
+  contentRevision: string;
+  referenceText: string;
+  selectionStart: number;
+  selectionEnd: number;
+  selectionAfter: number;
+}
+
+export interface AttachmentBatchInsertPreview {
+  sourceNotePath: string;
+  targetDirectory: string;
+  totalByteLength: number;
+  proposedNoteRevision: string;
+  items: AttachmentBatchInsertItemPreview[];
+  selectionAfter: number;
+}
+
+export type AttachmentBatchInsertRefusalReason =
+  | AttachmentInsertRefusalReason
+  | "batch-empty"
+  | "batch-too-large"
+  | "target-directory-mismatch"
+  | "selection-order";
+
+export interface AttachmentBatchInsertPublication {
+  attachmentPath: string;
+  attachmentRevision: string;
+}
+
+export type AttachmentBatchInsertOutcome =
+  | {
+      status: "requires-confirmation";
+      preview: AttachmentBatchInsertPreview;
+      confirmationId: string;
+    }
+  | {
+      status: "committed";
+      path: string;
+      revision: string;
+      attachments: AttachmentBatchInsertPublication[];
+      transactionId: string;
+      preview: AttachmentBatchInsertPreview;
+    }
+  | {
+      status: "conflict-copy";
+      path: string;
+      currentRevision: string | null;
+      conflictPath: string;
+      attachments: AttachmentBatchInsertPublication[];
+      transactionId: string;
+      preview: AttachmentBatchInsertPreview;
+      message: string;
+    }
+  | {
+      status: "refused";
+      sourceNotePath: string;
+      targetPaths: string[];
+      sourceFileNames: string[];
+      reason: AttachmentBatchInsertRefusalReason;
+      message: string;
+    }
+  | {
+      status: "manual-conflict";
+      path: string;
+      attachmentPaths: string[];
+      transactionId: string;
+      reason: string;
+      message: string;
+    };
+
+export interface AttachmentBatchInsertResponse {
+  outcome: AttachmentBatchInsertOutcome;
+  snapshot: RuntimeSnapshot;
+  affectedVaultId?: string;
+  affectedVaultName?: string;
+}
+
 export type NoteDeleteOutcome =
   | { status: "committed"; from: string; to: string; transactionId: string }
   | { status: "conflict"; from: string; to: string; reason: string };
@@ -1856,6 +1936,19 @@ export interface ThreadleafBridge {
     selectionEnd: number,
     confirmationId?: string,
   ): Promise<AttachmentInsertResponse>;
+  insertAttachmentBatch(
+    sourceNotePath: string,
+    items: Array<{
+      targetPath: string;
+      sourceFileName: string;
+      bytes: ArrayBuffer;
+      selectionStart: number;
+      selectionEnd: number;
+    }>,
+    expectedSourceRevision: string,
+    expectedVaultId: string,
+    confirmationId?: string,
+  ): Promise<AttachmentBatchInsertResponse>;
   deleteNote(
     path: string,
     expectedRevision: string,

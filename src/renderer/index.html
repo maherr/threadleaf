@@ -2224,19 +2224,20 @@
           </button>
         </header>
         <p id="attachment-insert-description" class="new-note-description">
-          Threadleaf will publish the selected file's exact bytes first, then insert one reference
-          at the captured editor position. Nothing is written until the reviewed plan is confirmed.
+          Threadleaf will publish the selected file or files' exact bytes first, then insert ordered
+          references at the captured editor position. Nothing is written until the reviewed plan is
+          confirmed.
         </p>
         <div class="move-note-current">
           <span>Source note</span>
           <code id="attachment-insert-source">No note selected</code>
         </div>
         <div class="move-note-current">
-          <span>Selected file</span>
+          <span id="attachment-insert-file-label">Selected file</span>
           <code id="attachment-insert-file">No file selected</code>
         </div>
         <label class="new-note-field" for="attachment-insert-target">
-          <span>Vault path</span>
+          <span id="attachment-insert-target-label">Vault path</span>
           <input
             id="attachment-insert-target"
             type="text"

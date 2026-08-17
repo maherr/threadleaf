@@ -35,4 +35,17 @@ describe("editor attachment insertion IPC", () => {
     expect(preloadSource).not.toContain("selectedFile.path");
     expect(preloadSource).not.toContain("navigator.clipboard");
   });
+
+  it("guards and bounds the ordered batch channel before copying any ArrayBuffer", () => {
+    const handler = handlerSource("insertAttachmentBatch");
+    expect(handler).toContain("isMainRendererSender(event.sender)");
+    expect(handler).toContain("MAX_VAULT_ATTACHMENT_BATCH_ITEMS");
+    expect(handler).toContain("MAX_VAULT_ATTACHMENT_BATCH_BYTES");
+    expect(handler).toContain("item.bytes instanceof ArrayBuffer");
+    expect(handler).toContain("new Uint8Array(item.bytes.slice(0))");
+    expect(handler).toContain("workspaceController.insertAttachmentBatch(");
+    expect(preloadSource).toContain("insertAttachmentBatch:");
+    expect(preloadSource).toContain("ipcChannels.insertAttachmentBatch");
+    expect(preloadSource).toContain("Promise<AttachmentBatchInsertResponse>");
+  });
 });

@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FixedStateRoot } from "../kernel/ports";
 import { VaultKernel } from "../kernel/vault-kernel";
-import { insertExternalAttachment } from "./attachment-insert";
+import { insertExternalAttachment, insertExternalAttachments } from "./attachment-insert";
 
 let sandboxPath: string;
 let vaultPath: string;
@@ -26,6 +26,133 @@ afterEach(async () => {
 });
 
 describe("external attachment insertion", () => {
+  it.runIf(process.platform === "linux")(
+    "previews and commits an ordered batch with one common destination and one note write",
+    async () => {
+      await fs.writeFile(path.join(vaultPath, "Notes", "Current.md"), "before\nafter\n", "utf8");
+      const source = await kernel.readText("Notes/Current.md");
+      const bytesA = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x01]);
+      const bytesB = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x02]);
+      const selectionStart = source.content.indexOf("after");
+      const request = {
+        sourceNotePath: source.path,
+        items: [
+          {
+            targetPath: "Assets/first.png",
+            sourceFileName: "first.png",
+            bytes: bytesA,
+            selectionStart,
+            selectionEnd: selectionStart,
+          },
+          {
+            targetPath: "Assets/second.png",
+            sourceFileName: "second.png",
+            bytes: bytesB,
+            selectionStart,
+            selectionEnd: selectionStart,
+          },
+        ],
+        expectedSourceRevision: source.revision,
+        linkStyle: "preserve" as const,
+      };
+
+      const preview = await insertExternalAttachments(kernel, request);
+      expect(preview).toMatchObject({
+        status: "requires-confirmation",
+        preview: {
+          sourceNotePath: "Notes/Current.md",
+          targetDirectory: "Assets",
+          totalByteLength: bytesA.byteLength + bytesB.byteLength,
+          items: [
+            { targetPath: "Assets/first.png", referenceText: "![[../Assets/first.png]]" },
+            { targetPath: "Assets/second.png", referenceText: "![[../Assets/second.png]]" },
+          ],
+        },
+      });
+      await expect(fs.readFile(path.join(vaultPath, "Notes", "Current.md"), "utf8")).resolves.toBe(
+        "before\nafter\n",
+      );
+      if (preview.status !== "requires-confirmation") throw new Error("Expected batch preview.");
+
+      const committed = await insertExternalAttachments(kernel, {
+        ...request,
+        confirmationId: preview.confirmationId,
+      });
+      expect(committed).toMatchObject({
+        status: "committed",
+        attachments: [
+          { attachmentPath: "Assets/first.png" },
+          { attachmentPath: "Assets/second.png" },
+        ],
+        preview: preview.preview,
+      });
+      await expect(fs.readFile(path.join(vaultPath, "Notes", "Current.md"), "utf8")).resolves.toBe(
+        "before\n![[../Assets/first.png]]![[../Assets/second.png]]after\n",
+      );
+      await expect(fs.readFile(path.join(vaultPath, "Assets", "first.png"))).resolves.toEqual(
+        Buffer.from(bytesA),
+      );
+      await expect(fs.readFile(path.join(vaultPath, "Assets", "second.png"))).resolves.toEqual(
+        Buffer.from(bytesB),
+      );
+    },
+  );
+
+  it("rejects overlapping, mixed-folder, and colliding batch plans before any write", async () => {
+    await fs.writeFile(path.join(vaultPath, "Notes", "Current.md"), "abcdef\n", "utf8");
+    const source = await kernel.readText("Notes/Current.md");
+    const base = {
+      sourceNotePath: source.path,
+      expectedSourceRevision: source.revision,
+      linkStyle: "preserve" as const,
+      items: [
+        {
+          targetPath: "Assets/one.png",
+          sourceFileName: "one.png",
+          bytes: Buffer.from("one"),
+          selectionStart: 1,
+          selectionEnd: 4,
+        },
+        {
+          targetPath: "Assets/two.png",
+          sourceFileName: "two.png",
+          bytes: Buffer.from("two"),
+          selectionStart: 3,
+          selectionEnd: 5,
+        },
+      ],
+    };
+    await expect(insertExternalAttachments(kernel, base)).resolves.toMatchObject({
+      status: "refused",
+      reason: "selection-order",
+    });
+    await expect(
+      insertExternalAttachments(kernel, {
+        ...base,
+        items: base.items.map((item, index) => ({
+          ...item,
+          targetPath: index === 0 ? "Assets/one.png" : "Other/two.png",
+          selectionStart: 0,
+          selectionEnd: 0,
+        })),
+      }),
+    ).resolves.toMatchObject({ status: "refused", reason: "target-directory-mismatch" });
+    await expect(
+      insertExternalAttachments(kernel, {
+        ...base,
+        items: base.items.map((item, index) => ({
+          ...item,
+          targetPath: index === 0 ? "Assets/one.png" : "Assets/ONE.PNG",
+          selectionStart: 0,
+          selectionEnd: 0,
+        })),
+      }),
+    ).resolves.toMatchObject({ status: "refused", reason: "target-exists" });
+    await expect(fs.readFile(path.join(vaultPath, "Notes", "Current.md"), "utf8")).resolves.toBe(
+      "abcdef\n",
+    );
+  });
+
   it.runIf(process.platform === "linux")(
     "previews and commits exact bytes plus one BOM/CRLF-preserving editor reference",
     async () => {

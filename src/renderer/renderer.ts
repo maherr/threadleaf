@@ -25,10 +25,16 @@ import {
   effectiveColorScheme,
   type VaultAppearanceSettings,
 } from "../shared/appearance";
-import { MAX_VAULT_ATTACHMENT_BYTES } from "../shared/attachment-limits";
+import {
+  MAX_VAULT_ATTACHMENT_BATCH_BYTES,
+  MAX_VAULT_ATTACHMENT_BATCH_ITEMS,
+  MAX_VAULT_ATTACHMENT_BYTES,
+} from "../shared/attachment-limits";
 import { isSafeExternalAttachmentTarget } from "../shared/attachment-targets";
 import type { AutosaveFlushReason } from "../shared/autosave";
 import type {
+  AttachmentBatchInsertPreview,
+  AttachmentBatchInsertResponse,
   AttachmentInsertPreview,
   AttachmentInsertResponse,
   AttachmentMoveBlocker,
@@ -129,10 +135,13 @@ import {
 } from "./attachment-move-status";
 import {
   type AttachmentRestoreFileInput,
+  canAcceptAttachmentBatchFileDrag,
   canAcceptSingleAttachmentFileDrag,
   hasAttachmentRestoreFileTransfer,
+  selectAttachmentBatchRestoreFiles,
   selectSingleAttachmentRestoreFile,
   stageAttachmentRestoreFile,
+  stageAttachmentRestoreFiles,
 } from "./attachment-restore-input";
 import { CanvasViewController } from "./canvas-view";
 import {
@@ -544,7 +553,9 @@ const elements = {
   attachmentInsertDialog: getDialog("attachment-insert-dialog"),
   attachmentInsertForm: getForm("attachment-insert-form"),
   attachmentInsertSource: getElement("attachment-insert-source"),
+  attachmentInsertFileLabel: getElement("attachment-insert-file-label"),
   attachmentInsertFile: getElement("attachment-insert-file"),
+  attachmentInsertTargetLabel: getElement("attachment-insert-target-label"),
   attachmentInsertTarget: getInput("attachment-insert-target"),
   attachmentInsertClose: getButton("attachment-insert-close"),
   attachmentInsertCancel: getButton("attachment-insert-cancel"),
@@ -1185,8 +1196,22 @@ interface PendingAttachmentInsert {
   restoreFocus: HTMLElement;
 }
 let pendingAttachmentInsert: PendingAttachmentInsert | null = null;
+interface PendingAttachmentInsertBatch {
+  paneId: WorkspacePaneId;
+  vaultId: string;
+  sourceNotePath: string;
+  sourceNoteRevision: string;
+  sourceEditorContent: string;
+  files: Array<{ sourceFileName: string; bytes: ArrayBuffer }>;
+  selectionStart: number;
+  selectionEnd: number;
+  restoreFocus: HTMLElement;
+}
+let pendingAttachmentInsertBatch: PendingAttachmentInsertBatch | null = null;
 let attachmentInsertPreview: AttachmentInsertPreview | null = null;
 let attachmentInsertConfirmationId: string | null = null;
+let attachmentBatchInsertPreview: AttachmentBatchInsertPreview | null = null;
+let attachmentBatchInsertConfirmationId: string | null = null;
 let attachmentInsertBusy = false;
 let deleteNoteRestoreFocus: HTMLElement | null = null;
 let deleteNoteBusy = false;
@@ -3429,7 +3454,9 @@ function editorAttachmentSource(
 
 function editorAttachmentTransferRefusal(status: "none" | "multiple" | "directory"): void {
   if (status === "multiple") {
-    showToast("Insert one file at a time. The editor and vault were left unchanged.");
+    showToast(
+      `Insert at most ${MAX_VAULT_ATTACHMENT_BATCH_ITEMS} files at a time. The editor and vault were left unchanged.`,
+    );
   } else if (status === "directory") {
     showToast("Folders cannot be inserted into a note. The editor and vault were left unchanged.");
   } else {
@@ -3456,7 +3483,7 @@ function handleEditorAttachmentDrag(
   if (!transfer || !hasAttachmentRestoreFileTransfer(transfer.files, transfer.items)) return false;
   event.preventDefault();
   const acceptable =
-    editorAttachmentCanStage(paneId, view) && canAcceptSingleAttachmentFileDrag(transfer.items);
+    editorAttachmentCanStage(paneId, view) && canAcceptAttachmentBatchFileDrag(transfer.items);
   transfer.dropEffect = acceptable ? "copy" : "none";
   setEditorAttachmentDropActive(view, acceptable);
   return true;
@@ -3472,7 +3499,7 @@ function handleEditorAttachmentDrop(
   if (!transfer || !hasAttachmentRestoreFileTransfer(transfer.files, transfer.items)) return false;
   event.preventDefault();
   event.stopPropagation();
-  const transferred = selectSingleAttachmentRestoreFile(transfer.files, transfer.items);
+  const transferred = selectAttachmentBatchRestoreFiles(transfer.files, transfer.items);
   if (transferred.status !== "ready") {
     editorAttachmentTransferRefusal(transferred.status);
     return true;
@@ -3488,7 +3515,17 @@ function handleEditorAttachmentDrop(
     showToast("Threadleaf could not resolve that drop position. No file or reference was written.");
     return true;
   }
-  void stageEditorAttachmentInsert(paneId, view, transferred.file, position, position);
+  if (transferred.files.length === 1) {
+    void stageEditorAttachmentInsert(
+      paneId,
+      view,
+      transferred.files[0] as AttachmentRestoreFileInput,
+      position,
+      position,
+    );
+  } else {
+    void stageEditorAttachmentInsertBatch(paneId, view, transferred.files, position, position);
+  }
   return true;
 }
 
@@ -3501,7 +3538,7 @@ function handleEditorAttachmentPaste(
   if (!transfer || !hasAttachmentRestoreFileTransfer(transfer.files, transfer.items)) return false;
   event.preventDefault();
   event.stopPropagation();
-  const transferred = selectSingleAttachmentRestoreFile(transfer.files, transfer.items);
+  const transferred = selectAttachmentBatchRestoreFiles(transfer.files, transfer.items);
   if (transferred.status !== "ready") {
     editorAttachmentTransferRefusal(transferred.status);
     return true;
@@ -3513,7 +3550,23 @@ function handleEditorAttachmentPaste(
     return true;
   }
   const selection = view.state.selection.main;
-  void stageEditorAttachmentInsert(paneId, view, transferred.file, selection.from, selection.to);
+  if (transferred.files.length === 1) {
+    void stageEditorAttachmentInsert(
+      paneId,
+      view,
+      transferred.files[0] as AttachmentRestoreFileInput,
+      selection.from,
+      selection.to,
+    );
+  } else {
+    void stageEditorAttachmentInsertBatch(
+      paneId,
+      view,
+      transferred.files,
+      selection.from,
+      selection.to,
+    );
+  }
   return true;
 }
 
@@ -3522,6 +3575,11 @@ function attachmentInsertDefaultTarget(sourceNotePath: string, sourceFileName: s
   return separator < 0
     ? sourceFileName
     : `${sourceNotePath.slice(0, separator + 1)}${sourceFileName}`;
+}
+
+function attachmentInsertDefaultDirectory(sourceNotePath: string): string {
+  const separator = sourceNotePath.lastIndexOf("/");
+  return separator < 0 ? "" : sourceNotePath.slice(0, separator);
 }
 
 async function stageEditorAttachmentInsert(
@@ -3592,6 +3650,7 @@ async function stageEditorAttachmentInsert(
     showToast("The note or vault changed before review. Drop or paste the file again.");
     return;
   }
+  pendingAttachmentInsertBatch = null;
   pendingAttachmentInsert = {
     paneId,
     vaultId: current.vaultId,
@@ -3606,6 +3665,8 @@ async function stageEditorAttachmentInsert(
   };
   attachmentInsertPreview = null;
   attachmentInsertConfirmationId = null;
+  attachmentBatchInsertPreview = null;
+  attachmentBatchInsertConfirmationId = null;
   attachmentInsertBusy = false;
   elements.attachmentInsertTarget.value = attachmentInsertDefaultTarget(
     current.note.path,
@@ -3626,31 +3687,146 @@ async function stageEditorAttachmentInsert(
   });
 }
 
+async function stageEditorAttachmentInsertBatch(
+  paneId: WorkspacePaneId,
+  view: EditorView,
+  selectedFiles: AttachmentRestoreFileInput[],
+  selectionStart: number,
+  selectionEnd: number,
+): Promise<void> {
+  const captured = editorAttachmentSource(paneId, view);
+  if (!captured || busy || attachmentInsertBusy) return;
+  const staged = await stageAttachmentRestoreFiles(
+    selectedFiles,
+    MAX_VAULT_ATTACHMENT_BATCH_ITEMS,
+    MAX_VAULT_ATTACHMENT_BATCH_BYTES,
+  );
+  if (staged.status === "too-many") {
+    showToast(`Insert at most ${MAX_VAULT_ATTACHMENT_BATCH_ITEMS} files in one batch.`);
+    return;
+  }
+  if (staged.status === "invalid-file-name") {
+    showToast("One selected file name is unsafe. No vault bytes were staged.");
+    return;
+  }
+  if (staged.status === "too-large") {
+    showToast(
+      `The selected files exceed the ${formatByteCount(MAX_VAULT_ATTACHMENT_BATCH_BYTES)} batch limit.`,
+    );
+    return;
+  }
+  if (staged.status !== "ready") {
+    showToast("Threadleaf could not read one of those files. No vault bytes were staged.");
+    return;
+  }
+  if (staged.files.some((file) => !isSafeExternalAttachmentTarget(file.sourceFileName))) {
+    showToast(
+      "Use supported raster images or passive attachment files. SVG, HTML, Markdown, and Canvas files are not accepted.",
+    );
+    return;
+  }
+  if (paneId !== activePaneContextId) {
+    requestWorkspacePaneFocus(paneId);
+    await paneFocusTail;
+  }
+  const beforeFlush = editorAttachmentSource(paneId, view);
+  if (
+    !beforeFlush ||
+    activePaneContextId !== paneId ||
+    beforeFlush.vaultId !== captured.vaultId ||
+    beforeFlush.note.path !== captured.note.path ||
+    beforeFlush.editorContent !== captured.editorContent
+  ) {
+    showToast("The editor changed before those files were staged. Drop or paste them again.");
+    return;
+  }
+  if (!(await tryFlushAllPaneAutosaves("note-mutation"))) {
+    showToast("Autosave could not finish, so Threadleaf did not open a batch insertion review.");
+    return;
+  }
+  const current = editorAttachmentSource(paneId, view);
+  if (
+    !current ||
+    current.vaultId !== captured.vaultId ||
+    current.note.path !== captured.note.path ||
+    current.editorContent !== captured.editorContent ||
+    current.dirty ||
+    currentSnapshot?.vault.id !== captured.vaultId ||
+    elements.attachmentInsertDialog.open ||
+    elements.attachmentMoveDialog.open ||
+    busy
+  ) {
+    showToast("The note or vault changed before review. Drop or paste the files again.");
+    return;
+  }
+  pendingAttachmentInsert = null;
+  pendingAttachmentInsertBatch = {
+    paneId,
+    vaultId: current.vaultId,
+    sourceNotePath: current.note.path,
+    sourceNoteRevision: current.note.revision,
+    sourceEditorContent: current.editorContent,
+    files: staged.files,
+    selectionStart,
+    selectionEnd,
+    restoreFocus: view.contentDOM,
+  };
+  attachmentInsertPreview = null;
+  attachmentInsertConfirmationId = null;
+  attachmentBatchInsertPreview = null;
+  attachmentBatchInsertConfirmationId = null;
+  attachmentInsertBusy = false;
+  elements.attachmentInsertTarget.value = attachmentInsertDefaultDirectory(current.note.path);
+  elements.attachmentInsertError.textContent = "";
+  elements.attachmentInsertPreviewMessage.textContent = "";
+  if (elements.commandPalette.open) closeCommandPalette(false);
+  elements.attachmentInsertDialog.showModal();
+  renderAttachmentInsertDialog();
+  window.requestAnimationFrame(() => {
+    elements.attachmentInsertTarget.focus();
+    elements.attachmentInsertTarget.select();
+  });
+}
+
 function renderAttachmentInsertDialog(): void {
   const pending = pendingAttachmentInsert;
-  const staleVault = Boolean(pending && pending.vaultId !== (currentSnapshot?.vault.id ?? null));
-  elements.attachmentInsertSource.textContent = pending?.sourceNotePath ?? "No note selected";
-  elements.attachmentInsertFile.textContent = pending
-    ? `${pending.sourceFileName} · ${formatByteCount(pending.bytes.byteLength)}`
-    : "No file selected";
-  elements.attachmentInsertFile.title = attachmentInsertPreview
-    ? `SHA-256 ${attachmentInsertPreview.contentRevision}`
-    : "";
-  elements.attachmentInsertTarget.disabled = attachmentInsertBusy || pending === null;
+  const pendingBatch = pendingAttachmentInsertBatch;
+  const activePending = pending ?? pendingBatch;
+  const isBatch = pendingBatch !== null;
+  const staleVault = Boolean(
+    activePending && activePending.vaultId !== (currentSnapshot?.vault.id ?? null),
+  );
+  elements.attachmentInsertSource.textContent = activePending?.sourceNotePath ?? "No note selected";
+  elements.attachmentInsertFileLabel.textContent = isBatch ? "Selected files" : "Selected file";
+  elements.attachmentInsertFile.textContent = pendingBatch
+    ? `${pendingBatch.files.length} files · ${formatByteCount(pendingBatch.files.reduce((total, file) => total + file.bytes.byteLength, 0))}`
+    : pending
+      ? `${pending.sourceFileName} · ${formatByteCount(pending.bytes.byteLength)}`
+      : "No file selected";
+  elements.attachmentInsertFile.title = attachmentBatchInsertPreview
+    ? attachmentBatchInsertPreview.items.map((item) => `SHA-256 ${item.contentRevision}`).join("\n")
+    : attachmentInsertPreview
+      ? `SHA-256 ${attachmentInsertPreview.contentRevision}`
+      : "";
+  elements.attachmentInsertTargetLabel.textContent = isBatch ? "Destination folder" : "Vault path";
+  elements.attachmentInsertTarget.placeholder = isBatch ? "Attachments" : "Attachments/file.png";
+  elements.attachmentInsertTarget.disabled = attachmentInsertBusy || activePending === null;
   elements.attachmentInsertClose.disabled = attachmentInsertBusy;
   elements.attachmentInsertCancel.disabled = attachmentInsertBusy;
   elements.attachmentInsertSubmit.disabled =
     attachmentInsertBusy ||
-    pending === null ||
+    activePending === null ||
     staleVault ||
     readOnlyVault() ||
-    elements.attachmentInsertTarget.value.trim().length === 0;
+    (elements.attachmentInsertTarget.value.trim().length === 0 && !isBatch);
   elements.attachmentInsertSubmit.textContent = attachmentInsertBusy
-    ? attachmentInsertConfirmationId
+    ? (isBatch ? attachmentBatchInsertConfirmationId : attachmentInsertConfirmationId)
       ? "Inserting…"
       : "Checking…"
-    : attachmentInsertConfirmationId
-      ? "Insert file and reference"
+    : (isBatch ? attachmentBatchInsertConfirmationId : attachmentInsertConfirmationId)
+      ? isBatch
+        ? "Insert files and references"
+        : "Insert file and reference"
       : "Review insertion";
   elements.attachmentInsertForm.setAttribute("aria-busy", String(attachmentInsertBusy));
   elements.attachmentInsertVault.textContent = staleVault
@@ -3663,7 +3839,33 @@ function renderAttachmentInsertDialog(): void {
   const previewMessage = elements.attachmentInsertPreviewMessage.textContent ?? "";
   elements.attachmentInsertPreviewMessage.hidden = previewMessage.length === 0;
   elements.attachmentInsertProofList.replaceChildren();
-  elements.attachmentInsertProof.hidden = attachmentInsertPreview === null;
+  const hasPreview = attachmentInsertPreview !== null || attachmentBatchInsertPreview !== null;
+  elements.attachmentInsertProof.hidden = !hasPreview;
+  if (attachmentBatchInsertPreview) {
+    elements.attachmentInsertProofSummary.textContent =
+      "Ready: publish every exact byte, then insert the ordered references";
+    for (const preview of attachmentBatchInsertPreview.items) {
+      const item = document.createElement("li");
+      const origin = document.createElement("span");
+      origin.className = "move-note-blocker-origin";
+      origin.textContent = `${preview.sourceFileName} · ${formatByteCount(preview.byteLength)}`;
+      origin.title = `SHA-256 ${preview.contentRevision}`;
+      const change = document.createElement("span");
+      change.className = "move-note-blocker-change";
+      const target = document.createElement("span");
+      target.textContent = preview.targetPath;
+      const arrow = document.createElement("span");
+      arrow.className = "move-note-blocker-arrow";
+      arrow.ariaHidden = "true";
+      arrow.textContent = "→";
+      const reference = document.createElement("code");
+      reference.textContent = preview.referenceText;
+      change.append(target, arrow, reference);
+      item.append(origin, change);
+      elements.attachmentInsertProofList.append(item);
+    }
+    return;
+  }
   if (!attachmentInsertPreview) return;
   elements.attachmentInsertProofSummary.textContent =
     "Ready: publish exact bytes, then insert one editor reference";
@@ -3689,11 +3891,15 @@ function renderAttachmentInsertDialog(): void {
 
 function closeAttachmentInsertDialog(restoreFocus = true): void {
   if (!elements.attachmentInsertDialog.open || attachmentInsertBusy) return;
-  const restoreTarget = pendingAttachmentInsert?.restoreFocus ?? null;
+  const restoreTarget =
+    pendingAttachmentInsert?.restoreFocus ?? pendingAttachmentInsertBatch?.restoreFocus ?? null;
   elements.attachmentInsertDialog.close();
   pendingAttachmentInsert = null;
+  pendingAttachmentInsertBatch = null;
   attachmentInsertPreview = null;
   attachmentInsertConfirmationId = null;
+  attachmentBatchInsertPreview = null;
+  attachmentBatchInsertConfirmationId = null;
   elements.attachmentInsertTarget.value = "";
   elements.attachmentInsertError.textContent = "";
   elements.attachmentInsertPreviewMessage.textContent = "";
@@ -3817,6 +4023,130 @@ async function insertCurrentExternalAttachment(): Promise<void> {
   } catch {
     elements.attachmentInsertError.textContent =
       "Threadleaf could not confirm the insertion result. Refresh the vault and inspect both the note and target path before retrying.";
+  } finally {
+    attachmentInsertBusy = false;
+    setActionState(false);
+    if (elements.attachmentInsertDialog.open) renderAttachmentInsertDialog();
+  }
+
+  if (completed) {
+    const affectedElsewhere = Boolean(response?.affectedVaultId);
+    closeAttachmentInsertDialog(false);
+    showToast(completed.message);
+    if (!affectedElsewhere) {
+      focusAttachmentInsertResult(completed.paneId, completed.path, completed.selectionAfter);
+    }
+  } else if (response?.outcome.status === "requires-confirmation") {
+    elements.attachmentInsertSubmit.focus();
+  } else if (response?.outcome.status === "manual-conflict") {
+    elements.attachmentInsertCancel.focus();
+  }
+}
+
+async function insertCurrentExternalAttachmentBatch(): Promise<void> {
+  const pending = pendingAttachmentInsertBatch;
+  if (!pending || attachmentInsertBusy) return;
+  const destinationDirectory = elements.attachmentInsertTarget.value.trim().replace(/\/+$/u, "");
+  if (!(await tryFlushAllPaneAutosaves("note-mutation"))) {
+    elements.attachmentInsertError.textContent =
+      "Autosave could not finish. Threadleaf did not start the attachment batch.";
+    renderAttachmentInsertDialog();
+    return;
+  }
+  if (currentSnapshot?.vault.id !== pending.vaultId) {
+    elements.attachmentInsertError.textContent =
+      "The vault changed. Cancel this review and drop the files again.";
+    pendingAttachmentInsertBatch = null;
+    attachmentBatchInsertPreview = null;
+    attachmentBatchInsertConfirmationId = null;
+    renderAttachmentInsertDialog();
+    return;
+  }
+
+  const destination = destinationDirectory === "." ? "" : destinationDirectory;
+  const items = pending.files.map((file) => ({
+    targetPath: destination ? `${destination}/${file.sourceFileName}` : file.sourceFileName,
+    sourceFileName: file.sourceFileName,
+    bytes: file.bytes.slice(0),
+    selectionStart: pending.selectionStart,
+    selectionEnd: pending.selectionEnd,
+  }));
+  const submittedConfirmationId = attachmentBatchInsertConfirmationId;
+  attachmentInsertBusy = true;
+  if (!submittedConfirmationId) {
+    attachmentBatchInsertPreview = null;
+    elements.attachmentInsertPreviewMessage.textContent = "";
+  }
+  elements.attachmentInsertError.textContent = "";
+  renderAttachmentInsertDialog();
+  setActionState(true);
+  let response: AttachmentBatchInsertResponse | null = null;
+  let completed: {
+    paneId: WorkspacePaneId;
+    path: string;
+    selectionAfter: number;
+    message: string;
+  } | null = null;
+  try {
+    response = await window.threadleaf.insertAttachmentBatch(
+      pending.sourceNotePath,
+      items,
+      pending.sourceNoteRevision,
+      pending.vaultId,
+      submittedConfirmationId ?? undefined,
+    );
+    render(response.snapshot);
+    if (response.outcome.status === "requires-confirmation") {
+      attachmentBatchInsertPreview = response.outcome.preview;
+      attachmentBatchInsertConfirmationId = response.outcome.confirmationId;
+      elements.attachmentInsertPreviewMessage.textContent = submittedConfirmationId
+        ? "The batch plan changed. Review every byte, target, and reference, then confirm again."
+        : "Review the exact bytes, common destination, and ordered references below. Submit again to commit the batch.";
+    } else if (
+      response.outcome.status === "committed" ||
+      response.outcome.status === "conflict-copy"
+    ) {
+      const outcome = response.outcome;
+      const affectedElsewhere = Boolean(response.affectedVaultId);
+      completed = {
+        paneId: pending.paneId,
+        path: outcome.status === "committed" ? outcome.path : outcome.conflictPath,
+        selectionAfter: outcome.preview.selectionAfter,
+        message: affectedElsewhere
+          ? `The attachment batch completed in previously active vault "${response.affectedVaultName ?? "previous vault"}".`
+          : outcome.status === "committed"
+            ? `Inserted ${outcome.attachments.length} attachments and references.`
+            : outcome.message,
+      };
+    } else {
+      attachmentBatchInsertPreview = null;
+      attachmentBatchInsertConfirmationId = null;
+      elements.attachmentInsertPreviewMessage.textContent = "";
+      elements.attachmentInsertError.textContent =
+        response.outcome.status === "manual-conflict" && response.affectedVaultName
+          ? `The batch reached manual review in previously active vault "${response.affectedVaultName}". ${response.outcome.message}`
+          : response.outcome.message;
+      if (
+        response.outcome.status === "manual-conflict" ||
+        (response.outcome.status === "refused" &&
+          [
+            "invalid-source",
+            "private-path",
+            "source-unreadable",
+            "source-write-unavailable",
+            "source-revision-changed",
+            "invalid-selection",
+            "selection-order",
+            "workspace-changed",
+            "stale-vault",
+          ].includes(response.outcome.reason))
+      ) {
+        pendingAttachmentInsertBatch = null;
+      }
+    }
+  } catch {
+    elements.attachmentInsertError.textContent =
+      "Threadleaf could not confirm the batch result. Refresh the vault and inspect every target and the note before retrying.";
   } finally {
     attachmentInsertBusy = false;
     setActionState(false);
@@ -14661,13 +14991,17 @@ elements.attachmentMoveDialog.addEventListener("click", (event) => {
 elements.attachmentInsertTarget.addEventListener("input", () => {
   attachmentInsertPreview = null;
   attachmentInsertConfirmationId = null;
+  attachmentBatchInsertPreview = null;
+  attachmentBatchInsertConfirmationId = null;
   elements.attachmentInsertError.textContent = "";
   elements.attachmentInsertPreviewMessage.textContent = "";
   renderAttachmentInsertDialog();
 });
 elements.attachmentInsertForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  void insertCurrentExternalAttachment();
+  void (pendingAttachmentInsertBatch
+    ? insertCurrentExternalAttachmentBatch()
+    : insertCurrentExternalAttachment());
 });
 elements.attachmentInsertClose.addEventListener("click", () => closeAttachmentInsertDialog());
 elements.attachmentInsertCancel.addEventListener("click", () => closeAttachmentInsertDialog());

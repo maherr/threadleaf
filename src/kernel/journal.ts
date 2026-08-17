@@ -1,4 +1,9 @@
 import path from "node:path";
+import {
+  MAX_VAULT_ATTACHMENT_BATCH_BYTES,
+  MAX_VAULT_ATTACHMENT_BATCH_ITEMS,
+  MAX_VAULT_ATTACHMENT_BYTES,
+} from "../shared/attachment-limits";
 import { isSafeExternalAttachmentTarget } from "../shared/attachment-targets";
 import { hasHiddenVaultSegment, hasPrivateVaultSegment, normalizeVaultPath } from "./path-policy";
 import type { VaultAttachmentIngressAuthorization, VaultMarkdownCorpus } from "./ports";
@@ -19,6 +24,14 @@ export type AttachmentInsertPhase =
   | "intent"
   | "staged"
   | "attachment-published"
+  | "note-written"
+  | "conflict-preserved"
+  | "committed";
+
+export type AttachmentBatchInsertPhase =
+  | "intent"
+  | "staged"
+  | "attachments-published"
   | "note-written"
   | "conflict-preserved"
   | "committed";
@@ -123,13 +136,34 @@ export interface AttachmentInsertJournal extends JournalBase {
   conflictPath: string;
 }
 
+export type AttachmentBatchInsertItemStatus = "pending" | "published";
+
+export interface AttachmentBatchInsertJournalItem {
+  targetPath: string;
+  attachmentRevision: string;
+  attachmentByteLength: number;
+  status: AttachmentBatchInsertItemStatus;
+}
+
+export interface AttachmentBatchInsertJournal extends JournalBase {
+  kind: "attachment-batch-insert";
+  phase: AttachmentBatchInsertPhase;
+  sourceNotePath: string;
+  sourceNoteRevision: string;
+  nextNoteRevision: string;
+  noteByteLength: number;
+  items: AttachmentBatchInsertJournalItem[];
+  conflictPath: string;
+}
+
 export type TransactionJournal =
   | WriteJournal
   | RenameJournal
   | MultiWriteJournal
   | MoveWithWritesJournal
   | AttachmentIngressJournal
-  | AttachmentInsertJournal;
+  | AttachmentInsertJournal
+  | AttachmentBatchInsertJournal;
 
 const revisionPattern = /^[a-f0-9]{64}$/;
 const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
@@ -172,6 +206,18 @@ const attachmentInsertPhases = new Set<AttachmentInsertPhase>([
   "note-written",
   "conflict-preserved",
   "committed",
+]);
+const attachmentBatchInsertPhases = new Set<AttachmentBatchInsertPhase>([
+  "intent",
+  "staged",
+  "attachments-published",
+  "note-written",
+  "conflict-preserved",
+  "committed",
+]);
+const attachmentBatchInsertItemStatuses = new Set<AttachmentBatchInsertItemStatus>([
+  "pending",
+  "published",
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -797,6 +843,117 @@ export function parseTransactionJournal(
       throw new Error("Attachment-insert journal paths are invalid.", { cause: error });
     }
     return input as unknown as AttachmentInsertJournal;
+  }
+
+  if (input.kind === "attachment-batch-insert") {
+    const expectedKeys = [
+      "version",
+      "id",
+      "vaultId",
+      "createdAt",
+      "kind",
+      "phase",
+      "sourceNotePath",
+      "sourceNoteRevision",
+      "nextNoteRevision",
+      "noteByteLength",
+      "items",
+      "conflictPath",
+    ] as const;
+    if (
+      !hasExactKeys(input, expectedKeys) ||
+      typeof input.phase !== "string" ||
+      !attachmentBatchInsertPhases.has(input.phase as AttachmentBatchInsertPhase) ||
+      typeof input.sourceNotePath !== "string" ||
+      !isRevision(input.sourceNoteRevision) ||
+      !isRevision(input.nextNoteRevision) ||
+      !Number.isSafeInteger(input.noteByteLength) ||
+      (input.noteByteLength as number) < 0 ||
+      !Array.isArray(input.items) ||
+      input.items.length === 0 ||
+      input.items.length > MAX_VAULT_ATTACHMENT_BATCH_ITEMS ||
+      typeof input.conflictPath !== "string"
+    ) {
+      throw new Error("Attachment-batch-insert journal shape is invalid.");
+    }
+    try {
+      const sourceNotePath = normalizeVaultPath(input.sourceNotePath);
+      const conflictPath = normalizeVaultPath(input.conflictPath);
+      if (
+        sourceNotePath !== input.sourceNotePath ||
+        !sourceNotePath.toLocaleLowerCase("en-US").endsWith(".md") ||
+        conflictPath !== input.conflictPath ||
+        !conflictPath.toLocaleLowerCase("en-US").endsWith(".md") ||
+        conflictPath === sourceNotePath ||
+        hasHiddenVaultSegment(sourceNotePath) ||
+        hasPrivateVaultSegment(sourceNotePath) ||
+        hasHiddenVaultSegment(conflictPath) ||
+        hasPrivateVaultSegment(conflictPath)
+      ) {
+        throw new Error("Attachment-batch-insert journal paths are invalid.");
+      }
+
+      const seenTargets = new Set<string>();
+      let totalBytes = 0;
+      let commonParent: string | null = null;
+      for (const entry of input.items) {
+        if (
+          !isRecord(entry) ||
+          !hasExactKeys(entry, [
+            "targetPath",
+            "attachmentRevision",
+            "attachmentByteLength",
+            "status",
+          ]) ||
+          typeof entry.targetPath !== "string" ||
+          !isRevision(entry.attachmentRevision) ||
+          !Number.isSafeInteger(entry.attachmentByteLength) ||
+          (entry.attachmentByteLength as number) < 0 ||
+          (entry.attachmentByteLength as number) > MAX_VAULT_ATTACHMENT_BYTES ||
+          typeof entry.status !== "string" ||
+          !attachmentBatchInsertItemStatuses.has(entry.status as AttachmentBatchInsertItemStatus)
+        ) {
+          throw new Error("Attachment-batch-insert journal item is invalid.");
+        }
+        const targetPath = normalizeVaultPath(entry.targetPath);
+        const targetFolded = targetPath.toLocaleLowerCase("en-US");
+        const targetIdentity = targetPath.normalize("NFC").toLocaleLowerCase("en-US");
+        const parent = path.posix.dirname(targetPath);
+        if (
+          targetPath !== entry.targetPath ||
+          !isSafeExternalAttachmentTarget(targetPath) ||
+          targetFolded.endsWith(".md") ||
+          targetFolded.endsWith(".canvas") ||
+          hasHiddenVaultSegment(targetPath) ||
+          hasPrivateVaultSegment(targetPath) ||
+          seenTargets.has(targetIdentity) ||
+          (commonParent !== null && commonParent !== parent)
+        ) {
+          throw new Error("Attachment-batch-insert journal target paths are invalid.");
+        }
+        seenTargets.add(targetIdentity);
+        commonParent = parent;
+        totalBytes += entry.attachmentByteLength as number;
+        if (totalBytes > MAX_VAULT_ATTACHMENT_BATCH_BYTES) {
+          throw new Error("Attachment-batch-insert journal payload is too large.");
+        }
+      }
+      const items = input.items as unknown as AttachmentBatchInsertJournalItem[];
+      if (
+        (input.phase === "intent" && items.some((entry) => entry.status !== "pending")) ||
+        (input.phase !== "intent" &&
+          input.phase !== "staged" &&
+          items.some((entry) => entry.status !== "published"))
+      ) {
+        throw new Error("Attachment-batch-insert journal progress is inconsistent.");
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("Attachment-batch-insert journal")) {
+        throw error;
+      }
+      throw new Error("Attachment-batch-insert journal paths are invalid.", { cause: error });
+    }
+    return input as unknown as AttachmentBatchInsertJournal;
   }
 
   throw new Error("Journal kind is invalid.");

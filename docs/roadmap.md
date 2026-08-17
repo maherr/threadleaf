@@ -385,8 +385,10 @@ Exit gate: selected high-value plugins complete named workflows against public f
           exact-path restore authority, with non-file refusal and packaged event-path proof.
     - [x] Add one-file editor drop and file paste with source-folder destination proposals, editable
           existing-parent targets, pointer or selection insertion, byte-bound review, and a
-          recoverable publish-then-reference transaction. Multi-file ordering remains explicitly
-          outside this one-file slice.
+          recoverable publish-then-reference transaction.
+    - [x] Add bounded ordered multi-file editor drop and paste with one common existing destination
+          folder, complete collision preflight, per-item recoverable publication receipts, and one
+          source-note write after all attachment bytes publish.
 - [x] Core daily-driver templates, daily notes, backlinks, outgoing links, tags, properties, tasks,
       search, and outline.
 - [x] Headless daily path/read/append/prepend, contained template listing and reads, and random-note

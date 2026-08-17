@@ -67,6 +67,10 @@ const insertionDropFileName = path.basename(externalInsertionDropPath);
 const insertionDropTargetPath = `Notes/${insertionDropFileName}`;
 const insertionDropBytes = Buffer.from("%PDF-1.7\neditor-drop-fixture\0", "binary");
 const insertionDropReference = `![[${insertionDropFileName}]]`;
+const insertionBatchSecondFileName = path.basename(externalDropPath);
+const insertionBatchSecondTargetPath = `Notes/${insertionBatchSecondFileName}`;
+const insertionBatchSecondBytes = externalDropBytes;
+const insertionBatchSecondReference = `![[${insertionBatchSecondFileName}]]`;
 const originalAudioCanvas = `\uFEFF${[
   "{",
   '  "nodes": [',
@@ -722,49 +726,10 @@ async function beginEditorFileDrag(sourcePaths, lineIndex = 0) {
     dialogOpen: document.querySelector('#attachment-insert-dialog')?.open === true,
   }))()`);
   assert(
-    sourcePaths.length === 1
-      ? state.active === "true" && !state.dialogOpen
-      : state.active !== "true" && !state.dialogOpen,
+    state.active === "true" && !state.dialogOpen,
     `The editor drag state did not match the transfer cardinality: ${JSON.stringify(state)}`,
   );
   return { target, data };
-}
-
-async function dispatchRejectedEditorDrop(sourcePaths, lineIndex = 0) {
-  const target = await editorDropTarget(lineIndex);
-  const beforeHref = await evaluate("location.href");
-  const sourceFileNames = sourcePaths.map((sourcePath) => path.basename(sourcePath));
-  return evaluate(`(() => {
-    const editor = document.querySelector('[data-pane-id="primary"] .cm-content');
-    if (!(editor instanceof HTMLElement)) return { dispatched: false, reason: 'missing' };
-    const transfer = new DataTransfer();
-    for (const [index, fileName] of ${JSON.stringify(sourceFileNames)}.entries()) {
-      transfer.items.add(new File([Uint8Array.from([index + 1])], fileName, {
-        type: 'application/octet-stream',
-      }));
-    }
-    const events = ['dragenter', 'dragover', 'drop'].map((type) => {
-      const event = new DragEvent(type, {
-        bubbles: true,
-        cancelable: true,
-        dataTransfer: transfer,
-        clientX: ${target.x},
-        clientY: ${target.y},
-      });
-      const dispatchResult = editor.dispatchEvent(event);
-      return { type, defaultPrevented: event.defaultPrevented, dispatchResult };
-    });
-    return {
-      dispatched: true,
-      owned: events.every((event) => event.defaultPrevented && event.dispatchResult === false),
-      events,
-      sameDocument: location.href === ${JSON.stringify(beforeHref)},
-      dialogOpen: document.querySelector('#attachment-insert-dialog')?.open === true,
-      editorPresent: document.querySelector('[data-pane-id="primary"] .cm-content') !== null,
-      active: document.querySelector('[data-pane-id="primary"] .cm-editor')?.getAttribute('data-attachment-drop-active') ?? '',
-      toast: document.querySelector('#toast')?.textContent?.trim() ?? '',
-    };
-  })()`);
 }
 
 async function assertAttachmentInsertWorkbench({
@@ -791,7 +756,7 @@ async function assertAttachmentInsertWorkbench({
   assert(
     initial.open &&
       initial.title === "Insert external attachment" &&
-      initial.description.includes("publish the selected file's exact bytes first") &&
+      initial.description.includes("publish the selected file or files' exact bytes first") &&
       initial.description.includes("Nothing is written until") &&
       initial.source === sourceNotePath &&
       initial.file === `${sourceFileName} · ${bytes.byteLength} B` &&
@@ -830,6 +795,69 @@ async function assertAttachmentInsertWorkbench({
       /^SHA-256 [a-f0-9]{64}$/u.test(preview.hashTitle) &&
       preview.submit === "Insert file and reference",
     `The editor attachment preview omitted its compound proof: ${JSON.stringify(preview)}`,
+  );
+  return preview;
+}
+
+async function assertAttachmentBatchInsertWorkbench({
+  sourceNotePath,
+  files,
+  targetDirectory,
+  references,
+}) {
+  const totalBytes = files.reduce((total, file) => total + file.bytes.byteLength, 0);
+  const initial = await evaluate(`(() => ({
+    open: document.querySelector('#attachment-insert-dialog')?.open === true,
+    source: document.querySelector('#attachment-insert-source')?.textContent ?? '',
+    file: document.querySelector('#attachment-insert-file')?.textContent ?? '',
+    label: document.querySelector('#attachment-insert-target-label')?.textContent ?? '',
+    target: document.querySelector('#attachment-insert-target')?.value ?? '',
+    submit: document.querySelector('#attachment-insert-submit')?.textContent?.trim() ?? '',
+    description: document.querySelector('#attachment-insert-description')?.textContent ?? '',
+    html: document.querySelector('#attachment-insert-dialog')?.outerHTML ?? '',
+  }))()`);
+  const normalizedDescription = initial.description.replace(/\s+/gu, " ").trim();
+  assert(
+    initial.open &&
+      initial.source === sourceNotePath &&
+      initial.file === `${files.length} files · ${totalBytes} B` &&
+      initial.label === "Destination folder" &&
+      initial.target === targetDirectory &&
+      initial.submit === "Review insertion" &&
+      normalizedDescription.includes("insert ordered references") &&
+      !initial.html.includes(testRoot) &&
+      !initial.html.includes(vaultPath),
+    `The editor attachment batch workbench was not truthful or path-private: ${JSON.stringify(initial)}`,
+  );
+  await clickPointer("#attachment-insert-submit");
+  const previewDeadline = Date.now() + 8_000;
+  let preview = null;
+  while (Date.now() < previewDeadline) {
+    preview = await evaluate(`(() => ({
+      open: document.querySelector('#attachment-insert-dialog')?.open === true,
+      message: document.querySelector('#attachment-insert-preview-message')?.textContent ?? '',
+      proof: document.querySelector('#attachment-insert-proof')?.textContent ?? '',
+      hashes: document.querySelector('#attachment-insert-file')?.getAttribute('title') ?? '',
+      submit: document.querySelector('#attachment-insert-submit')?.textContent?.trim() ?? '',
+    }))()`);
+    if (
+      preview.open &&
+      preview.message.includes("Review the exact bytes") &&
+      preview.submit === "Insert files and references"
+    ) {
+      break;
+    }
+    await delay(50);
+  }
+  assert(
+    preview?.open &&
+      preview.message.includes("Submit again to commit the batch") &&
+      files.every((file) => preview.proof.includes(file.fileName)) &&
+      files.every((file) => preview.proof.includes(file.targetPath)) &&
+      references.every((reference) => preview.proof.includes(reference)) &&
+      /^SHA-256 [a-f0-9]{64}(\nSHA-256 [a-f0-9]{64})*$/u.test(preview.hashes) &&
+      preview.submit === "Insert files and references",
+    `The editor attachment batch preview omitted ordered byte proof: ${JSON.stringify(preview)}`,
   );
   return preview;
 }
@@ -897,6 +925,71 @@ async function confirmAttachmentInsert({ sourceNotePath, expectedNote, targetPat
       terminal.editorText === expectedNote &&
       terminal.editorFocused,
     `The committed editor insertion did not reconcile and focus the visible note: ${JSON.stringify(terminal)}`,
+  );
+}
+
+async function confirmAttachmentBatchInsert({ sourceNotePath, expectedNote, files }) {
+  await clickPointer("#attachment-insert-submit");
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const targetsExist = await Promise.all(
+      files.map((file) =>
+        fs
+          .stat(path.join(vaultPath, file.targetPath))
+          .then(() => true)
+          .catch(() => false),
+      ),
+    );
+    const state = await evaluate(`(async () => {
+      const snapshot = await window.threadleaf.getSnapshot();
+      return {
+        dialogOpen: document.querySelector('#attachment-insert-dialog')?.open === true,
+        toast: document.querySelector('#toast')?.textContent?.trim() ?? '',
+        path: snapshot.workspace?.activeNote?.path ?? '',
+        editorText: [...document.querySelectorAll('[data-pane-id="primary"] .cm-content .cm-line')]
+          .map((line) => line.textContent ?? '')
+          .join('\\n'),
+        editorFocused: document.activeElement?.classList.contains('cm-content') === true,
+      };
+    })()`);
+    if (
+      targetsExist.every(Boolean) &&
+      !state.dialogOpen &&
+      state.toast.includes(`Inserted ${files.length} attachments and references.`) &&
+      state.path === sourceNotePath &&
+      state.editorText === expectedNote &&
+      state.editorFocused
+    ) {
+      break;
+    }
+    await delay(60);
+  }
+  for (const file of files) {
+    assert(
+      (await fs.readFile(path.join(vaultPath, file.targetPath))).equals(file.bytes),
+      `The confirmed editor batch insertion changed the exact bytes for ${file.targetPath}.`,
+    );
+  }
+  assert(
+    (await fs.readFile(path.join(vaultPath, sourceNotePath), "utf8")) === expectedNote,
+    `The confirmed editor batch insertion did not write the expected references in ${sourceNotePath}.`,
+  );
+  const terminal = await evaluate(`(async () => ({
+    dialogOpen: document.querySelector('#attachment-insert-dialog')?.open === true,
+    toast: document.querySelector('#toast')?.textContent?.trim() ?? '',
+    path: (await window.threadleaf.getSnapshot()).workspace?.activeNote?.path ?? '',
+    editorText: [...document.querySelectorAll('[data-pane-id="primary"] .cm-content .cm-line')]
+      .map((line) => line.textContent ?? '')
+      .join('\\n'),
+    editorFocused: document.activeElement?.classList.contains('cm-content') === true,
+  }))()`);
+  assert(
+    !terminal.dialogOpen &&
+      terminal.toast.includes(`Inserted ${files.length} attachments and references.`) &&
+      terminal.path === sourceNotePath &&
+      terminal.editorText === expectedNote &&
+      terminal.editorFocused,
+    `The committed editor batch insertion did not reconcile and focus the visible note: ${JSON.stringify(terminal)}`,
   );
 }
 
@@ -2324,61 +2417,60 @@ try {
 
   await openEditorNote(insertionDropNotePath);
   await setTheme("dark");
-  const rejectedEditorDrop = await dispatchRejectedEditorDrop(
+  const batchFiles = [
+    {
+      fileName: insertionDropFileName,
+      targetPath: insertionDropTargetPath,
+      bytes: insertionDropBytes,
+    },
+    {
+      fileName: insertionBatchSecondFileName,
+      targetPath: insertionBatchSecondTargetPath,
+      bytes: insertionBatchSecondBytes,
+    },
+  ];
+  const darkEditorDrag = await beginEditorFileDrag(
     [externalInsertionDropPath, externalDropPath],
     1,
   );
-  assert(
-    rejectedEditorDrop?.dispatched &&
-      rejectedEditorDrop.owned &&
-      rejectedEditorDrop.sameDocument &&
-      !rejectedEditorDrop.dialogOpen &&
-      rejectedEditorDrop.editorPresent &&
-      rejectedEditorDrop.active !== "true" &&
-      rejectedEditorDrop.toast.includes("Insert one file at a time"),
-    `A refused multi-file editor drop escaped its owned boundary: ${JSON.stringify(rejectedEditorDrop)}`,
-  );
-  assert(
-    (await fs.readFile(path.join(vaultPath, insertionDropNotePath), "utf8")) ===
-      insertionDropNote &&
-      !(await fs
-        .stat(path.join(vaultPath, insertionDropTargetPath))
-        .then(() => true)
-        .catch(() => false)),
-    "The multi-file editor drop refusal mutated the note or attachment namespace.",
-  );
-  const darkEditorDrag = await beginEditorFileDrag([externalInsertionDropPath], 1);
   screenshots.push(await capture("packaged-editor-attachment-drop-target-dark.png"));
   await cancelFileDrag(darkEditorDrag);
   await setTheme("light");
-  const lightEditorDrag = await beginEditorFileDrag([externalInsertionDropPath], 1);
+  const lightEditorDrag = await beginEditorFileDrag(
+    [externalInsertionDropPath, externalDropPath],
+    1,
+  );
   screenshots.push(await capture("packaged-editor-attachment-drop-target-light.png"));
   await finishFileDrop(lightEditorDrag);
   await waitForAttachmentInsertDialog(
     "The trusted CDP file drop did not reach the editor attachment workbench.",
   );
-  await assertAttachmentInsertWorkbench({
+  await assertAttachmentBatchInsertWorkbench({
     sourceNotePath: insertionDropNotePath,
-    sourceFileName: insertionDropFileName,
-    targetPath: insertionDropTargetPath,
-    bytes: insertionDropBytes,
-    reference: insertionDropReference,
+    files: batchFiles,
+    targetDirectory: "Notes",
+    references: [insertionDropReference, insertionBatchSecondReference],
   });
   assert(
     (await fs.readFile(path.join(vaultPath, insertionDropNotePath), "utf8")) ===
       insertionDropNote &&
-      !(await fs
-        .stat(path.join(vaultPath, insertionDropTargetPath))
-        .then(() => true)
-        .catch(() => false)),
-    "The editor drop preview mutated the note or published bytes before confirmation.",
+      !(
+        await Promise.all(
+          batchFiles.map((file) =>
+            fs
+              .stat(path.join(vaultPath, file.targetPath))
+              .then(() => true)
+              .catch(() => false),
+          ),
+        )
+      ).some(Boolean),
+    "The editor batch drop preview mutated the note or attachment namespace.",
   );
   screenshots.push(await capture("packaged-editor-attachment-drop-preview-light.png"));
-  await confirmAttachmentInsert({
+  await confirmAttachmentBatchInsert({
     sourceNotePath: insertionDropNotePath,
-    expectedNote: `before\n${insertionDropReference}after\n`,
-    targetPath: insertionDropTargetPath,
-    bytes: insertionDropBytes,
+    expectedNote: `before\n${insertionDropReference}${insertionBatchSecondReference}after\n`,
+    files: batchFiles,
   });
   await setTheme("dark");
   screenshots.push(await capture("packaged-editor-attachment-inserted-dark.png"));
@@ -2414,7 +2506,7 @@ try {
       attachmentPasteRestore: true,
       editorAttachmentPasteInsert: true,
       editorAttachmentDropInsert: true,
-      editorAttachmentMultiFileRefusal: true,
+      editorAttachmentMultiFileBatchInsert: true,
       unsupportedExternalInput: true,
       nativeAttachmentOpen: true,
       nativeAttachmentRevealDispatch: true,

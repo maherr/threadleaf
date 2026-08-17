@@ -170,6 +170,61 @@ export interface VaultAttachmentInsertMutationPort {
   ): Promise<VaultAttachmentInsertResult>;
 }
 
+export interface VaultAttachmentInsertBatchItem {
+  targetPath: string;
+  attachmentBytes: Uint8Array;
+}
+
+export interface VaultAttachmentInsertBatchRequest {
+  sourceNotePath: string;
+  sourceNoteRevision: string;
+  nextSourceContent: string;
+  items: readonly VaultAttachmentInsertBatchItem[];
+}
+
+export type VaultAttachmentInsertBatchFailureReason = VaultAttachmentInsertFailureReason;
+
+export interface VaultAttachmentInsertBatchPublication {
+  attachmentPath: string;
+  attachmentRevision: string;
+}
+
+export type VaultAttachmentInsertBatchResult =
+  | {
+      status: "committed";
+      path: string;
+      revision: string;
+      attachments: VaultAttachmentInsertBatchPublication[];
+      transactionId: string;
+    }
+  | {
+      status: "conflict";
+      path: string;
+      currentRevision: string | null;
+      conflictPath: string;
+      attachments: VaultAttachmentInsertBatchPublication[];
+      transactionId: string;
+    }
+  | {
+      status: "refused";
+      path: string;
+      attachmentPaths: string[];
+      reason: VaultAttachmentInsertBatchFailureReason;
+    }
+  | {
+      status: "manual-conflict";
+      path: string;
+      attachmentPaths: string[];
+      reason: VaultAttachmentInsertBatchFailureReason;
+      transactionId: string;
+    };
+
+export interface VaultAttachmentInsertBatchMutationPort {
+  insertAttachmentsWithReference(
+    request: VaultAttachmentInsertBatchRequest,
+  ): Promise<VaultAttachmentInsertBatchResult>;
+}
+
 export interface VaultDirectoryCreateResult {
   created: boolean;
   path: string;

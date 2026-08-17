@@ -780,12 +780,12 @@ tab dragging remain outside the exact-path restore feature.
 
 The editor has a separate one-file insertion adapter and compound transaction. File drop resolves a
 CodeMirror position from the pointer; file paste captures and replaces the current selection. Text,
-HTML, and URL transfers return to CodeMirror untouched. Directory-shaped and multi-file transfers
-are owned, canceled, and refused before Chromium can navigate or a partial batch can begin. The
-renderer copies at most 16 MiB from one safe-basename raster or passive attachment `File`, proposes
-the source note's folder as the destination, and allows only an editable vault-relative path whose
-visible parent already exists. It sends bytes and bounded metadata, never the selected absolute
-path or a filesystem handle.
+HTML, and URL transfers return to CodeMirror untouched. Directory-shaped transfers are owned,
+canceled, and refused before Chromium can navigate. A multi-file transfer is admitted only as one
+bounded ordered batch. The renderer copies at most 16 MiB per safe-basename raster or passive
+attachment `File`, proposes the source note's folder as the destination, and allows only an editable
+vault-relative path whose visible parent already exists. It sends bytes and bounded metadata, never
+the selected absolute path or a filesystem handle.
 
 Pending pane saves flush before review. The application maps LF CodeMirror selection offsets back
 to exact BOM and CRLF or CR-only source offsets, builds either the configured wiki embed or a
@@ -804,6 +804,17 @@ uncertain publication receipt, post-publication target ambiguity, or unsafe sour
 both private blobs for manual review. Verified commit, rollback, and conflict receipts clean up
 only after archival. Supported attachment targets are filtered out of the note-link inspector and
 unresolved note-link totals.
+
+The batch variant uses one common existing destination folder and preserves the selected file order
+through reference planning, preview, publication, and editor reconciliation. It completes namespace
+and normalized-identity collision preflight for every target before publishing any attachment.
+Private evidence contains every attachment blob and the complete proposed note. The
+`attachment-batch-insert` journal records each target's exact revision and published status, so
+restart can recognize a durable item and continue only the remaining items. The note is written once,
+after all attachment publications have verified their exact bytes. A source revision race preserves
+one complete conflict note pointing at all published attachments; a publication or claimant
+ambiguity leaves the batch in manual review rather than overwriting, rolling back by pathname, or
+claiming a partial commit.
 
 Every publication preview binds the exact Markdown path set, every note revision, and the metadata
 generation. For an `always` or `ask` rename, the reference corpus instead includes every visible

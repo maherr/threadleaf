@@ -272,6 +272,16 @@ is not evidence for arbitrary editor ingestion, automatic naming or placement, p
 raster image recovery, multiple matching references, or a complete attachment lifecycle. See
 [exact-path attachment restoration](../research/attachment-restore-2026-08-16.md).
 
+The packaged editor gate separately proves external insertion from the native CodeMirror surface.
+One-file paste and drop retain their revision-bound, byte-bound review. A multi-file drop is a
+bounded ordered batch: every selected byte and generated reference appears in the review, all
+targets share one existing destination folder, normalized collisions are preflighted before any
+publication, and the kernel journals each no-clobber attachment publication before one source-note
+write. The packaged Linux fixture drives a real two-file CDP drop, checks that the note and both
+targets remain unchanged during preview, confirms exact bytes and ordered references after commit,
+and captures the workbench and resulting editor in the supported themes. This proves the bounded
+batch workflow, not universal multi-file clipboard or cross-platform filesystem atomicity.
+
 The Excalidraw-specific public-format extension lives in
 [Excalidraw round-trip boundary](excalidraw-roundtrip.md). It adds native `.excalidraw` JSON,
 frontmatter, compressed and uncompressed Markdown scenes, Unicode and nested attachment manifests,

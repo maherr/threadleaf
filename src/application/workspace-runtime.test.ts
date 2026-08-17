@@ -1483,6 +1483,66 @@ describe("WorkspaceRuntime", () => {
     );
   });
 
+  it("routes an ordered attachment batch through one workspace action", async () => {
+    await fs.mkdir(path.join(vaultPath, "Notes"), { recursive: true });
+    await fs.mkdir(path.join(vaultPath, "Assets"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "Notes", "Current.md"), "before\nafter\n", "utf8");
+    const workspace = await openRuntime(undefined, { linkStyle: "markdown" });
+    const opened = await workspace.openNote("Notes/Current.md");
+    const source = opened.workspace?.activeNote;
+    if (!source) throw new Error("Expected the batch insertion source note to open.");
+    const selectionStart = source.content.indexOf("after");
+    const items = [
+      {
+        targetPath: "Assets/first.png",
+        sourceFileName: "first.png",
+        bytes: Uint8Array.from([1, 2, 3]),
+        selectionStart,
+        selectionEnd: selectionStart,
+      },
+      {
+        targetPath: "Assets/second.png",
+        sourceFileName: "second.png",
+        bytes: Uint8Array.from([4, 5, 6]),
+        selectionStart,
+        selectionEnd: selectionStart,
+      },
+    ];
+    const preview = await workspace.insertAttachmentBatch(
+      source.path,
+      items,
+      source.revision,
+      workspace.vaultId,
+    );
+    expect(preview.outcome).toMatchObject({
+      status: "requires-confirmation",
+      preview: {
+        targetDirectory: "Assets",
+        items: [{ targetPath: "Assets/first.png" }, { targetPath: "Assets/second.png" }],
+      },
+    });
+    if (preview.outcome.status !== "requires-confirmation") {
+      throw new Error("Expected a batch insertion confirmation.");
+    }
+    const committed = await workspace.insertAttachmentBatch(
+      source.path,
+      items,
+      source.revision,
+      workspace.vaultId,
+      preview.outcome.confirmationId,
+    );
+    expect(committed.outcome).toMatchObject({
+      status: "committed",
+      attachments: [
+        { attachmentPath: "Assets/first.png" },
+        { attachmentPath: "Assets/second.png" },
+      ],
+    });
+    expect(committed.snapshot.workspace?.activeNote?.content).toBe(
+      "before\n![first](../Assets/first.png)![second](../Assets/second.png)after\n",
+    );
+  });
+
   it("publishes a conflict copy when the source changes after attachment publication", async () => {
     await fs.mkdir(path.join(vaultPath, "Notes"), { recursive: true });
     await fs.mkdir(path.join(vaultPath, "Assets"), { recursive: true });
@@ -1715,6 +1775,11 @@ describe("WorkspaceRuntime", () => {
       {
         id: "workspace.insert-attachment",
         name: "Insert external attachment",
+        source: "workspace",
+      },
+      {
+        id: "workspace.insert-attachment-batch",
+        name: "Insert external attachment batch",
         source: "workspace",
       },
       { id: "workspace.delete-note", name: "Move note to trash", source: "workspace" },
@@ -4252,6 +4317,11 @@ module.exports = class ActionCollisionFixture extends Plugin {
       {
         id: "workspace.insert-attachment",
         name: "Insert external attachment",
+        source: "workspace",
+      },
+      {
+        id: "workspace.insert-attachment-batch",
+        name: "Insert external attachment batch",
         source: "workspace",
       },
       { id: "workspace.delete-note", name: "Move note to trash", source: "workspace" },
