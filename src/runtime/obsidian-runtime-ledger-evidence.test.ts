@@ -1454,6 +1454,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
 
   /** @compatibility-test-id obsidian-runtime.vault-mutations.v1 */
   /** @compatibility-test-id obsidian-runtime.file-manager-mutations.v1 */
+  /** @compatibility-test-id obsidian-runtime.file-system-adapter-mutations.v1 */
   it('proves writable Vault mutations through require("obsidian")', async () => {
     await withTestDocument(async () => {
       const sandboxPath = await fs.mkdtemp(
@@ -1558,6 +1559,29 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
             "    await vault.appendBinary(canvas, Uint8Array.from([254, 253]).buffer);",
             '    const copiedFile = await vault.copy(welcome, "Copies/Welcome.md");',
             '    const copiedFolder = await vault.copy(boards, "Copies/Boards");',
+            "    const adapter = vault.adapter;",
+            "    const adapterName = adapter.getName();",
+            "    const adapterBasePath = adapter.getBasePath();",
+            '    const adapterFullPath = adapter.getFullPath("Welcome.md");',
+            '    const adapterRead = await adapter.read("Welcome.md");',
+            '    const adapterReadBinary = await adapter.readBinary("Mutation.bin");',
+            '    await adapter.write("Adapter.md", "adapter");',
+            '    const adapterWritten = await adapter.read("Adapter.md");',
+            '    await adapter.writeBinary("Adapter.bin", Uint8Array.from([7, 8]).buffer);',
+            '    await adapter.append("Adapter.md", "-append");',
+            '    await adapter.appendBinary("Adapter.bin", Uint8Array.from([9]).buffer);',
+            '    const adapterProcessed = await adapter.process("Adapter.md", (data) => data.toUpperCase());',
+            '    const adapterResourcePath = adapter.getResourcePath("Adapter.md");',
+            '    const adapterFilePath = adapter.getFilePath("Adapter.md");',
+            '    const adapterExists = await adapter.exists("Adapter.md");',
+            '    const adapterStat = await adapter.stat("Adapter.md");',
+            '    const adapterList = await adapter.list("");',
+            '    await adapter.mkdir("Adapter folder");',
+            '    await adapter.copy("Adapter.bin", "Copies/Adapter.bin");',
+            '    const adapterCopiedBinary = await adapter.readBinary("Copies/Adapter.bin");',
+            '    await adapter.rename("Adapter.md", "Adapter renamed.md");',
+            '    await adapter.trashLocal("Adapter renamed.md");',
+            "    const bytesEqual = (value, expected) => { const bytes = new Uint8Array(value); return bytes.length === expected.length && expected.every((byte, index) => bytes[index] === byte); };",
             '    await vault.rename(created, "Renamed.md");',
             '    const attachmentPath = await fileManager.getAvailablePathForAttachment("Mutation.bin", "Welcome.md");',
             "    globalThis.confirm = () => true;",
@@ -1572,6 +1596,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
             '      createdFolder: vault.getFolderByPath("Created folder")?.path,',
             "      attachmentPath,",
             "      prompted,",
+            '      adapter: { name: adapterName, basePath: adapterBasePath, fullPath: adapterFullPath, read: adapterRead, readBinary: bytesEqual(adapterReadBinary, [3, 4]), written: adapterWritten, processed: adapterProcessed, resourcePath: adapterResourcePath, filePath: adapterFilePath, exists: adapterExists, stat: adapterStat, listed: adapterList, copiedBinary: bytesEqual(adapterCopiedBinary, [7, 8, 9]), renamedTrashed: (await adapter.exists("Adapter renamed.md")) === false && (await adapter.exists(".trash/Adapter renamed.md")) === true },',
             '      trashed: vault.getFileByPath("Renamed.md") === null && vault.getFileByPath("Managed.bin") === null,',
             "    };",
             "  }",
@@ -1655,7 +1680,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           expect(
             (globalThis as { __threadleafRuntimeLedgerVaultProbe?: unknown })
               .__threadleafRuntimeLedgerVaultProbe,
-          ).toEqual({
+          ).toMatchObject({
             processed: true,
             processedFrontmatter: true,
             generatedLink: "[[Linked Note#Project brief|Linked]]",
@@ -1664,6 +1689,25 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
             createdFolder: "Created folder",
             attachmentPath: "Mutation 1.bin",
             prompted: true,
+            adapter: {
+              name: path.basename(vaultPath),
+              basePath: vaultPath,
+              fullPath: path.join(vaultPath, "Welcome.md"),
+              read: expect.stringContaining("Ledger"),
+              readBinary: true,
+              written: "adapter",
+              processed: "ADAPTER-APPEND",
+              resourcePath: expect.stringMatching(/^file:/u),
+              filePath: path.join(vaultPath, "Adapter.md"),
+              exists: true,
+              stat: expect.objectContaining({ type: "file", size: 14 }),
+              listed: {
+                files: expect.arrayContaining(["Adapter.bin", "Adapter.md"]),
+                folders: expect.arrayContaining(["Boards", "Copies"]),
+              },
+              copiedBinary: true,
+              renamedTrashed: true,
+            },
             trashed: true,
           });
           await expect(fs.readFile(path.join(vaultPath, "Welcome.md"), "utf8")).resolves.toContain(
@@ -1681,6 +1725,15 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           await expect(
             fs.readFile(path.join(vaultPath, "Copies/Boards/Overview.canvas")),
           ).resolves.toEqual(expect.any(Buffer));
+          await expect(fs.readFile(path.join(vaultPath, "Adapter.bin"))).resolves.toEqual(
+            Buffer.from([7, 8, 9]),
+          );
+          await expect(fs.readFile(path.join(vaultPath, "Copies/Adapter.bin"))).resolves.toEqual(
+            Buffer.from([7, 8, 9]),
+          );
+          await expect(
+            fs.readFile(path.join(vaultPath, ".trash/Adapter renamed.md"), "utf8"),
+          ).resolves.toBe("ADAPTER-APPEND");
         } finally {
           await host.close();
         }

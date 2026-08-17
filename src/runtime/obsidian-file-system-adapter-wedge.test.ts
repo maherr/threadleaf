@@ -84,6 +84,15 @@ describe("Obsidian FileSystemAdapter compatibility wedge", () => {
     await expect(vault.adapter.write("Escape/blocked.md", "blocked")).rejects.toThrow(
       "resolves outside the vault",
     );
+    await expect(vault.adapter.append("Escape/blocked.md", "blocked")).rejects.toThrow(
+      "resolves outside the vault",
+    );
+    await expect(vault.adapter.process("Escape/blocked.md", (data) => data)).rejects.toThrow(
+      "resolves outside the vault",
+    );
+    await expect(vault.adapter.trashLocal("Escape/blocked.md")).rejects.toThrow(
+      "resolves outside the vault",
+    );
     await expect(vault.adapter.write("Folder", "blocked")).rejects.toThrow("requires a file path");
     await expect(vault.adapter.write("New.md", "blocked", { mtime: Date.now() })).rejects.toThrow(
       "timestamp options",
@@ -91,6 +100,95 @@ describe("Obsidian FileSystemAdapter compatibility wedge", () => {
     expect(writeText).not.toHaveBeenCalled();
     expect(createText).not.toHaveBeenCalled();
     await expect(fs.readdir(outsidePath)).resolves.toEqual([]);
+  });
+
+  it("routes binary writes, appends, process, rename, and local trash through the vault writer", async () => {
+    const rootPath = await createRoot("threadleaf-adapter-mutations-");
+    await fs.writeFile(path.join(rootPath, "Note.md"), "one", "utf8");
+    await fs.writeFile(path.join(rootPath, "Bytes.bin"), Uint8Array.from([1, 2]));
+    const writeText = vi.fn(async (filePath: string, content: string, expectedRevision: string) => {
+      const current = await fs.readFile(path.join(rootPath, filePath));
+      expect(revisionOf(current)).toBe(expectedRevision);
+      await fs.writeFile(path.join(rootPath, filePath), content, "utf8");
+      return {
+        status: "committed" as const,
+        path: filePath,
+        revision: revisionOf(Buffer.from(content, "utf8")),
+        transactionId: "adapter-write",
+      };
+    });
+    const writeBinary = vi.fn(
+      async (filePath: string, content: Uint8Array, expectedRevision: string) => {
+        const current = await fs.readFile(path.join(rootPath, filePath));
+        expect(revisionOf(current)).toBe(expectedRevision);
+        await fs.writeFile(path.join(rootPath, filePath), content);
+        return {
+          status: "committed" as const,
+          path: filePath,
+          revision: revisionOf(content),
+          transactionId: "adapter-write-binary",
+        };
+      },
+    );
+    const createBinary = vi.fn(async (filePath: string, content: Uint8Array) => {
+      await fs.writeFile(path.join(rootPath, filePath), content, { flag: "wx" });
+      return {
+        status: "committed" as const,
+        path: filePath,
+        revision: revisionOf(content),
+        transactionId: "adapter-create-binary",
+      };
+    });
+    const renameFile = vi.fn(async (sourcePath: string, targetPath: string) => {
+      await fs.rename(path.join(rootPath, sourcePath), path.join(rootPath, targetPath));
+      return {
+        status: "committed" as const,
+        from: sourcePath,
+        to: targetPath,
+        transactionId: "adapter-rename",
+      };
+    });
+    const trashFile = vi.fn(async (sourcePath: string) => {
+      const targetPath = path.join(".trash", sourcePath);
+      await fs.mkdir(path.dirname(path.join(rootPath, targetPath)), { recursive: true });
+      await fs.rename(path.join(rootPath, sourcePath), path.join(rootPath, targetPath));
+      return {
+        status: "committed" as const,
+        from: sourcePath,
+        to: targetPath,
+        transactionId: "adapter-trash",
+      };
+    });
+    const vault = new Vault(rootPath, undefined, {
+      createBinary,
+      renameFile,
+      trashFile,
+      writeBinary,
+      writeText,
+    });
+
+    await vault.adapter.writeBinary("Bytes.bin", Uint8Array.from([3, 4]).buffer);
+    await vault.adapter.writeBinary("New.bin", Uint8Array.from([5]).buffer);
+    await vault.adapter.append("Note.md", "-two");
+    await vault.adapter.appendBinary("Bytes.bin", Uint8Array.from([6]).buffer);
+    await expect(vault.adapter.process("Note.md", (data) => data.toUpperCase())).resolves.toBe(
+      "ONE-TWO",
+    );
+    await vault.adapter.rename("New.bin", "Moved.bin");
+    await vault.adapter.trashLocal("Moved.bin");
+
+    expect(writeText).toHaveBeenCalledTimes(2);
+    expect(writeBinary).toHaveBeenCalledTimes(2);
+    expect(createBinary).toHaveBeenCalledOnce();
+    expect(renameFile).toHaveBeenCalledOnce();
+    expect(trashFile).toHaveBeenCalledOnce();
+    await expect(fs.readFile(path.join(rootPath, "Note.md"), "utf8")).resolves.toBe("ONE-TWO");
+    await expect(fs.readFile(path.join(rootPath, "Bytes.bin"))).resolves.toEqual(
+      Buffer.from([3, 4, 6]),
+    );
+    await expect(fs.readFile(path.join(rootPath, ".trash", "Moved.bin"))).resolves.toEqual(
+      Buffer.from([5]),
+    );
   });
 
   it("creates a folder through the existing vault mutation port and resolves void", async () => {

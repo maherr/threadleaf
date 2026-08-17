@@ -53,7 +53,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | Events | class | implemented | 69b49be903499033 |
 | ExtraButtonComponent | class | implemented | 60577a4b3a5c4ed2 |
 | FileManager | class | partial | f131be3eb6de3df2 |
-| FileSystemAdapter | class | missing | a11e4e56f43d1ba4 |
+| FileSystemAdapter | class | partial | a11e4e56f43d1ba4 |
 | FileValue | class | missing | 90a3b3e1fcd40461 |
 | FileView | class | implemented | 1a7d777aaddc3cb1 |
 | finishRenderMath | function | missing | 58b4e9583b344203 |

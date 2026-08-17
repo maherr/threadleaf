@@ -14,14 +14,14 @@
     "enums": 1,
     "variables": 8,
     "implemented": 90,
-    "partial": 5,
+    "partial": 6,
     "unsupported": 0,
-    "missing": 63,
+    "missing": 62,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 518
+    "implementedObligations": 537
   },
   "factory": {
     "keys": [
@@ -1707,15 +1707,23 @@
       "exportId": "export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680",
       "name": "FileSystemAdapter",
       "kind": "class",
-      "status": "missing",
+      "status": "partial",
       "signatureHash": "a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680",
       "location": {
         "line": 2996,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.file-system-adapter-mutations.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "FileSystemAdapter"
+      },
       "obligationIds": [
         "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:16d0041c4e5f7fb3a5c2035dc4d7a28e56bf35b687e40c8fcf08a53f5099faf2",
         "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:33a33e3b54ea09804f3cacc8f40ca63e86e9b31a9458776c4ae8e80b5fb41676",
@@ -1745,8 +1753,48 @@
       "heritageEdgeIds": [
         "heritage:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:26e176ba00daa7c6cbc4745cb5d13c596119c1d89b1b636c57b4751e780f5e20"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:16d0041c4e5f7fb3a5c2035dc4d7a28e56bf35b687e40c8fcf08a53f5099faf2",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:33a33e3b54ea09804f3cacc8f40ca63e86e9b31a9458776c4ae8e80b5fb41676",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:d347ad6696f17ce770167c0ba920df672568f53e8f4d0ba0f98c7a071e422688",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:4dc54920e44cf2099291d13393baa5526c0bcbfe2c623e0983c75d7177d491ed",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:6b0dccc501abfe75f67af604bb541463abcb17029a2fc098f82a106a54211d2e",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:5b3bd1b4bdb64d381325bca0d5b9559a229cf829fc6ae951eeca2a59cf4a6db0",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:0be3cc9bfda4f5378a2e57ffba8ae8034f157161e9ed1315a9c6d90cc5d405e8",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:217a42eae63ecefb0548cecafc6dcd513a69cf6c625bfea668106c1d0b806a0b",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:fd5f36968ced4bb8ec68f766c4b438d2f5c839b53c45a03e7f4f991d2244e518",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:ab963ba0fd2484b339a9657646cd0a7d606a44d2bd1ed9282b68f0d9ff62f181",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:4d115450b3c506fd973f45b916bc80194b74e1b25ee163a5a6f0659151c89215",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:de6b4bfa42a8c4946191be57981310e2c0665ab5fb21375cab46f5b72bac7f80",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:a175687f8e1c8d25b191d08a8529f37257f659c7970c445432fc37e8f595a9bb",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:ecd67c7dfaeddd2b272a1d9ccf73df89ff631e20b046f6b98ccf8144e38165e3",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:7897b8b81d7a49a4261b3bd9f1346268b4318eeddc1f5a5d0f22739ed2187bb0",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:b95ea18ca16011a010088a27c3540a6a86f843f9629277a780ea1a6fa30418d9",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:517dd0b63f9ddc788c7dd4d48a4ba62c6e66840485134d831cef9b5a450b90e5",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:16669eafb6e83d5ef48b4c2c9483c5c50e86481da6a79b9a533b68ac76935927",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:986eebd9d5667b56ed7a1c0df2c32f839fcd18ce0310ac9420fdd3c03bd3ec85"
+      ],
+      "coveredObligationSignatureHashes": [
+        "16d0041c4e5f7fb3a5c2035dc4d7a28e56bf35b687e40c8fcf08a53f5099faf2",
+        "33a33e3b54ea09804f3cacc8f40ca63e86e9b31a9458776c4ae8e80b5fb41676",
+        "d347ad6696f17ce770167c0ba920df672568f53e8f4d0ba0f98c7a071e422688",
+        "4dc54920e44cf2099291d13393baa5526c0bcbfe2c623e0983c75d7177d491ed",
+        "6b0dccc501abfe75f67af604bb541463abcb17029a2fc098f82a106a54211d2e",
+        "5b3bd1b4bdb64d381325bca0d5b9559a229cf829fc6ae951eeca2a59cf4a6db0",
+        "0be3cc9bfda4f5378a2e57ffba8ae8034f157161e9ed1315a9c6d90cc5d405e8",
+        "217a42eae63ecefb0548cecafc6dcd513a69cf6c625bfea668106c1d0b806a0b",
+        "fd5f36968ced4bb8ec68f766c4b438d2f5c839b53c45a03e7f4f991d2244e518",
+        "ab963ba0fd2484b339a9657646cd0a7d606a44d2bd1ed9282b68f0d9ff62f181",
+        "4d115450b3c506fd973f45b916bc80194b74e1b25ee163a5a6f0659151c89215",
+        "de6b4bfa42a8c4946191be57981310e2c0665ab5fb21375cab46f5b72bac7f80",
+        "a175687f8e1c8d25b191d08a8529f37257f659c7970c445432fc37e8f595a9bb",
+        "ecd67c7dfaeddd2b272a1d9ccf73df89ff631e20b046f6b98ccf8144e38165e3",
+        "7897b8b81d7a49a4261b3bd9f1346268b4318eeddc1f5a5d0f22739ed2187bb0",
+        "b95ea18ca16011a010088a27c3540a6a86f843f9629277a780ea1a6fa30418d9",
+        "517dd0b63f9ddc788c7dd4d48a4ba62c6e66840485134d831cef9b5a450b90e5",
+        "16669eafb6e83d5ef48b4c2c9483c5c50e86481da6a79b9a533b68ac76935927",
+        "986eebd9d5667b56ed7a1c0df2c32f839fcd18ce0310ac9420fdd3c03bd3ec85"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -10283,7 +10331,7 @@
     {
       "exportId": "export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680",
       "name": "FileSystemAdapter",
-      "status": "missing",
+      "status": "partial",
       "obligations": [
         {
           "obligationId": "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:16d0041c4e5f7fb3a5c2035dc4d7a28e56bf35b687e40c8fcf08a53f5099faf2",
@@ -10662,8 +10710,48 @@
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:16d0041c4e5f7fb3a5c2035dc4d7a28e56bf35b687e40c8fcf08a53f5099faf2",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:33a33e3b54ea09804f3cacc8f40ca63e86e9b31a9458776c4ae8e80b5fb41676",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:d347ad6696f17ce770167c0ba920df672568f53e8f4d0ba0f98c7a071e422688",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:4dc54920e44cf2099291d13393baa5526c0bcbfe2c623e0983c75d7177d491ed",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:6b0dccc501abfe75f67af604bb541463abcb17029a2fc098f82a106a54211d2e",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:5b3bd1b4bdb64d381325bca0d5b9559a229cf829fc6ae951eeca2a59cf4a6db0",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:0be3cc9bfda4f5378a2e57ffba8ae8034f157161e9ed1315a9c6d90cc5d405e8",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:217a42eae63ecefb0548cecafc6dcd513a69cf6c625bfea668106c1d0b806a0b",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:fd5f36968ced4bb8ec68f766c4b438d2f5c839b53c45a03e7f4f991d2244e518",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:ab963ba0fd2484b339a9657646cd0a7d606a44d2bd1ed9282b68f0d9ff62f181",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:4d115450b3c506fd973f45b916bc80194b74e1b25ee163a5a6f0659151c89215",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:de6b4bfa42a8c4946191be57981310e2c0665ab5fb21375cab46f5b72bac7f80",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:a175687f8e1c8d25b191d08a8529f37257f659c7970c445432fc37e8f595a9bb",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:ecd67c7dfaeddd2b272a1d9ccf73df89ff631e20b046f6b98ccf8144e38165e3",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:7897b8b81d7a49a4261b3bd9f1346268b4318eeddc1f5a5d0f22739ed2187bb0",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:b95ea18ca16011a010088a27c3540a6a86f843f9629277a780ea1a6fa30418d9",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:517dd0b63f9ddc788c7dd4d48a4ba62c6e66840485134d831cef9b5a450b90e5",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:16669eafb6e83d5ef48b4c2c9483c5c50e86481da6a79b9a533b68ac76935927",
+        "obligation:export:class:FileSystemAdapter:a11e4e56f43d1ba484fab4c1993e0ef820e1170265aacc7992229b2b2753e680:986eebd9d5667b56ed7a1c0df2c32f839fcd18ce0310ac9420fdd3c03bd3ec85"
+      ],
+      "coveredObligationSignatureHashes": [
+        "16d0041c4e5f7fb3a5c2035dc4d7a28e56bf35b687e40c8fcf08a53f5099faf2",
+        "33a33e3b54ea09804f3cacc8f40ca63e86e9b31a9458776c4ae8e80b5fb41676",
+        "d347ad6696f17ce770167c0ba920df672568f53e8f4d0ba0f98c7a071e422688",
+        "4dc54920e44cf2099291d13393baa5526c0bcbfe2c623e0983c75d7177d491ed",
+        "6b0dccc501abfe75f67af604bb541463abcb17029a2fc098f82a106a54211d2e",
+        "5b3bd1b4bdb64d381325bca0d5b9559a229cf829fc6ae951eeca2a59cf4a6db0",
+        "0be3cc9bfda4f5378a2e57ffba8ae8034f157161e9ed1315a9c6d90cc5d405e8",
+        "217a42eae63ecefb0548cecafc6dcd513a69cf6c625bfea668106c1d0b806a0b",
+        "fd5f36968ced4bb8ec68f766c4b438d2f5c839b53c45a03e7f4f991d2244e518",
+        "ab963ba0fd2484b339a9657646cd0a7d606a44d2bd1ed9282b68f0d9ff62f181",
+        "4d115450b3c506fd973f45b916bc80194b74e1b25ee163a5a6f0659151c89215",
+        "de6b4bfa42a8c4946191be57981310e2c0665ab5fb21375cab46f5b72bac7f80",
+        "a175687f8e1c8d25b191d08a8529f37257f659c7970c445432fc37e8f595a9bb",
+        "ecd67c7dfaeddd2b272a1d9ccf73df89ff631e20b046f6b98ccf8144e38165e3",
+        "7897b8b81d7a49a4261b3bd9f1346268b4318eeddc1f5a5d0f22739ed2187bb0",
+        "b95ea18ca16011a010088a27c3540a6a86f843f9629277a780ea1a6fa30418d9",
+        "517dd0b63f9ddc788c7dd4d48a4ba62c6e66840485134d831cef9b5a450b90e5",
+        "16669eafb6e83d5ef48b4c2c9483c5c50e86481da6a79b9a533b68ac76935927",
+        "986eebd9d5667b56ed7a1c0df2c32f839fcd18ce0310ac9420fdd3c03bd3ec85"
+      ]
     },
     {
       "exportId": "export:class:FileValue:90a3b3e1fcd404610cc3238dddfa7b6c5ac4e868c55ff770b17e987920db1f87",

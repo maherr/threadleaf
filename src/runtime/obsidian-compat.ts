@@ -303,6 +303,107 @@ export class FileSystemAdapter {
     await this.vault.create(normalized, data);
   }
 
+  async writeBinary(
+    normalizedPath: string,
+    data: ArrayBuffer,
+    options?: DataWriteOptions,
+  ): Promise<void> {
+    if (options?.ctime !== undefined || options?.mtime !== undefined) {
+      throw new Error(
+        "Plugin adapter timestamp options are not available through the revision-aware vault writer.",
+      );
+    }
+    const normalized = normalizePath(normalizedPath);
+    this.getFullPath(normalized);
+    const existing = this.vault.getAbstractFileByPath(normalized);
+    if (existing instanceof TFolder) {
+      throw new Error(`Plugin adapter write requires a file path: ${normalized}`);
+    }
+    if (existing instanceof TFile) {
+      await this.vault.modifyBinary(existing, data);
+      return;
+    }
+    await this.vault.createBinary(normalized, data);
+  }
+
+  async append(normalizedPath: string, data: string, options?: DataWriteOptions): Promise<void> {
+    if (options?.ctime !== undefined || options?.mtime !== undefined) {
+      throw new Error(
+        "Plugin adapter timestamp options are not available through the revision-aware vault writer.",
+      );
+    }
+    const normalized = normalizePath(normalizedPath);
+    this.getFullPath(normalized);
+    const file = this.vault.getFileByPath(normalized);
+    if (!file) {
+      throw new Error(`Plugin adapter append requires an existing file: ${normalized}`);
+    }
+    await this.vault.append(file, data);
+  }
+
+  async appendBinary(
+    normalizedPath: string,
+    data: ArrayBuffer,
+    options?: DataWriteOptions,
+  ): Promise<void> {
+    if (options?.ctime !== undefined || options?.mtime !== undefined) {
+      throw new Error(
+        "Plugin adapter timestamp options are not available through the revision-aware vault writer.",
+      );
+    }
+    const normalized = normalizePath(normalizedPath);
+    this.getFullPath(normalized);
+    const file = this.vault.getFileByPath(normalized);
+    if (!file) {
+      throw new Error(`Plugin adapter append requires an existing file: ${normalized}`);
+    }
+    await this.vault.appendBinary(file, data);
+  }
+
+  async process(
+    normalizedPath: string,
+    callback: (data: string) => string,
+    options?: DataWriteOptions,
+  ): Promise<string> {
+    if (options?.ctime !== undefined || options?.mtime !== undefined) {
+      throw new Error(
+        "Plugin adapter timestamp options are not available through the revision-aware vault writer.",
+      );
+    }
+    const normalized = normalizePath(normalizedPath);
+    this.getFullPath(normalized);
+    const file = this.vault.getFileByPath(normalized);
+    if (!file) {
+      throw new Error(`Plugin adapter process requires an existing file: ${normalized}`);
+    }
+    const current = await this.vault.read(file);
+    const next = callback(current);
+    await this.vault.modify(file, next);
+    return next;
+  }
+
+  async rename(normalizedPath: string, normalizedNewPath: string): Promise<void> {
+    const source = normalizePath(normalizedPath);
+    const target = normalizePath(normalizedNewPath);
+    this.getFullPath(source);
+    this.getFullPath(target);
+    const file = this.vault.getFileByPath(source);
+    if (!file) {
+      throw new Error(`Plugin adapter rename requires an existing file: ${source}`);
+    }
+    await this.vault.rename(file, target);
+  }
+
+  async trashLocal(normalizedPath: string): Promise<void> {
+    const normalized = normalizePath(normalizedPath);
+    this.getFullPath(normalized);
+    const file = this.vault.getFileByPath(normalized);
+    if (!file) {
+      throw new Error(`Plugin adapter local trash requires an existing file: ${normalized}`);
+    }
+    await this.vault.trash(file);
+  }
+
   async mkdir(normalizedPath: string): Promise<void> {
     const normalized = normalizePath(normalizedPath);
     this.getFullPath(normalized);
