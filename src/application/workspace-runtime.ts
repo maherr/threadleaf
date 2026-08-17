@@ -86,6 +86,7 @@ import type {
   WorkspaceTagCatalogRequest,
   WorkspaceTagCatalogResponse,
   WorkspaceTagSummary,
+  WorkspaceTreeEntry,
   WorkspaceTreePageRequest,
   WorkspaceTreePageResponse,
   WorkspaceTreePathRequest,
@@ -312,6 +313,32 @@ function visibleInventoryProjection(
     files: [...tree.filePaths].sort(compareWorkspaceInventoryPaths),
     folders: [...tree.folderPaths].sort(compareWorkspaceInventoryPaths),
     tree,
+  };
+}
+
+function cloneWorkspaceFileSummary(summary: WorkspaceFileSummary): WorkspaceFileSummary {
+  return {
+    ...summary,
+    tags: [...summary.tags],
+  };
+}
+
+function cloneWorkspaceTreeEntry(entry: WorkspaceTreeEntry): WorkspaceTreeEntry {
+  return { ...entry };
+}
+
+function cloneWorkspaceNoteSnapshot(note: WorkspaceNoteSnapshot): WorkspaceNoteSnapshot {
+  return {
+    ...note,
+    tags: [...note.tags],
+    headings: note.headings.map((heading) => ({ ...heading })),
+    outgoing: note.outgoing.map((link) => ({ ...link })),
+    backlinks: [...note.backlinks],
+    properties: note.properties.map((property) => ({
+      ...property,
+      value: Array.isArray(property.value) ? [...property.value] : property.value,
+    })),
+    propertyEditor: { ...note.propertyEditor },
   };
 }
 
@@ -1768,7 +1795,7 @@ export class WorkspaceRuntime {
         total: sourceFiles.length,
         complete: request.offset + files.length >= sourceFiles.length,
       },
-      files,
+      files: files.map(cloneWorkspaceFileSummary),
     };
   }
 
@@ -1844,7 +1871,7 @@ export class WorkspaceRuntime {
         total: entries.length,
         complete: request.offset + pageEntries.length >= entries.length,
       },
-      entries: [...pageEntries],
+      entries: pageEntries.map(cloneWorkspaceTreeEntry),
     };
   }
 
@@ -4961,7 +4988,7 @@ export class WorkspaceRuntime {
         if (!retained) {
           throw new Error(`Active workspace note is not indexed: ${filePath}`);
         }
-        const republished = Promise.resolve(retained);
+        const republished = Promise.resolve(cloneWorkspaceNoteSnapshot(retained));
         noteSnapshots.set(filePath, republished);
         return republished;
       }
@@ -5007,7 +5034,7 @@ export class WorkspaceRuntime {
           // The index still lists it because a committed write refreshed it
           // directly, but a later write has its file aside. Same answer.
           if (retained) {
-            return retained;
+            return cloneWorkspaceNoteSnapshot(retained);
           }
           throw error;
         },
@@ -5155,7 +5182,7 @@ export class WorkspaceRuntime {
             ? "ready"
             : "warming",
       indexGeneration,
-      files: projection.interactiveFiles,
+      files: projection.interactiveFiles.map(cloneWorkspaceFileSummary),
       filePage: {
         generation: indexGeneration,
         offset: 0,
@@ -5184,7 +5211,7 @@ export class WorkspaceRuntime {
       snapshot,
       commit: () => {
         for (const [filePath, note] of loadedNoteSnapshots) {
-          this.#retainedNotes.set(filePath, note);
+          this.#retainedNotes.set(filePath, cloneWorkspaceNoteSnapshot(note));
         }
         for (const [filePath, canvas] of loadedCanvasSnapshots) {
           this.#retainedCanvases.set(filePath, canvas);

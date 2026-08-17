@@ -868,6 +868,89 @@ describe("WorkspaceRuntime", () => {
     expect(deleted.workspace?.inventory.generation).not.toBe(attachmentInventoryGeneration);
   });
 
+  it("keeps census and index baselines independent and protects cached pages from callers", async () => {
+    const workspace = await openRuntime();
+    const before = await workspace.getSnapshot();
+    const beforeIndexGeneration = before.workspace?.indexGeneration ?? "missing";
+    const beforeCensusGeneration = before.workspace?.census.generation ?? Number.NaN;
+    const beforeInventoryGeneration = before.workspace?.inventory.generation ?? "missing";
+    const beforeFileCount = before.workspace?.files.length ?? 0;
+    expect(before.workspace?.census).toMatchObject({
+      state: "current",
+      discovered: 2,
+      indexed: 2,
+      total: 2,
+    });
+
+    const beforeTree = await workspace.getWorkspaceTreePage({
+      expectedVaultId: workspace.vaultId,
+      generation: beforeInventoryGeneration,
+      parentPath: null,
+      offset: 0,
+      limit: 64,
+    });
+    expect(beforeTree.status).toBe("ready");
+    if (beforeTree.status !== "ready") throw new Error("Expected the initial Files page.");
+    const expectedTreeEntries = beforeTree.entries.map((entry) => ({ ...entry }));
+
+    await fs.writeFile(
+      path.join(vaultPath, "Welcome.md"),
+      "# Changed without a new note\n",
+      "utf8",
+    );
+    const contentOnly = await workspace.reconcileNow();
+
+    expect(contentOnly.workspace?.indexGeneration).not.toBe(beforeIndexGeneration);
+    expect(contentOnly.workspace?.census.generation).toBe(beforeCensusGeneration);
+    expect(contentOnly.workspace?.census).toMatchObject({
+      state: "current",
+      discovered: 2,
+      indexed: 2,
+      total: 2,
+    });
+    expect(contentOnly.workspace?.inventory.generation).toBe(beforeInventoryGeneration);
+    await expect(
+      workspace.getWorkspaceFilePage({
+        expectedVaultId: workspace.vaultId,
+        generation: beforeIndexGeneration,
+        offset: 1,
+        limit: 1,
+      }),
+    ).resolves.toMatchObject({ status: "stale-generation" });
+
+    if (before.workspace) {
+      before.workspace.files.pop();
+      before.workspace.files[0]?.tags.push("caller-mutation");
+    }
+    const firstTreeEntry = beforeTree.entries[0];
+    if (!firstTreeEntry) throw new Error("Expected one root Files entry.");
+    firstTreeEntry.path = "caller-mutation";
+
+    const afterCallerMutation = await workspace.getSnapshot();
+    expect(afterCallerMutation.workspace?.files).toHaveLength(beforeFileCount);
+    expect(
+      afterCallerMutation.workspace?.files.some(
+        ({ path: filePath }) => filePath === "caller-mutation",
+      ),
+    ).toBe(false);
+    expect(
+      afterCallerMutation.workspace?.files.some(({ tags }) => tags.includes("caller-mutation")),
+    ).toBe(false);
+
+    const afterTree = await workspace.getWorkspaceTreePage({
+      expectedVaultId: workspace.vaultId,
+      generation: beforeInventoryGeneration,
+      parentPath: null,
+      offset: 0,
+      limit: 64,
+    });
+    expect(afterTree).toMatchObject({
+      status: "ready",
+      entries: expectedTreeEntries,
+    });
+    expect(afterTree).not.toMatchObject({ entries: [{ path: "caller-mutation" }] });
+  });
+
   it("scans inventory outside the index lock and rejects a result invalidated in flight", async () => {
     runtime = await WorkspaceRuntime.open({
       vaultRoot: vaultPath,
@@ -2541,13 +2624,14 @@ module.exports = class ActionCollisionFixture extends Plugin {
     );
   });
 
-  it("reuses the unchanged derived file projection across snapshots", async () => {
+  it("detaches the bounded file projection across snapshots", async () => {
     const workspace = await openRuntime();
 
     const first = await workspace.getSnapshot();
     const second = await workspace.getSnapshot();
 
-    expect(second.workspace?.files).toBe(first.workspace?.files);
+    expect(second.workspace?.files).toEqual(first.workspace?.files);
+    expect(second.workspace?.files).not.toBe(first.workspace?.files);
   });
 
   it("restores ordered tabs, keeps one the vault has not listed, and prunes it once confirmed", async () => {
