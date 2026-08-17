@@ -371,6 +371,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
 
   /** @compatibility-test-id obsidian-runtime.utility-functions.v1 */
   /** @compatibility-test-id obsidian-runtime.reference-search-utilities.v1 */
+  /** @compatibility-test-id obsidian-runtime.render-search-utilities.v1 */
   it('proves public link and search utilities through require("obsidian")', async () => {
     const sandboxPath = await fs.mkdtemp(
       path.join(os.tmpdir(), "threadleaf-runtime-ledger-utils-"),
@@ -389,7 +390,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
       await fs.writeFile(
         path.join(pluginPath, "main.js"),
         [
-          'const { Plugin, getLinkpath, iterateCacheRefs, iterateRefs, normalizePath, parseLinktext, prepareFuzzySearch, prepareSimpleSearch, sortSearchResults } = require("obsidian");',
+          'const { Plugin, getLinkpath, iterateCacheRefs, iterateRefs, normalizePath, parseLinktext, prepareFuzzySearch, prepareSimpleSearch, renderMatches, renderResults, sortSearchResults } = require("obsidian");',
           "class LedgerPlugin extends Plugin {",
           "  async onload() {",
           '    const fuzzy = prepareFuzzySearch("dng");',
@@ -401,6 +402,12 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           '    const cacheStopped = iterateCacheRefs({ links: [{ link: "link", original: "Link", position: {} }], embeds: [{ link: "embed", original: "Embed", position: {} }] }, (reference) => { cacheVisited.push(reference.link); });',
           "    const searchResults = [{ match: { score: 0.2, matches: [] } }, { match: { score: 0.9, matches: [] } }, { match: { score: 0.5, matches: [] } }];",
           "    sortSearchResults(searchResults);",
+          '    const matchesElement = document.createElement("div");',
+          '    renderMatches(matchesElement, "alpha beta", [[0, 5], [6, 10]]);',
+          '    const offsetElement = document.createElement("div");',
+          '    renderResults(offsetElement, "beta", { score: 1, matches: [[6, 10]] }, 6);',
+          '    const plainElement = document.createElement("div");',
+          '    renderMatches(plainElement, "plain", null);',
           "    globalThis.__threadleafRuntimeLedgerUtilityProbe = {",
           '      pathOnly: parseLinktext("Folder/Note"),',
           '      nestedSubpath: parseLinktext("Folder/Note#Heading#Nested"),',
@@ -418,6 +425,10 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           "      cacheVisited,",
           "      cacheStopped,",
           "      sortedScores: searchResults.map((result) => result.match.score),",
+          "      matchesHtml: matchesElement.innerHTML,",
+          "      matchesText: matchesElement.textContent,",
+          "      offsetHtml: offsetElement.innerHTML,",
+          "      plainHtml: plainElement.innerHTML,",
           "    };",
           "  }",
           "}",
@@ -425,40 +436,47 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           "",
         ].join("\n"),
       );
-      const host = new PluginHost(fixtureVault);
-      try {
-        await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
-        expect(
-          (globalThis as { __threadleafRuntimeLedgerUtilityProbe?: unknown })
-            .__threadleafRuntimeLedgerUtilityProbe,
-        ).toEqual({
-          pathOnly: { path: "Folder/Note", subpath: "" },
-          nestedSubpath: { path: "Folder/Note", subpath: "#Heading#Nested" },
-          blockOnly: { path: "", subpath: "#^block-id" },
-          linkpath: "Folder/Note",
-          normalized: "Folder/Note.md",
-          fuzzyMatches: [
-            [0, 1],
-            [5, 7],
-          ],
-          fuzzyNoMatch: true,
-          fuzzyEmpty: { score: 0, matches: [] },
-          simpleMatches: [
-            [0, 5],
-            [6, 10],
-            [11, 16],
-          ],
-          simpleNoMatch: true,
-          simpleEmpty: { score: 0, matches: [] },
-          visitedRefs: ["one", "two"],
-          refsStopped: true,
-          cacheVisited: ["link", "embed"],
-          cacheStopped: false,
-          sortedScores: [0.9, 0.5, 0.2],
-        });
-      } finally {
-        await host.close();
-      }
+      await withTestDocument(async () => {
+        const host = new PluginHost(fixtureVault);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerUtilityProbe?: unknown })
+              .__threadleafRuntimeLedgerUtilityProbe,
+          ).toEqual({
+            pathOnly: { path: "Folder/Note", subpath: "" },
+            nestedSubpath: { path: "Folder/Note", subpath: "#Heading#Nested" },
+            blockOnly: { path: "", subpath: "#^block-id" },
+            linkpath: "Folder/Note",
+            normalized: "Folder/Note.md",
+            fuzzyMatches: [
+              [0, 1],
+              [5, 7],
+            ],
+            fuzzyNoMatch: true,
+            fuzzyEmpty: { score: 0, matches: [] },
+            simpleMatches: [
+              [0, 5],
+              [6, 10],
+              [11, 16],
+            ],
+            simpleNoMatch: true,
+            simpleEmpty: { score: 0, matches: [] },
+            visitedRefs: ["one", "two"],
+            refsStopped: true,
+            cacheVisited: ["link", "embed"],
+            cacheStopped: false,
+            sortedScores: [0.9, 0.5, 0.2],
+            matchesHtml:
+              '<span class="search-result-file-matched-text">alpha</span> <span class="search-result-file-matched-text">beta</span>',
+            matchesText: "alpha beta",
+            offsetHtml: '<span class="search-result-file-matched-text">beta</span>',
+            plainHtml: "plain",
+          });
+        } finally {
+          await host.close();
+        }
+      });
     } finally {
       Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerUtilityProbe");
       await fs.rm(sandboxPath, { recursive: true, force: true });

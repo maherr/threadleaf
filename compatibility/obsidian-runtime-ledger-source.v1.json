@@ -5485,6 +5485,76 @@
         ]
       }
     },
+    "renderMatches": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "renderMatches"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.render-search-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["search-render.highlight-ranges", "search-render.plain-text", "search-render.offset"],
+        "behaviors": [
+          {
+            "id": "search-render.highlight-ranges",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.render-search-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "search-render.plain-text",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.render-search-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "id": "search-render.offset",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.render-search-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "renderResults": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "renderResults"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.render-search-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["search-render.delegates-result-matches"],
+        "behaviors": [
+          {
+            "id": "search-render.delegates-result-matches",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.render-search-utilities.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
     "iterateCacheRefs": {
       "implementation": {
         "source": "src/runtime/obsidian-compat.ts",

@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 96 (95 public, 1 internal extra)
+- Factory keys: 98 (97 public, 1 internal extra)
 
 ## Export status
 
@@ -122,9 +122,9 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | RelativeDateValue | class | missing | 3d0594b4e5ab24e2 |
 | removeIcon | function | implemented | 1b1690db3c4ed092 |
 | RenderContext | class | implemented | beb981213ad00faf |
-| renderMatches | function | missing | f868e63e141ad46b |
+| renderMatches | function | implemented | f868e63e141ad46b |
 | renderMath | function | missing | bdf8f2074b169c02 |
-| renderResults | function | missing | 4dfb992b9bec08fd |
+| renderResults | function | implemented | 4dfb992b9bec08fd |
 | request | function | missing | bbd290f3567bac5f |
 | requestUrl | function | missing | e0c2b7ee43b9a78d |
 | requireApiVersion | function | implemented | 0686387471c2904a |

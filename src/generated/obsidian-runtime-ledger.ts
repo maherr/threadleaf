@@ -14,10 +14,10 @@ export const obsidianRuntimeLedger = {
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 82,
+    "implemented": 84,
     "partial": 9,
     "unsupported": 0,
-    "missing": 67,
+    "missing": 65,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
@@ -114,6 +114,8 @@ export const obsidianRuntimeLedger = {
       "Platform",
       "prepareFuzzySearch",
       "prepareSimpleSearch",
+      "renderMatches",
+      "renderResults",
       "requireApiVersion",
       "removeIcon",
       "sanitizeHTMLToDom",
@@ -212,6 +214,8 @@ export const obsidianRuntimeLedger = {
       "Platform",
       "prepareFuzzySearch",
       "prepareSimpleSearch",
+      "renderMatches",
+      "renderResults",
       "requireApiVersion",
       "removeIcon",
       "sanitizeHTMLToDom",
@@ -4181,21 +4185,37 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:function:renderMatches:f868e63e141ad46bc0a6050bf421ff650ba83f2c7a448e1d4ad45e0084ea2c74",
       "name": "renderMatches",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "f868e63e141ad46bc0a6050bf421ff650ba83f2c7a448e1d4ad45e0084ea2c74",
       "location": {
         "line": 5416,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.render-search-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "renderMatches"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "search-render.highlight-ranges",
+        "search-render.plain-text",
+        "search-render.offset"
+      ],
+      "coveredBehaviorIds": [
+        "search-render.highlight-ranges",
+        "search-render.plain-text",
+        "search-render.offset"
+      ]
     },
     {
       "exportId": "export:function:renderMath:bdf8f2074b169c02d315058a5198110b8130966c7c21a80753d11360b4fef8ff",
@@ -4221,21 +4241,33 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:function:renderResults:4dfb992b9bec08fd958205c8a120551194177a33c1dd4a97c4021b4ad165068a",
       "name": "renderResults",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "4dfb992b9bec08fd958205c8a120551194177a33c1dd4a97c4021b4ad165068a",
       "location": {
         "line": 5428,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.render-search-utilities.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "renderResults"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "search-render.delegates-result-matches"
+      ],
+      "coveredBehaviorIds": [
+        "search-render.delegates-result-matches"
+      ]
     },
     {
       "exportId": "export:function:request:bbd290f3567bac5f36166ca6012824ca94d72e34b0c58fc459c5920e30524780",

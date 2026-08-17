@@ -2973,6 +2973,13 @@ export interface ObsidianCompatibilityModule {
   Platform: typeof Platform;
   prepareFuzzySearch: typeof prepareFuzzySearch;
   prepareSimpleSearch: typeof prepareSimpleSearch;
+  renderMatches(
+    element: HTMLElement | DocumentFragment,
+    text: string,
+    matches: SearchMatchPart[] | null,
+    offset?: number,
+  ): void;
+  renderResults(element: HTMLElement, text: string, result: SearchResult, offset?: number): void;
   requireApiVersion(version: string): boolean;
   removeIcon(id: string): void;
   sortSearchResults(results: SearchResultContainer[]): void;
@@ -3201,6 +3208,52 @@ export function removeIcon(id: string): void {
 
 export function sortSearchResults(results: SearchResultContainer[]): void {
   results.sort((left, right) => right.match.score - left.match.score);
+}
+
+function appendSearchText(element: HTMLElement | DocumentFragment, text: string): void {
+  if (text.length > 0) {
+    element.append(element.ownerDocument.createTextNode(text));
+  }
+}
+
+export function renderMatches(
+  element: HTMLElement | DocumentFragment,
+  text: string,
+  matches: SearchMatchPart[] | null,
+  offset = 0,
+): void {
+  if (!matches || matches.length === 0) {
+    appendSearchText(element, text);
+    return;
+  }
+  const normalizedOffset = Number.isFinite(offset) ? offset : 0;
+  let cursor = 0;
+  const ranges = [...matches]
+    .map(([from, to]) => [from - normalizedOffset, to - normalizedOffset] as SearchMatchPart)
+    .sort((left, right) => left[0] - right[0] || left[1] - right[1]);
+  for (const [from, to] of ranges) {
+    const start = Math.max(cursor, Math.min(text.length, Math.trunc(from)));
+    const end = Math.max(start, Math.min(text.length, Math.trunc(to)));
+    if (end <= start) {
+      continue;
+    }
+    appendSearchText(element, text.slice(cursor, start));
+    const matchElement = element.ownerDocument.createElement("span");
+    matchElement.className = "search-result-file-matched-text";
+    matchElement.textContent = text.slice(start, end);
+    element.append(matchElement);
+    cursor = end;
+  }
+  appendSearchText(element, text.slice(cursor));
+}
+
+export function renderResults(
+  element: HTMLElement,
+  text: string,
+  result: SearchResult,
+  offset = 0,
+): void {
+  renderMatches(element, text, result.matches, offset);
 }
 
 export function setIcon(parent: HTMLElement, iconId: string): void {
@@ -3571,6 +3624,8 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     Platform,
     prepareFuzzySearch,
     prepareSimpleSearch,
+    renderMatches,
+    renderResults,
     requireApiVersion,
     removeIcon,
     sanitizeHTMLToDom,
