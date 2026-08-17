@@ -790,7 +790,7 @@ function main() {
     .filter((entry) => entry.kind === "class")
     .reduce((total, entry) => total + entry.obligations.length, 0);
   if (ownMembers !== 700) fail(`own-member census is ${ownMembers}, expected 700`);
-  if (factoryKeys.length !== 87) fail(`factory census is ${factoryKeys.length}, expected 87`);
+  if (factoryKeys.length !== 88) fail(`factory census is ${factoryKeys.length}, expected 88`);
   if (
     factoryKeys.filter((key) => !runtimeExports.some((entry) => entry.name === key)).join(",") !==
     "sleep"

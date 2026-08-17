@@ -652,6 +652,104 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
     }
   });
 
+  /** @compatibility-test-id obsidian-runtime.markdown-render-family.v1 */
+  it('proves the Markdown render family through require("obsidian")', async () => {
+    await withTestDocument(async () => {
+      const sandboxPath = await fs.mkdtemp(
+        path.join(os.tmpdir(), "threadleaf-runtime-ledger-markdown-render-family-"),
+      );
+      const pluginPath = path.join(sandboxPath, "markdown-render-family-ledger-fixture");
+      await fs.mkdir(pluginPath, { recursive: true });
+      const manifestPath = path.join(pluginPath, "manifest.json");
+      const bundlePath = path.join(pluginPath, "main.js");
+      const previousManifest = await fs.readFile(manifestPath).catch(() => null);
+      const previousBundle = await fs.readFile(bundlePath).catch(() => null);
+      try {
+        await fs.writeFile(
+          manifestPath,
+          JSON.stringify({
+            id: "markdown-render-family-ledger-fixture",
+            name: "Markdown render family ledger fixture",
+            version: "1.0.0",
+          }),
+        );
+        await fs.writeFile(
+          bundlePath,
+          [
+            'const { Component, MarkdownPreviewRenderer, MarkdownRenderChild, MarkdownRenderer, Plugin, TFile } = require("obsidian");',
+            "class LedgerRenderer extends MarkdownRenderer {",
+            '  constructor(app, element) { super(element, app); this.fixtureFile = new TFile("Notes/Fixture.md", app.vault); }',
+            "  get file() { return this.fixtureFile; }",
+            "}",
+            "class LedgerPlugin extends Plugin {",
+            "  async onload() {",
+            '    const markdown = "---\\ntitle: Example\\n---\\n```ThReAdLeAf\\nalpha\\n```\\n";',
+            "    const calls = [];",
+            '    const codeProcessor = MarkdownPreviewRenderer.createCodeBlockPostProcessor(" threadleaf ", async (source, element, context) => { element.dataset.code = source + "|" + context.sourcePath; });',
+            '    const postProcessor = (element, context) => { calls.push(context.sourcePath + "|" + context.frontmatter.title); element.dataset.staticPost = "applied"; };',
+            "    MarkdownPreviewRenderer.registerPostProcessor(codeProcessor, 10);",
+            "    MarkdownPreviewRenderer.registerPostProcessor(postProcessor, 20);",
+            '    const element = document.createElement("article");',
+            '    await MarkdownRenderer.render(this.app, markdown, element, "Notes/Fixture.md", new Component());',
+            '    const renderer = new LedgerRenderer(this.app, document.createElement("article"));',
+            '    const deprecated = document.createElement("article");',
+            "    MarkdownPreviewRenderer.unregisterPostProcessor(codeProcessor);",
+            "    MarkdownPreviewRenderer.unregisterPostProcessor(postProcessor);",
+            '    const afterUnregister = document.createElement("article");',
+            '    await MarkdownRenderer.render(this.app, markdown, afterUnregister, "Notes/Fixture.md", new Component());',
+            '    await MarkdownRenderer.renderMarkdown("**deprecated**", deprecated, "Notes/Deprecated.md", new Component());',
+            "    globalThis.__threadleafRuntimeLedgerMarkdownRenderFamilyProbe = {",
+            "      calls,",
+            '      code: element.querySelector(".markdown-code-block")?.dataset.code,',
+            '      codeClass: element.querySelector(".markdown-code-block")?.className,',
+            "      staticPost: element.dataset.staticPost,",
+            "      sortOrder: postProcessor.sortOrder,",
+            '      afterUnregister: { staticPost: afterUnregister.dataset.staticPost, hasPre: afterUnregister.querySelector("pre") !== null },',
+            "      deprecatedHtml: deprecated.innerHTML,",
+            "      renderer: { app: renderer.app === this.app, file: renderer.file.path, hoverPopover: renderer.hoverPopover, child: renderer instanceof MarkdownRenderChild },",
+            "    };",
+            "  }",
+            "}",
+            "module.exports = LedgerPlugin;",
+            "",
+          ].join("\n"),
+        );
+        const host = new PluginHost(fixtureVault);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerMarkdownRenderFamilyProbe?: unknown })
+              .__threadleafRuntimeLedgerMarkdownRenderFamilyProbe,
+          ).toEqual({
+            calls: ["Notes/Fixture.md|Example"],
+            code: "alpha|Notes/Fixture.md",
+            codeClass: "markdown-code-block",
+            staticPost: "applied",
+            sortOrder: 20,
+            afterUnregister: { staticPost: undefined, hasPre: true },
+            deprecatedHtml: "<p><strong>deprecated</strong></p>\n",
+            renderer: { app: true, file: "Notes/Fixture.md", hoverPopover: null, child: true },
+          });
+        } finally {
+          await host.close();
+        }
+      } finally {
+        if (previousManifest === null) {
+          await fs.rm(manifestPath, { force: true });
+        } else {
+          await fs.writeFile(manifestPath, previousManifest);
+        }
+        if (previousBundle === null) {
+          await fs.rm(bundlePath, { force: true });
+        } else {
+          await fs.writeFile(bundlePath, previousBundle);
+        }
+        await fs.rm(sandboxPath, { recursive: true, force: true });
+      }
+    });
+    Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerMarkdownRenderFamilyProbe");
+  });
+
   /** @compatibility-test-id obsidian-runtime.utility-behaviors.v1 */
   it('proves debounce control and tooltip metadata through require("obsidian")', async () => {
     const sandboxPath = await fs.mkdtemp(

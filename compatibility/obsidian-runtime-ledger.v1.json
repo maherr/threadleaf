@@ -13,15 +13,15 @@
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 64,
+    "implemented": 66,
     "partial": 13,
     "unsupported": 0,
-    "missing": 81,
+    "missing": 79,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 401
+    "implementedObligations": 409
   },
   "factory": {
     "keys": [
@@ -54,6 +54,7 @@
       "ItemView",
       "Keymap",
       "MarkdownView",
+      "MarkdownPreviewRenderer",
       "MarkdownRenderer",
       "MarkdownRenderChild",
       "MetadataCache",
@@ -143,6 +144,7 @@
       "ItemView",
       "Keymap",
       "MarkdownView",
+      "MarkdownPreviewRenderer",
       "MarkdownRenderer",
       "MarkdownRenderChild",
       "MetadataCache",
@@ -2526,23 +2528,39 @@
       "exportId": "export:class:MarkdownPreviewRenderer:c2230cc5f92f968f3933975e8fcb321ed19c6367fd4de1957bf2a904f94f7431",
       "name": "MarkdownPreviewRenderer",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "c2230cc5f92f968f3933975e8fcb321ed19c6367fd4de1957bf2a904f94f7431",
       "location": {
         "line": 4036,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.markdown-render-family.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "MarkdownPreviewRenderer"
+      },
       "obligationIds": [
         "obligation:export:class:MarkdownPreviewRenderer:c2230cc5f92f968f3933975e8fcb321ed19c6367fd4de1957bf2a904f94f7431:8041964d50209c528519030eeb906359853a58e799dac5f4f0203d1c680faaec",
         "obligation:export:class:MarkdownPreviewRenderer:c2230cc5f92f968f3933975e8fcb321ed19c6367fd4de1957bf2a904f94f7431:d93e976781e689bc31323a52cb85b58c19aaeacc3a5017fd153f9acfac0abe5d",
         "obligation:export:class:MarkdownPreviewRenderer:c2230cc5f92f968f3933975e8fcb321ed19c6367fd4de1957bf2a904f94f7431:4d0b38d6cd43a67c1bdec89f8689e17b47ed34dcf9311611cd4c4f166a0d2a93"
       ],
       "heritageEdgeIds": [],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:MarkdownPreviewRenderer:c2230cc5f92f968f3933975e8fcb321ed19c6367fd4de1957bf2a904f94f7431:8041964d50209c528519030eeb906359853a58e799dac5f4f0203d1c680faaec",
+        "obligation:export:class:MarkdownPreviewRenderer:c2230cc5f92f968f3933975e8fcb321ed19c6367fd4de1957bf2a904f94f7431:d93e976781e689bc31323a52cb85b58c19aaeacc3a5017fd153f9acfac0abe5d",
+        "obligation:export:class:MarkdownPreviewRenderer:c2230cc5f92f968f3933975e8fcb321ed19c6367fd4de1957bf2a904f94f7431:4d0b38d6cd43a67c1bdec89f8689e17b47ed34dcf9311611cd4c4f166a0d2a93"
+      ],
+      "coveredObligationSignatureHashes": [
+        "8041964d50209c528519030eeb906359853a58e799dac5f4f0203d1c680faaec",
+        "d93e976781e689bc31323a52cb85b58c19aaeacc3a5017fd153f9acfac0abe5d",
+        "4d0b38d6cd43a67c1bdec89f8689e17b47ed34dcf9311611cd4c4f166a0d2a93"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -2622,15 +2640,23 @@
       "exportId": "export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02",
       "name": "MarkdownRenderer",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02",
       "location": {
         "line": 4121,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.markdown-render-family.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "MarkdownRenderer"
+      },
       "obligationIds": [
         "obligation:export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02:1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
         "obligation:export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02:1d5be4619631f1cf322a27ccc9d429db122f7582255dced2e458977cb4f00fe0",
@@ -2643,8 +2669,20 @@
         "heritage:export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02:7c3e032ffd0e7042c8947e738b8f121f2c8a4d67bc68027ccc759b1a16c26770",
         "heritage:export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02:be22c9544ffbdac9bbe5fe710e1b4dfc5de8aa9afb0040fabb2c0d003ec6adda"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02:1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
+        "obligation:export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02:1d5be4619631f1cf322a27ccc9d429db122f7582255dced2e458977cb4f00fe0",
+        "obligation:export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02:34cc6c02da108492321eb44be10ecfa1c593ec872ea854b1e28b285baaaf2ce6",
+        "obligation:export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02:a8c1c03080b3ff5a18a2baaa7888405c68604a49e3bf35ea885e294a9da143a2",
+        "obligation:export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02:4cc4f71bfcc287cde82f1444631c8608ce9fd5218eaeed48e86bdee918563467"
+      ],
+      "coveredObligationSignatureHashes": [
+        "1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
+        "1d5be4619631f1cf322a27ccc9d429db122f7582255dced2e458977cb4f00fe0",
+        "34cc6c02da108492321eb44be10ecfa1c593ec872ea854b1e28b285baaaf2ce6",
+        "a8c1c03080b3ff5a18a2baaa7888405c68604a49e3bf35ea885e294a9da143a2",
+        "4cc4f71bfcc287cde82f1444631c8608ce9fd5218eaeed48e86bdee918563467"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -11224,7 +11262,7 @@
     {
       "exportId": "export:class:MarkdownPreviewRenderer:c2230cc5f92f968f3933975e8fcb321ed19c6367fd4de1957bf2a904f94f7431",
       "name": "MarkdownPreviewRenderer",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:MarkdownPreviewRenderer:c2230cc5f92f968f3933975e8fcb321ed19c6367fd4de1957bf2a904f94f7431:8041964d50209c528519030eeb906359853a58e799dac5f4f0203d1c680faaec",
@@ -11279,8 +11317,16 @@
         }
       ],
       "heritageEdges": [],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:MarkdownPreviewRenderer:c2230cc5f92f968f3933975e8fcb321ed19c6367fd4de1957bf2a904f94f7431:8041964d50209c528519030eeb906359853a58e799dac5f4f0203d1c680faaec",
+        "obligation:export:class:MarkdownPreviewRenderer:c2230cc5f92f968f3933975e8fcb321ed19c6367fd4de1957bf2a904f94f7431:d93e976781e689bc31323a52cb85b58c19aaeacc3a5017fd153f9acfac0abe5d",
+        "obligation:export:class:MarkdownPreviewRenderer:c2230cc5f92f968f3933975e8fcb321ed19c6367fd4de1957bf2a904f94f7431:4d0b38d6cd43a67c1bdec89f8689e17b47ed34dcf9311611cd4c4f166a0d2a93"
+      ],
+      "coveredObligationSignatureHashes": [
+        "8041964d50209c528519030eeb906359853a58e799dac5f4f0203d1c680faaec",
+        "d93e976781e689bc31323a52cb85b58c19aaeacc3a5017fd153f9acfac0abe5d",
+        "4d0b38d6cd43a67c1bdec89f8689e17b47ed34dcf9311611cd4c4f166a0d2a93"
+      ]
     },
     {
       "exportId": "export:class:MarkdownPreviewView:d2b4b65cecca9dfddae15459d1d3db16d9f4e02b986e6a6ff4f0e5d9d4b0b81f",
@@ -11503,7 +11549,7 @@
     {
       "exportId": "export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02",
       "name": "MarkdownRenderer",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02:1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
@@ -11619,8 +11665,20 @@
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02:1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
+        "obligation:export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02:1d5be4619631f1cf322a27ccc9d429db122f7582255dced2e458977cb4f00fe0",
+        "obligation:export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02:34cc6c02da108492321eb44be10ecfa1c593ec872ea854b1e28b285baaaf2ce6",
+        "obligation:export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02:a8c1c03080b3ff5a18a2baaa7888405c68604a49e3bf35ea885e294a9da143a2",
+        "obligation:export:class:MarkdownRenderer:b1aa10784da3ab860400eb2defddf12550fee025cc5f8e13a6f3ea44a9c47a02:4cc4f71bfcc287cde82f1444631c8608ce9fd5218eaeed48e86bdee918563467"
+      ],
+      "coveredObligationSignatureHashes": [
+        "1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
+        "1d5be4619631f1cf322a27ccc9d429db122f7582255dced2e458977cb4f00fe0",
+        "34cc6c02da108492321eb44be10ecfa1c593ec872ea854b1e28b285baaaf2ce6",
+        "a8c1c03080b3ff5a18a2baaa7888405c68604a49e3bf35ea885e294a9da143a2",
+        "4cc4f71bfcc287cde82f1444631c8608ce9fd5218eaeed48e86bdee918563467"
+      ]
     },
     {
       "exportId": "export:class:MarkdownView:dae51444710c4853ad83bdb8e95431ae72a97bedfcc58684fb53a93cb269b715",

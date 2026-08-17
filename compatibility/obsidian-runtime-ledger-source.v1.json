@@ -3523,6 +3523,110 @@
         ]
       }
     },
+    "MarkdownPreviewRenderer": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "MarkdownPreviewRenderer"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.markdown-render-family.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "8041964d50209c528519030eeb906359853a58e799dac5f4f0203d1c680faaec",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.markdown-render-family.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "d93e976781e689bc31323a52cb85b58c19aaeacc3a5017fd153f9acfac0abe5d",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.markdown-render-family.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "4d0b38d6cd43a67c1bdec89f8689e17b47ed34dcf9311611cd4c4f166a0d2a93",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.markdown-render-family.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "MarkdownRenderer": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "MarkdownRenderer"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.markdown-render-family.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.markdown-render-family.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "1d5be4619631f1cf322a27ccc9d429db122f7582255dced2e458977cb4f00fe0",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.markdown-render-family.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "34cc6c02da108492321eb44be10ecfa1c593ec872ea854b1e28b285baaaf2ce6",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.markdown-render-family.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "a8c1c03080b3ff5a18a2baaa7888405c68604a49e3bf35ea885e294a9da143a2",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.markdown-render-family.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "4cc4f71bfcc287cde82f1444631c8608ce9fd5218eaeed48e86bdee918563467",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.markdown-render-family.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
     "MarkdownView": {
       "implementation": {
         "source": "src/runtime/obsidian-ui-compat.ts",

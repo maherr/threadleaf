@@ -2075,8 +2075,139 @@ const compatibilityMarkdown = new MarkdownIt({
   typographer: false,
 });
 
+interface MarkdownPreviewProcessorRegistration {
+  defaultSortOrder: number;
+  processor: MarkdownPostProcessor;
+  sequence: number;
+}
+
+let activeCompatibilityApp: App | null = null;
+
+function validateMarkdownPreviewSortOrder(value: number): number {
+  if (!Number.isFinite(value) || !Number.isInteger(value)) {
+    throw new Error("Markdown processor sort order must be a finite integer.");
+  }
+  return value;
+}
+
+function markdownPreviewSortOrder(registration: MarkdownPreviewProcessorRegistration): number {
+  const candidate = registration.processor.sortOrder;
+  return candidate === undefined
+    ? registration.defaultSortOrder
+    : validateMarkdownPreviewSortOrder(candidate);
+}
+
+function markdownPreviewCodeBlockLanguage(codeBlock: HTMLElement): string | null {
+  const languageClass = [...codeBlock.classList].find((className) =>
+    className.toLowerCase().startsWith("language-"),
+  );
+  if (!languageClass) {
+    return null;
+  }
+  const language = languageClass.slice("language-".length).trim().toLowerCase();
+  return language || null;
+}
+
 // biome-ignore lint/complexity/noStaticOnlyClass: community plugins instantiate this public API by name.
-export class MarkdownRenderer {
+export class MarkdownPreviewRenderer {
+  private static readonly registrations: MarkdownPreviewProcessorRegistration[] = [];
+  private static nextSequence = 0;
+
+  static registerPostProcessor(postProcessor: MarkdownPostProcessor, sortOrder = 0): void {
+    if (typeof postProcessor !== "function") {
+      throw new Error("Markdown post processor registration requires a function.");
+    }
+    const defaultSortOrder = validateMarkdownPreviewSortOrder(sortOrder);
+    postProcessor.sortOrder = defaultSortOrder;
+    MarkdownPreviewRenderer.registrations.push({
+      defaultSortOrder,
+      processor: postProcessor,
+      sequence: MarkdownPreviewRenderer.nextSequence++,
+    });
+  }
+
+  static unregisterPostProcessor(postProcessor: MarkdownPostProcessor): void {
+    for (let index = MarkdownPreviewRenderer.registrations.length - 1; index >= 0; index -= 1) {
+      if (MarkdownPreviewRenderer.registrations[index]?.processor === postProcessor) {
+        MarkdownPreviewRenderer.registrations.splice(index, 1);
+      }
+    }
+  }
+
+  static createCodeBlockPostProcessor(
+    language: string,
+    handler: MarkdownCodeBlockProcessor,
+  ): MarkdownPostProcessor {
+    const normalizedLanguage = language.trim().toLowerCase();
+    if (!normalizedLanguage) {
+      throw new Error("Markdown code block processor registration requires a language.");
+    }
+    if (typeof handler !== "function") {
+      throw new Error("Markdown code block processor registration requires a function.");
+    }
+    return (async (element: HTMLElement, context: MarkdownPostProcessorContext): Promise<void> => {
+      const candidates =
+        element.tagName.toLowerCase() === "code" && element.parentElement?.tagName === "PRE"
+          ? [element]
+          : [...element.querySelectorAll<HTMLElement>("pre > code")];
+      for (const codeBlock of candidates) {
+        if (markdownPreviewCodeBlockLanguage(codeBlock) !== normalizedLanguage) {
+          continue;
+        }
+        const preformatted = codeBlock.parentElement;
+        if (!preformatted) {
+          continue;
+        }
+        const replacement = element.ownerDocument.createElement("div");
+        replacement.className = "markdown-code-block";
+        preformatted.replaceWith(replacement);
+        const source = codeBlock.textContent?.replace(/(?:\r\n|\r|\n)$/u, "") ?? "";
+        await handler(source, replacement, context);
+      }
+    }) as MarkdownPostProcessor;
+  }
+
+  static async runPostProcessors(
+    element: HTMLElement,
+    context: MarkdownPostProcessorContext,
+  ): Promise<void> {
+    const registrations = [...MarkdownPreviewRenderer.registrations].sort(
+      (left, right) =>
+        markdownPreviewSortOrder(left) - markdownPreviewSortOrder(right) ||
+        left.sequence - right.sequence,
+    );
+    for (const registration of registrations) {
+      await registration.processor(element, context);
+    }
+  }
+}
+
+export abstract class MarkdownRenderer extends MarkdownRenderChild {
+  readonly app: App;
+  hoverPopover: unknown | null = null;
+
+  constructor(containerEl: HTMLElement, app: App | null = activeCompatibilityApp) {
+    super(containerEl);
+    if (!app) {
+      throw new Error("MarkdownRenderer requires an active compatibility App.");
+    }
+    this.app = app;
+  }
+
+  abstract get file(): TFile;
+
+  static async renderMarkdown(
+    markdown: string,
+    element: HTMLElement,
+    sourcePath: string,
+    component: Component,
+  ): Promise<void> {
+    if (!activeCompatibilityApp) {
+      throw new Error("MarkdownRenderer.renderMarkdown requires an active compatibility App.");
+    }
+    await MarkdownRenderer.render(activeCompatibilityApp, markdown, element, sourcePath, component);
+  }
+
   static async render(
     app: App,
     markdown: string,
@@ -2142,6 +2273,7 @@ export class MarkdownRenderer {
       },
     };
     await app.compatibility.runMarkdownPostProcessors(element, context);
+    await MarkdownPreviewRenderer.runPostProcessors(element, context);
   }
 }
 
@@ -2295,6 +2427,7 @@ export class App {
   private readonly pluginModals = new Map<string, Set<{ close(): void }>>();
 
   constructor(vault: Vault, commands: CommandRegistry, notices: NoticeBus) {
+    activeCompatibilityApp = this;
     this.vault = vault;
     this.fileManager = new FileManager(vault);
     this.metadataCache = new MetadataCache(vault);
@@ -2701,6 +2834,7 @@ export interface ObsidianCompatibilityModule {
   ItemView: typeof ItemView;
   Keymap: typeof Keymap;
   MarkdownView: typeof MarkdownView;
+  MarkdownPreviewRenderer: typeof MarkdownPreviewRenderer;
   MarkdownRenderer: typeof MarkdownRenderer;
   MarkdownRenderChild: typeof MarkdownRenderChild;
   MetadataCache: typeof MetadataCache;
@@ -3201,6 +3335,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     ItemView,
     Keymap,
     MarkdownView,
+    MarkdownPreviewRenderer,
     MarkdownRenderer,
     MarkdownRenderChild,
     MetadataCache,
