@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 118 (117 public, 1 internal extra)
+- Factory keys: 128 (127 public, 1 internal extra)
 
 ## Export status
 
@@ -37,12 +37,12 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | Component | class | implemented | 66c65c8e55598f6c |
 | ConfirmationButton | class | implemented | b3100e2fe15dddf0 |
 | ConfirmationModal | class | implemented | 16d786038936266a |
-| DateValue | class | missing | 45dce24b565b761c |
+| DateValue | class | implemented | 45dce24b565b761c |
 | debounce | function | implemented | a72e0eb10fc8a651 |
 | displayTooltip | function | missing | dee2b380f1fef0a9 |
 | DisplayValueComponent | class | implemented | 8eadc4fafb416556 |
 | DropdownComponent | class | implemented | 563d13fef3a6b00c |
-| DurationValue | class | missing | 1b6e3eccbd6b278b |
+| DurationValue | class | implemented | 1b6e3eccbd6b278b |
 | EditableFileView | class | missing | c32178dc1207763b |
 | Editor | class | implemented | 31acadd4b10e478b |
 | editorEditorField | variable | missing | 916f430eb29e5f68 |
@@ -68,14 +68,14 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | hexToArrayBuffer | function | implemented | dd08182366ea08da |
 | HoverPopover | class | missing | d8787e67d7235c2c |
 | htmlToMarkdown | function | implemented | 22ec65ef974aafbe |
-| HTMLValue | class | missing | 2f7862bd0bf0879d |
-| IconValue | class | missing | 16f7cb525be03222 |
-| ImageValue | class | missing | c20741072bf8a144 |
+| HTMLValue | class | partial | 2f7862bd0bf0879d |
+| IconValue | class | partial | 16f7cb525be03222 |
+| ImageValue | class | partial | c20741072bf8a144 |
 | ItemView | class | implemented | eed72ec50d5d3f3c |
 | iterateCacheRefs | function | implemented | fc3366f3dd699432 |
 | iterateRefs | function | implemented | 882efbf3735f3d6a |
 | Keymap | class | implemented | f1db66e779392942 |
-| LinkValue | class | missing | 9b8b264f5a8cf96c |
+| LinkValue | class | implemented | 9b8b264f5a8cf96c |
 | ListValue | class | missing | 22393019e553322f |
 | livePreviewState | variable | missing | 33974b4ed1375f2b |
 | loadMathJax | function | missing | b98165b8c369b4a5 |
@@ -118,8 +118,8 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | PrimitiveValue | class | implemented | 8a6cb580619668a6 |
 | ProgressBarComponent | class | implemented | 765be3f5a5d3693b |
 | QueryController | class | missing | 8687a7aa105e69dd |
-| RegExpValue | class | missing | edb0177eb288015b |
-| RelativeDateValue | class | missing | 3d0594b4e5ab24e2 |
+| RegExpValue | class | implemented | edb0177eb288015b |
+| RelativeDateValue | class | partial | 3d0594b4e5ab24e2 |
 | removeIcon | function | implemented | 1b1690db3c4ed092 |
 | RenderContext | class | implemented | beb981213ad00faf |
 | renderMatches | function | implemented | f868e63e141ad46b |
@@ -148,7 +148,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | stripHeadingForLink | function | missing | 609f52c3520cfb71 |
 | SuggestModal | class | implemented | 4282e1a8e74dc8a6 |
 | TAbstractFile | class | implemented | 33e1dba7bf6c6e2f |
-| TagValue | class | missing | c6c6bafd2fd50797 |
+| TagValue | class | implemented | c6c6bafd2fd50797 |
 | Tasks | class | implemented | 7471c3f0a015a76d |
 | TextAreaComponent | class | implemented | 82022a25c1d9b869 |
 | TextComponent | class | implemented | 4f2a68c9738f82e5 |
@@ -156,7 +156,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | TFile | class | implemented | 059690fe62a6783f |
 | TFolder | class | implemented | 46f08a943675f948 |
 | ToggleComponent | class | implemented | a39eaf18ee6900de |
-| UrlValue | class | missing | 23e0604a73cec0f1 |
+| UrlValue | class | partial | 23e0604a73cec0f1 |
 | Value | class | implemented | 7c58c01f8b955627 |
 | ValueComponent | class | implemented | 529ce7aae6a57c84 |
 | Vault | class | partial | 8041bc89ef9d718b |

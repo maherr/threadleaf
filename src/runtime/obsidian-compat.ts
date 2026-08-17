@@ -75,11 +75,21 @@ import {
 } from "./obsidian-ui-compat";
 import {
   BooleanValue,
+  DateValue,
+  DurationValue,
+  HTMLValue,
+  IconValue,
+  ImageValue,
+  LinkValue,
   NotNullValue,
   NullValue,
   NumberValue,
   PrimitiveValue,
+  RegExpValue,
+  RelativeDateValue,
   StringValue,
+  TagValue,
+  UrlValue,
   Value,
 } from "./obsidian-values";
 import {
@@ -3285,6 +3295,8 @@ export interface ObsidianCompatibilityModule {
   ConfirmationModal: typeof ConfirmationModal;
   ColorComponent: typeof ColorComponent;
   Component: typeof Component;
+  DateValue: typeof DateValue;
+  DurationValue: typeof DurationValue;
   DropdownComponent: typeof DropdownComponent;
   DisplayValueComponent: typeof DisplayValueComponent;
   Editor: typeof Editor;
@@ -3302,8 +3314,12 @@ export interface ObsidianCompatibilityModule {
   getLinkpath: typeof getLinkpath;
   hexToArrayBuffer: typeof hexToArrayBuffer;
   htmlToMarkdown: typeof htmlToMarkdown;
+  HTMLValue: typeof HTMLValue;
+  IconValue: typeof IconValue;
+  ImageValue: typeof ImageValue;
   ItemView: typeof ItemView;
   Keymap: typeof Keymap;
+  LinkValue: typeof LinkValue;
   MarkdownView: typeof MarkdownView;
   MarkdownEditView: typeof MarkdownEditView;
   MarkdownPreviewView: typeof MarkdownPreviewView;
@@ -3322,6 +3338,8 @@ export interface ObsidianCompatibilityModule {
   PluginSettingTab: typeof PluginSettingTab;
   PopoverSuggest: typeof PopoverSuggest;
   ProgressBarComponent: typeof ProgressBarComponent;
+  RegExpValue: typeof RegExpValue;
+  RelativeDateValue: typeof RelativeDateValue;
   RenderContext: typeof RenderContext;
   Scope: typeof Scope;
   SearchComponent: typeof SearchComponent;
@@ -3340,6 +3358,7 @@ export interface ObsidianCompatibilityModule {
   TextFileView: typeof TextFileView;
   TextAreaComponent: typeof TextAreaComponent;
   TextComponent: typeof TextComponent;
+  TagValue: typeof TagValue;
   ToggleComponent: typeof ToggleComponent;
   ValueComponent: typeof ValueComponent;
   BooleanValue: typeof BooleanValue;
@@ -3348,6 +3367,7 @@ export interface ObsidianCompatibilityModule {
   NumberValue: typeof NumberValue;
   PrimitiveValue: typeof PrimitiveValue;
   StringValue: typeof StringValue;
+  UrlValue: typeof UrlValue;
   Value: typeof Value;
   View: typeof View;
   Vault: typeof Vault;
@@ -3956,6 +3976,8 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     ConfirmationModal,
     ColorComponent,
     Component,
+    DateValue,
+    DurationValue,
     debounce,
     DropdownComponent,
     DisplayValueComponent,
@@ -3972,8 +3994,12 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     getFrontMatterInfo,
     getLinkpath,
     hexToArrayBuffer,
+    HTMLValue,
     ItemView,
+    IconValue,
+    ImageValue,
     Keymap,
+    LinkValue,
     MarkdownView,
     MarkdownEditView,
     MarkdownPreviewView,
@@ -3998,6 +4024,8 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     PluginSettingTab,
     PopoverSuggest,
     ProgressBarComponent,
+    RegExpValue,
+    RelativeDateValue,
     RenderContext,
     Scope,
     SearchComponent,
@@ -4016,6 +4044,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     TextFileView,
     TextAreaComponent,
     TextComponent,
+    TagValue,
     ToggleComponent,
     ValueComponent,
     BooleanValue,
@@ -4024,6 +4053,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     NumberValue,
     PrimitiveValue,
     StringValue,
+    UrlValue,
     Value,
     Vault,
     View,

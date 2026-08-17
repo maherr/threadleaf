@@ -13,15 +13,15 @@
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 108,
-    "partial": 8,
+    "implemented": 113,
+    "partial": 13,
     "unsupported": 0,
-    "missing": 42,
+    "missing": 32,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 609
+    "implementedObligations": 624
   },
   "factory": {
     "keys": [
@@ -38,6 +38,8 @@
       "ConfirmationModal",
       "ColorComponent",
       "Component",
+      "DateValue",
+      "DurationValue",
       "debounce",
       "DropdownComponent",
       "DisplayValueComponent",
@@ -54,8 +56,12 @@
       "getFrontMatterInfo",
       "getLinkpath",
       "hexToArrayBuffer",
+      "HTMLValue",
       "ItemView",
+      "IconValue",
+      "ImageValue",
       "Keymap",
+      "LinkValue",
       "MarkdownView",
       "MarkdownEditView",
       "MarkdownPreviewView",
@@ -80,6 +86,8 @@
       "PluginSettingTab",
       "PopoverSuggest",
       "ProgressBarComponent",
+      "RegExpValue",
+      "RelativeDateValue",
       "RenderContext",
       "Scope",
       "SearchComponent",
@@ -98,6 +106,7 @@
       "TextFileView",
       "TextAreaComponent",
       "TextComponent",
+      "TagValue",
       "ToggleComponent",
       "ValueComponent",
       "BooleanValue",
@@ -106,6 +115,7 @@
       "NumberValue",
       "PrimitiveValue",
       "StringValue",
+      "UrlValue",
       "Value",
       "Vault",
       "View",
@@ -158,6 +168,8 @@
       "ConfirmationModal",
       "ColorComponent",
       "Component",
+      "DateValue",
+      "DurationValue",
       "debounce",
       "DropdownComponent",
       "DisplayValueComponent",
@@ -174,8 +186,12 @@
       "getFrontMatterInfo",
       "getLinkpath",
       "hexToArrayBuffer",
+      "HTMLValue",
       "ItemView",
+      "IconValue",
+      "ImageValue",
       "Keymap",
+      "LinkValue",
       "MarkdownView",
       "MarkdownEditView",
       "MarkdownPreviewView",
@@ -200,6 +216,8 @@
       "PluginSettingTab",
       "PopoverSuggest",
       "ProgressBarComponent",
+      "RegExpValue",
+      "RelativeDateValue",
       "RenderContext",
       "Scope",
       "SearchComponent",
@@ -218,6 +236,7 @@
       "TextFileView",
       "TextAreaComponent",
       "TextComponent",
+      "TagValue",
       "ToggleComponent",
       "ValueComponent",
       "BooleanValue",
@@ -226,6 +245,7 @@
       "NumberValue",
       "PrimitiveValue",
       "StringValue",
+      "UrlValue",
       "Value",
       "Vault",
       "View",
@@ -1161,15 +1181,23 @@
       "exportId": "export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202",
       "name": "DateValue",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202",
       "location": {
         "line": 2169,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.value-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-values.ts",
+        "exportName": "DateValue"
+      },
       "obligationIds": [
         "obligation:export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202:82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
         "obligation:export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202:530cf2faf0868dd905e1d714cfc591eb6484019684965c10a359278bc3c14941",
@@ -1180,8 +1208,20 @@
       "heritageEdgeIds": [
         "heritage:export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202:8a36595005a42ef2eae5a46fc0d0e7eb707917fe8369b9195508c3a632626220"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202:82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
+        "obligation:export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202:530cf2faf0868dd905e1d714cfc591eb6484019684965c10a359278bc3c14941",
+        "obligation:export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202:908448410ccb2484f303fb0589cb748e3a7cf9f830d6287de61321e8e64629e3",
+        "obligation:export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202:fa47340c997de2c935ce5e15a4ca55f947b0329f3dc722b63a54bfbb5cce46ff",
+        "obligation:export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202:08275bf36608a8308b01b42a0d11a269c5272841b39d2e9024ab4e3ebf45211d"
+      ],
+      "coveredObligationSignatureHashes": [
+        "82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
+        "530cf2faf0868dd905e1d714cfc591eb6484019684965c10a359278bc3c14941",
+        "908448410ccb2484f303fb0589cb748e3a7cf9f830d6287de61321e8e64629e3",
+        "fa47340c997de2c935ce5e15a4ca55f947b0329f3dc722b63a54bfbb5cce46ff",
+        "08275bf36608a8308b01b42a0d11a269c5272841b39d2e9024ab4e3ebf45211d"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -1345,15 +1385,23 @@
       "exportId": "export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202",
       "name": "DurationValue",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202",
       "location": {
         "line": 2349,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.value-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-values.ts",
+        "exportName": "DurationValue"
+      },
       "obligationIds": [
         "obligation:export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202:82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
         "obligation:export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202:fa47340c997de2c935ce5e15a4ca55f947b0329f3dc722b63a54bfbb5cce46ff",
@@ -1365,8 +1413,22 @@
       "heritageEdgeIds": [
         "heritage:export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202:8a36595005a42ef2eae5a46fc0d0e7eb707917fe8369b9195508c3a632626220"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202:82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
+        "obligation:export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202:fa47340c997de2c935ce5e15a4ca55f947b0329f3dc722b63a54bfbb5cce46ff",
+        "obligation:export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202:8b3b92b73eca54ef14770c2cb5611bea3d543567eec9264cba3bf2104bce9f3e",
+        "obligation:export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202:828d60bbc13e7cfa3e760177f35f9e4146649f13ca0220faf82e3a465e70f993",
+        "obligation:export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202:07f97e45cee6aa93ce47bd28da75444dc7531557a1524b6ef4ca9a1d2f8ad629",
+        "obligation:export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202:04673ece8d1483831882624df9372ce4c9f1750ffca105f19c74ec56a8f7c4b4"
+      ],
+      "coveredObligationSignatureHashes": [
+        "82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
+        "fa47340c997de2c935ce5e15a4ca55f947b0329f3dc722b63a54bfbb5cce46ff",
+        "8b3b92b73eca54ef14770c2cb5611bea3d543567eec9264cba3bf2104bce9f3e",
+        "828d60bbc13e7cfa3e760177f35f9e4146649f13ca0220faf82e3a465e70f993",
+        "07f97e45cee6aa93ce47bd28da75444dc7531557a1524b6ef4ca9a1d2f8ad629",
+        "04673ece8d1483831882624df9372ce4c9f1750ffca105f19c74ec56a8f7c4b4"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -2381,15 +2443,23 @@
       "exportId": "export:class:HTMLValue:2f7862bd0bf0879dc9141144c3bdced476bc2ab87fd2121c00f2afdf105082a2",
       "name": "HTMLValue",
       "kind": "class",
-      "status": "missing",
+      "status": "partial",
       "signatureHash": "2f7862bd0bf0879dc9141144c3bdced476bc2ab87fd2121c00f2afdf105082a2",
       "location": {
         "line": 3530,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.value-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-values.ts",
+        "exportName": "HTMLValue"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [
         "heritage:export:class:HTMLValue:2f7862bd0bf0879dc9141144c3bdced476bc2ab87fd2121c00f2afdf105082a2:24b828daee6b73d34e42816f3a474cce6c91392761876c783dade90c28d08be9"
@@ -2403,15 +2473,23 @@
       "exportId": "export:class:IconValue:16f7cb525be03222500bec528c99806c7238f35a0931aaab6ea8e8763a2798f0",
       "name": "IconValue",
       "kind": "class",
-      "status": "missing",
+      "status": "partial",
       "signatureHash": "16f7cb525be03222500bec528c99806c7238f35a0931aaab6ea8e8763a2798f0",
       "location": {
         "line": 3539,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.value-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-values.ts",
+        "exportName": "IconValue"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [
         "heritage:export:class:IconValue:16f7cb525be03222500bec528c99806c7238f35a0931aaab6ea8e8763a2798f0:24b828daee6b73d34e42816f3a474cce6c91392761876c783dade90c28d08be9"
@@ -2425,15 +2503,23 @@
       "exportId": "export:class:ImageValue:c20741072bf8a14469b157eb46648fb19d285867399bbe8c56cc49477e738ff0",
       "name": "ImageValue",
       "kind": "class",
-      "status": "missing",
+      "status": "partial",
       "signatureHash": "c20741072bf8a14469b157eb46648fb19d285867399bbe8c56cc49477e738ff0",
       "location": {
         "line": 3548,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.value-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-values.ts",
+        "exportName": "ImageValue"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [
         "heritage:export:class:ImageValue:c20741072bf8a14469b157eb46648fb19d285867399bbe8c56cc49477e738ff0:24b828daee6b73d34e42816f3a474cce6c91392761876c783dade90c28d08be9"
@@ -2600,23 +2686,35 @@
       "exportId": "export:class:LinkValue:9b8b264f5a8cf96cb266d16f8f636ef38344c2d14721700eedbc57a83abe5917",
       "name": "LinkValue",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "9b8b264f5a8cf96cb266d16f8f636ef38344c2d14721700eedbc57a83abe5917",
       "location": {
         "line": 3719,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.value-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-values.ts",
+        "exportName": "LinkValue"
+      },
       "obligationIds": [
         "obligation:export:class:LinkValue:9b8b264f5a8cf96cb266d16f8f636ef38344c2d14721700eedbc57a83abe5917:534966daaa62199d28c4266a86947e030c68ccc817384ea65df14f6899fd941c"
       ],
       "heritageEdgeIds": [
         "heritage:export:class:LinkValue:9b8b264f5a8cf96cb266d16f8f636ef38344c2d14721700eedbc57a83abe5917:24b828daee6b73d34e42816f3a474cce6c91392761876c783dade90c28d08be9"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:LinkValue:9b8b264f5a8cf96cb266d16f8f636ef38344c2d14721700eedbc57a83abe5917:534966daaa62199d28c4266a86947e030c68ccc817384ea65df14f6899fd941c"
+      ],
+      "coveredObligationSignatureHashes": [
+        "534966daaa62199d28c4266a86947e030c68ccc817384ea65df14f6899fd941c"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -4345,15 +4443,23 @@
       "exportId": "export:class:RegExpValue:edb0177eb288015b3983acbe8cf446d957855b191c63ef91332645494aeb1f00",
       "name": "RegExpValue",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "edb0177eb288015b3983acbe8cf446d957855b191c63ef91332645494aeb1f00",
       "location": {
         "line": 5367,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.value-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-values.ts",
+        "exportName": "RegExpValue"
+      },
       "obligationIds": [
         "obligation:export:class:RegExpValue:edb0177eb288015b3983acbe8cf446d957855b191c63ef91332645494aeb1f00:82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
         "obligation:export:class:RegExpValue:edb0177eb288015b3983acbe8cf446d957855b191c63ef91332645494aeb1f00:fa47340c997de2c935ce5e15a4ca55f947b0329f3dc722b63a54bfbb5cce46ff"
@@ -4361,8 +4467,14 @@
       "heritageEdgeIds": [
         "heritage:export:class:RegExpValue:edb0177eb288015b3983acbe8cf446d957855b191c63ef91332645494aeb1f00:8a36595005a42ef2eae5a46fc0d0e7eb707917fe8369b9195508c3a632626220"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:RegExpValue:edb0177eb288015b3983acbe8cf446d957855b191c63ef91332645494aeb1f00:82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
+        "obligation:export:class:RegExpValue:edb0177eb288015b3983acbe8cf446d957855b191c63ef91332645494aeb1f00:fa47340c997de2c935ce5e15a4ca55f947b0329f3dc722b63a54bfbb5cce46ff"
+      ],
+      "coveredObligationSignatureHashes": [
+        "82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
+        "fa47340c997de2c935ce5e15a4ca55f947b0329f3dc722b63a54bfbb5cce46ff"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -4370,15 +4482,23 @@
       "exportId": "export:class:RelativeDateValue:3d0594b4e5ab24e2eb5df289e41cbb9f3da9d0801b722775725c45a4bb1f07dc",
       "name": "RelativeDateValue",
       "kind": "class",
-      "status": "missing",
+      "status": "partial",
       "signatureHash": "3d0594b4e5ab24e2eb5df289e41cbb9f3da9d0801b722775725c45a4bb1f07dc",
       "location": {
         "line": 5387,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.value-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-values.ts",
+        "exportName": "RelativeDateValue"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [
         "heritage:export:class:RelativeDateValue:3d0594b4e5ab24e2eb5df289e41cbb9f3da9d0801b722775725c45a4bb1f07dc:62a5617fe8231845f442c1d20cfb2b25531b770b06f5125212a2cfe10811f8da"
@@ -5526,23 +5646,35 @@
       "exportId": "export:class:TagValue:c6c6bafd2fd50797b1dfc2c9383bfc18f7dbd8966ffcfeb6e16c072e256c749d",
       "name": "TagValue",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "c6c6bafd2fd50797b1dfc2c9383bfc18f7dbd8966ffcfeb6e16c072e256c749d",
       "location": {
         "line": 6993,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.value-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-values.ts",
+        "exportName": "TagValue"
+      },
       "obligationIds": [
         "obligation:export:class:TagValue:c6c6bafd2fd50797b1dfc2c9383bfc18f7dbd8966ffcfeb6e16c072e256c749d:d4f5d61f43842c3242ea8bb2dc1b2527a5a4fa69750886d88e29012bf5fa444f"
       ],
       "heritageEdgeIds": [
         "heritage:export:class:TagValue:c6c6bafd2fd50797b1dfc2c9383bfc18f7dbd8966ffcfeb6e16c072e256c749d:24b828daee6b73d34e42816f3a474cce6c91392761876c783dade90c28d08be9"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:TagValue:c6c6bafd2fd50797b1dfc2c9383bfc18f7dbd8966ffcfeb6e16c072e256c749d:d4f5d61f43842c3242ea8bb2dc1b2527a5a4fa69750886d88e29012bf5fa444f"
+      ],
+      "coveredObligationSignatureHashes": [
+        "d4f5d61f43842c3242ea8bb2dc1b2527a5a4fa69750886d88e29012bf5fa444f"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -5863,15 +5995,23 @@
       "exportId": "export:class:UrlValue:23e0604a73cec0f1b2cc9bd37cd6788d1fa335fdaf679bf0b2fa935af134c19c",
       "name": "UrlValue",
       "kind": "class",
-      "status": "missing",
+      "status": "partial",
       "signatureHash": "23e0604a73cec0f1b2cc9bd37cd6788d1fa335fdaf679bf0b2fa935af134c19c",
       "location": {
         "line": 7246,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.value-extended.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-values.ts",
+        "exportName": "UrlValue"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [
         "heritage:export:class:UrlValue:23e0604a73cec0f1b2cc9bd37cd6788d1fa335fdaf679bf0b2fa935af134c19c:24b828daee6b73d34e42816f3a474cce6c91392761876c783dade90c28d08be9"
@@ -9183,7 +9323,7 @@
     {
       "exportId": "export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202",
       "name": "DateValue",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202:82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
@@ -9275,8 +9415,20 @@
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202:82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
+        "obligation:export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202:530cf2faf0868dd905e1d714cfc591eb6484019684965c10a359278bc3c14941",
+        "obligation:export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202:908448410ccb2484f303fb0589cb748e3a7cf9f830d6287de61321e8e64629e3",
+        "obligation:export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202:fa47340c997de2c935ce5e15a4ca55f947b0329f3dc722b63a54bfbb5cce46ff",
+        "obligation:export:class:DateValue:45dce24b565b761ca916e8fbcdbebee80455fbe8241c02368d3f2955828c3202:08275bf36608a8308b01b42a0d11a269c5272841b39d2e9024ab4e3ebf45211d"
+      ],
+      "coveredObligationSignatureHashes": [
+        "82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
+        "530cf2faf0868dd905e1d714cfc591eb6484019684965c10a359278bc3c14941",
+        "908448410ccb2484f303fb0589cb748e3a7cf9f830d6287de61321e8e64629e3",
+        "fa47340c997de2c935ce5e15a4ca55f947b0329f3dc722b63a54bfbb5cce46ff",
+        "08275bf36608a8308b01b42a0d11a269c5272841b39d2e9024ab4e3ebf45211d"
+      ]
     },
     {
       "exportId": "export:class:DisplayValueComponent:8eadc4fafb416556a0aedb81702ff4a39031f10f78901384edb0cbaf068e2af9",
@@ -9520,7 +9672,7 @@
     {
       "exportId": "export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202",
       "name": "DurationValue",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202:82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
@@ -9629,8 +9781,22 @@
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202:82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
+        "obligation:export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202:fa47340c997de2c935ce5e15a4ca55f947b0329f3dc722b63a54bfbb5cce46ff",
+        "obligation:export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202:8b3b92b73eca54ef14770c2cb5611bea3d543567eec9264cba3bf2104bce9f3e",
+        "obligation:export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202:828d60bbc13e7cfa3e760177f35f9e4146649f13ca0220faf82e3a465e70f993",
+        "obligation:export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202:07f97e45cee6aa93ce47bd28da75444dc7531557a1524b6ef4ca9a1d2f8ad629",
+        "obligation:export:class:DurationValue:1b6e3eccbd6b278b7a4885011696d3026ac7ed9f37b15e8dad3344de293d8202:04673ece8d1483831882624df9372ce4c9f1750ffca105f19c74ec56a8f7c4b4"
+      ],
+      "coveredObligationSignatureHashes": [
+        "82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
+        "fa47340c997de2c935ce5e15a4ca55f947b0329f3dc722b63a54bfbb5cce46ff",
+        "8b3b92b73eca54ef14770c2cb5611bea3d543567eec9264cba3bf2104bce9f3e",
+        "828d60bbc13e7cfa3e760177f35f9e4146649f13ca0220faf82e3a465e70f993",
+        "07f97e45cee6aa93ce47bd28da75444dc7531557a1524b6ef4ca9a1d2f8ad629",
+        "04673ece8d1483831882624df9372ce4c9f1750ffca105f19c74ec56a8f7c4b4"
+      ]
     },
     {
       "exportId": "export:class:EditableFileView:c32178dc1207763babbc23c9b42adb5b3cae749751d8d6997ae7a3bd9d2a5c9e",
@@ -11645,7 +11811,7 @@
     {
       "exportId": "export:class:HTMLValue:2f7862bd0bf0879dc9141144c3bdced476bc2ab87fd2121c00f2afdf105082a2",
       "name": "HTMLValue",
-      "status": "missing",
+      "status": "partial",
       "obligations": [],
       "heritageEdges": [
         {
@@ -11665,7 +11831,7 @@
     {
       "exportId": "export:class:IconValue:16f7cb525be03222500bec528c99806c7238f35a0931aaab6ea8e8763a2798f0",
       "name": "IconValue",
-      "status": "missing",
+      "status": "partial",
       "obligations": [],
       "heritageEdges": [
         {
@@ -11685,7 +11851,7 @@
     {
       "exportId": "export:class:ImageValue:c20741072bf8a14469b157eb46648fb19d285867399bbe8c56cc49477e738ff0",
       "name": "ImageValue",
-      "status": "missing",
+      "status": "partial",
       "obligations": [],
       "heritageEdges": [
         {
@@ -11863,7 +12029,7 @@
     {
       "exportId": "export:class:LinkValue:9b8b264f5a8cf96cb266d16f8f636ef38344c2d14721700eedbc57a83abe5917",
       "name": "LinkValue",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:LinkValue:9b8b264f5a8cf96cb266d16f8f636ef38344c2d14721700eedbc57a83abe5917:534966daaa62199d28c4266a86947e030c68ccc817384ea65df14f6899fd941c",
@@ -11895,8 +12061,12 @@
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:LinkValue:9b8b264f5a8cf96cb266d16f8f636ef38344c2d14721700eedbc57a83abe5917:534966daaa62199d28c4266a86947e030c68ccc817384ea65df14f6899fd941c"
+      ],
+      "coveredObligationSignatureHashes": [
+        "534966daaa62199d28c4266a86947e030c68ccc817384ea65df14f6899fd941c"
+      ]
     },
     {
       "exportId": "export:class:ListValue:22393019e553322f3dbd24e27fa61f01ed3cfc6d04e9ab4f3779aefa41d99616",
@@ -15123,7 +15293,7 @@
     {
       "exportId": "export:class:RegExpValue:edb0177eb288015b3983acbe8cf446d957855b191c63ef91332645494aeb1f00",
       "name": "RegExpValue",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:RegExpValue:edb0177eb288015b3983acbe8cf446d957855b191c63ef91332645494aeb1f00:82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
@@ -15168,13 +15338,19 @@
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:RegExpValue:edb0177eb288015b3983acbe8cf446d957855b191c63ef91332645494aeb1f00:82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
+        "obligation:export:class:RegExpValue:edb0177eb288015b3983acbe8cf446d957855b191c63ef91332645494aeb1f00:fa47340c997de2c935ce5e15a4ca55f947b0329f3dc722b63a54bfbb5cce46ff"
+      ],
+      "coveredObligationSignatureHashes": [
+        "82f97521ff34404d66c36ae5c52bcba92cb8e2c64061d16f4ba94f0431c913fe",
+        "fa47340c997de2c935ce5e15a4ca55f947b0329f3dc722b63a54bfbb5cce46ff"
+      ]
     },
     {
       "exportId": "export:class:RelativeDateValue:3d0594b4e5ab24e2eb5df289e41cbb9f3da9d0801b722775725c45a4bb1f07dc",
       "name": "RelativeDateValue",
-      "status": "missing",
+      "status": "partial",
       "obligations": [],
       "heritageEdges": [
         {
@@ -17113,7 +17289,7 @@
     {
       "exportId": "export:class:TagValue:c6c6bafd2fd50797b1dfc2c9383bfc18f7dbd8966ffcfeb6e16c072e256c749d",
       "name": "TagValue",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:TagValue:c6c6bafd2fd50797b1dfc2c9383bfc18f7dbd8966ffcfeb6e16c072e256c749d:d4f5d61f43842c3242ea8bb2dc1b2527a5a4fa69750886d88e29012bf5fa444f",
@@ -17143,8 +17319,12 @@
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:TagValue:c6c6bafd2fd50797b1dfc2c9383bfc18f7dbd8966ffcfeb6e16c072e256c749d:d4f5d61f43842c3242ea8bb2dc1b2527a5a4fa69750886d88e29012bf5fa444f"
+      ],
+      "coveredObligationSignatureHashes": [
+        "d4f5d61f43842c3242ea8bb2dc1b2527a5a4fa69750886d88e29012bf5fa444f"
+      ]
     },
     {
       "exportId": "export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f",
@@ -17781,7 +17961,7 @@
     {
       "exportId": "export:class:UrlValue:23e0604a73cec0f1b2cc9bd37cd6788d1fa335fdaf679bf0b2fa935af134c19c",
       "name": "UrlValue",
-      "status": "missing",
+      "status": "partial",
       "obligations": [],
       "heritageEdges": [
         {

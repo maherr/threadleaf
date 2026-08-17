@@ -1,12 +1,23 @@
 import { JSDOM } from "jsdom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { App } from "./obsidian-compat";
 import {
   BooleanValue,
+  DateValue,
+  DurationValue,
+  HTMLValue,
+  IconValue,
+  ImageValue,
+  LinkValue,
   NotNullValue,
   NullValue,
   NumberValue,
   PrimitiveValue,
+  RegExpValue,
+  RelativeDateValue,
   StringValue,
+  TagValue,
+  UrlValue,
   Value,
 } from "./obsidian-values";
 
@@ -43,6 +54,56 @@ describe("Obsidian value compatibility", () => {
 
     text.renderTo(target, {} as never);
     expect(target.textContent).toBe("1");
+
+    dom.window.close();
+  });
+
+  it("supports date, duration, link, tag, regexp, and string value families", () => {
+    const localDate = new Date(2026, 0, 2, 3, 4, 5);
+    const date = new DateValue(localDate);
+    const dateOnly = date.dateOnly();
+    const parsedDate = DateValue.parseFromString("2026-01-02");
+    const duration = DurationValue.parseFromString("P1DT2H") ?? DurationValue.fromMilliseconds(0);
+    const oneHour = DurationValue.fromMilliseconds(3_600_000);
+    const regexp = new RegExpValue(/threadleaf/iu);
+    const dom = new JSDOM("<!doctype html><body></body>");
+    const target = dom.window.document.createElement("div");
+    const metadataCache = {
+      getFirstLinkpathDest: vi.fn().mockReturnValue({ path: "Notes/Welcome.md" }),
+    };
+    const app = { metadataCache } as unknown as App;
+    const link = LinkValue.parseFromString(app, "[[Notes/Welcome|Welcome note]]", "Daily/Today.md");
+    const tag = new TagValue("project/compatibility");
+
+    expect(date.toString()).toBe("2026-01-02T03:04:05");
+    expect(dateOnly.toString()).toBe("2026-01-02");
+    expect(dateOnly).not.toBe(date);
+    expect(parsedDate?.toString()).toBe("2026-01-02");
+    expect(date.isTruthy()).toBe(true);
+    expect(new RelativeDateValue(localDate).toString()).toEqual(expect.any(String));
+    date.renderTo(target, {} as never);
+    expect(target.querySelector("input")?.value).toBe("2026-01-02T03:04:05.000");
+    expect(duration.isTruthy()).toBe(true);
+    expect(duration.addToDate(date).toString()).toBe("2026-01-03T05:04:05");
+    expect(oneHour.addToDate(date).toString()).toBe("2026-01-02T04:04:05");
+    expect(DurationValue.parseFromString("2 weeks")?.days).toBe(14);
+    expect(DurationValue.parseFromString("2h")?.hours).toBe(2);
+    expect(DurationValue.parseFromString("5 ms")?.milliseconds).toBe(5);
+    expect(DurationValue.parseFromString("not a duration")).toBeNull();
+    expect(regexp.toString()).toBe("/threadleaf/iu");
+    expect(regexp.isTruthy()).toBe(true);
+    expect(new HTMLValue("<strong>value</strong>").toString()).toBe("<strong>value</strong>");
+    expect(new IconValue("lucide-leaf").toString()).toBe("lucide-leaf");
+    expect(new ImageValue("assets/leaf.png").toString()).toBe("assets/leaf.png");
+    expect(new UrlValue("https://threadleaf.test").toString()).toBe("https://threadleaf.test");
+    expect(tag.toString()).toBe("#project/compatibility");
+    expect(tag.tagMatches(new TagValue("#project"))).toBe(true);
+    expect(link?.toString()).toBe("[[Notes/Welcome|Welcome note]]");
+    expect(link?.resolve()).toEqual({ path: "Notes/Welcome.md" });
+    expect(metadataCache.getFirstLinkpathDest).toHaveBeenCalledWith(
+      "Notes/Welcome",
+      "Daily/Today.md",
+    );
 
     dom.window.close();
   });

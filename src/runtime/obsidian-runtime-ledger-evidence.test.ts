@@ -3332,6 +3332,139 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
     }
   });
 
+  /** @compatibility-test-id obsidian-runtime.value-extended.v1 */
+  it('proves the extended Values family through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-runtime-ledger-value-extended-"),
+    );
+    const pluginPath = path.join(sandboxPath, "value-extended-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "value-extended-ledger-fixture",
+          name: "Value extended ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { DateValue, DurationValue, HTMLValue, IconValue, ImageValue, LinkValue, Plugin, RegExpValue, RelativeDateValue, StringValue, TagValue, UrlValue } = require("obsidian");',
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          '    const date = DateValue.parseFromString("2026-01-02T03:04:05");',
+          '    const dateOnly = DateValue.parseFromString("2026-01-02");',
+          '    const duration = DurationValue.parseFromString("P1DT2H");',
+          '    const shorthandDuration = DurationValue.parseFromString("2h");',
+          '    const millisecondDuration = DurationValue.parseFromString("5 ms");',
+          "    const oneHour = DurationValue.fromMilliseconds(3600000);",
+          "    const regexp = new RegExpValue(/threadleaf/iu);",
+          '    const link = LinkValue.parseFromString(this.app, "[[Welcome|Welcome note]]", "Linked Note.md");',
+          '    const tag = new TagValue("project/compatibility");',
+          '    const target = document.createElement("div");',
+          "    date.renderTo(target, {});",
+          "    globalThis.__threadleafRuntimeLedgerValueExtendedProbe = {",
+          "      dateIsDate: date instanceof DateValue,",
+          "      dateText: date.toString(),",
+          "      dateOnlyText: dateOnly.toString(),",
+          "      dateOnlyTruthy: dateOnly.isTruthy(),",
+          '      dateRendered: target.querySelector("input")?.value,',
+          "      relativeIsDate: new RelativeDateValue(new Date(2026, 0, 2)) instanceof DateValue,",
+          "      durationText: duration.toString(),",
+          "      durationAdded: duration.addToDate(date).toString(),",
+          "      hourAdded: oneHour.addToDate(date).toString(),",
+          "      durationTruthy: duration.isTruthy(),",
+          "      shorthandHours: shorthandDuration?.hours,",
+          "      milliseconds: millisecondDuration?.milliseconds,",
+          "      regexpText: regexp.toString(),",
+          "      regexpTruthy: regexp.isTruthy(),",
+          '      htmlText: new HTMLValue("<strong>value</strong>").toString(),',
+          '      iconText: new IconValue("lucide-leaf").toString(),',
+          '      imageText: new ImageValue("assets/leaf.png").toString(),',
+          '      urlText: new UrlValue("https://threadleaf.test").toString(),',
+          "      tagText: tag.toString(),",
+          '      tagMatches: tag.tagMatches(new TagValue("#project")),',
+          "      linkIsString: link instanceof StringValue,",
+          "      linkText: link.toString(),",
+          "      linkResolved: link.resolve()?.path,",
+          '      invalidDate: DateValue.parseFromString("not-a-date"),',
+          '      invalidDuration: DurationValue.parseFromString("not-a-duration"),',
+          "    };",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      await withTestDocument(async () => {
+        const host = new PluginHost(fixtureVault);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          const probe = (globalThis as { __threadleafRuntimeLedgerValueExtendedProbe?: unknown })
+            .__threadleafRuntimeLedgerValueExtendedProbe as {
+            dateIsDate: boolean;
+            dateText: string;
+            dateOnlyText: string;
+            dateOnlyTruthy: boolean;
+            dateRendered: string;
+            relativeIsDate: boolean;
+            durationText: string;
+            durationAdded: string;
+            hourAdded: string;
+            durationTruthy: boolean;
+            shorthandHours: number;
+            milliseconds: number;
+            regexpText: string;
+            regexpTruthy: boolean;
+            htmlText: string;
+            iconText: string;
+            imageText: string;
+            urlText: string;
+            tagText: string;
+            tagMatches: boolean;
+            linkIsString: boolean;
+            linkText: string;
+            linkResolved: string;
+            invalidDate: unknown;
+            invalidDuration: unknown;
+          };
+          expect(probe.dateIsDate).toBe(true);
+          expect(probe.dateText).toBe("2026-01-02T03:04:05");
+          expect(probe.dateOnlyText).toBe("2026-01-02");
+          expect(probe.dateOnlyTruthy).toBe(true);
+          expect(probe.dateRendered).toBe("2026-01-02T03:04:05.000");
+          expect(probe.relativeIsDate).toBe(true);
+          expect(probe.durationText).toBe("a day");
+          expect(probe.durationAdded).toBe("2026-01-03T05:04:05");
+          expect(probe.hourAdded).toBe("2026-01-02T04:04:05");
+          expect(probe.durationTruthy).toBe(true);
+          expect(probe.shorthandHours).toBe(2);
+          expect(probe.milliseconds).toBe(5);
+          expect(probe.regexpText).toBe("/threadleaf/iu");
+          expect(probe.regexpTruthy).toBe(true);
+          expect(probe.htmlText).toBe("<strong>value</strong>");
+          expect(probe.iconText).toBe("lucide-leaf");
+          expect(probe.imageText).toBe("assets/leaf.png");
+          expect(probe.urlText).toBe("https://threadleaf.test");
+          expect(probe.tagText).toBe("#project/compatibility");
+          expect(probe.tagMatches).toBe(true);
+          expect(probe.linkIsString).toBe(true);
+          expect(probe.linkText).toBe("[[Welcome|Welcome note]]");
+          expect(probe.linkResolved).toBe("Welcome.md");
+          expect(probe.invalidDate).toBeNull();
+          expect(probe.invalidDuration).toBeNull();
+        } finally {
+          await host.close();
+        }
+      });
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerValueExtendedProbe");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   /** @compatibility-test-id obsidian-runtime.tasks.v1 */
   it('proves Tasks through require("obsidian")', async () => {
     const sandboxPath = await fs.mkdtemp(
