@@ -74,7 +74,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | ItemView | class | implemented | eed72ec50d5d3f3c |
 | iterateCacheRefs | function | missing | fc3366f3dd699432 |
 | iterateRefs | function | missing | 882efbf3735f3d6a |
-| Keymap | class | missing | f1db66e779392942 |
+| Keymap | class | implemented | f1db66e779392942 |
 | LinkValue | class | missing | 9b8b264f5a8cf96c |
 | ListValue | class | missing | 22393019e553322f |
 | livePreviewState | variable | missing | 33974b4ed1375f2b |
@@ -92,11 +92,11 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | MenuItem | class | implemented | 4b0f05262839c353 |
 | MenuSeparator | class | partial | 8d76cd93d0b4b14a |
 | MetadataCache | class | implemented | 4f2d6786f29d03b5 |
-| Modal | class | missing | 0ecda97644af4e27 |
+| Modal | class | implemented | 0ecda97644af4e27 |
 | moment | variable | missing | 9ee051521ccd8991 |
 | MomentFormatComponent | class | implemented | b3a4fd344f8d82a1 |
 | normalizePath | function | implemented | 9811227609eeb952 |
-| Notice | class | missing | 10560b31dc604864 |
+| Notice | class | implemented | 10560b31dc604864 |
 | NotNullValue | class | missing | c1ea1665f928693f |
 | NullValue | class | missing | 1324bf65b03915a3 |
 | NumberValue | class | missing | fd1c8c04fc04ea95 |
@@ -146,7 +146,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | StringValue | class | missing | 5a8c7f34710de2a3 |
 | stripHeading | function | missing | f21325fbff066d0b |
 | stripHeadingForLink | function | missing | 609f52c3520cfb71 |
-| SuggestModal | class | missing | 4282e1a8e74dc8a6 |
+| SuggestModal | class | implemented | 4282e1a8e74dc8a6 |
 | TAbstractFile | class | implemented | 33e1dba7bf6c6e2f |
 | TagValue | class | missing | c6c6bafd2fd50797 |
 | Tasks | class | missing | 7471c3f0a015a76d |

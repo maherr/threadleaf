@@ -34,7 +34,7 @@ import {
   AbstractInputSuggest,
   AbstractTextComponent,
   BaseComponent,
-  Keymap as BaseKeymap,
+  UiKeymap as BaseKeymap,
   ButtonComponent,
   ColorComponent,
   DisplayValueComponent,
@@ -1951,6 +1951,73 @@ export class NoticeBus {
   }
 }
 
+export class Notice {
+  readonly noticeEl: HTMLElement;
+  readonly containerEl: HTMLElement;
+  readonly messageEl: HTMLElement;
+  private timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(
+    message: string | DocumentFragment,
+    duration = 5_000,
+    private readonly onShow: (message: string) => void = () => {},
+  ) {
+    const messageText = typeof message === "string" ? message : (message.textContent ?? "");
+    this.onShow(messageText);
+    if (typeof document === "undefined") {
+      this.noticeEl = null as unknown as HTMLElement;
+      this.containerEl = null as unknown as HTMLElement;
+      this.messageEl = null as unknown as HTMLElement;
+      if (duration > 0) {
+        this.timeoutHandle = setTimeout(() => this.hide(), duration);
+        if (
+          typeof this.timeoutHandle === "object" &&
+          this.timeoutHandle !== null &&
+          "unref" in this.timeoutHandle &&
+          typeof this.timeoutHandle.unref === "function"
+        ) {
+          this.timeoutHandle.unref();
+        }
+      }
+      return;
+    }
+    const doc = requireCompatibilityDocument();
+    this.containerEl = doc.createElement("div");
+    this.containerEl.className = "notice-container";
+    this.noticeEl = doc.createElement("div");
+    this.noticeEl.className = "notice";
+    this.messageEl = doc.createElement("div");
+    this.messageEl.className = "notice-message";
+    this.noticeEl.append(this.messageEl);
+    this.containerEl.append(this.noticeEl);
+    this.setMessage(message);
+    doc.body.append(this.containerEl);
+    if (duration > 0) {
+      this.timeoutHandle = setTimeout(() => this.hide(), duration);
+    }
+  }
+
+  setMessage(message: string | DocumentFragment): this {
+    if (this.messageEl === null) {
+      return this;
+    }
+    if (typeof message === "string") {
+      this.messageEl.textContent = message;
+    } else {
+      this.messageEl.replaceChildren(message);
+    }
+    return this;
+  }
+
+  hide(): void {
+    if (this.timeoutHandle !== null) {
+      clearTimeout(this.timeoutHandle);
+      this.timeoutHandle = null;
+    }
+    this.containerEl?.remove();
+  }
+}
+
 const compatibilityMarkdown = new MarkdownIt({
   breaks: false,
   html: true,
@@ -2590,7 +2657,7 @@ export interface ObsidianCompatibilityModule {
   moment: typeof moment;
   Modal: typeof Modal;
   MomentFormatComponent: typeof MomentFormatComponent;
-  Notice: new (message: string, timeout?: number) => object;
+  Notice: typeof Notice;
   Plugin: typeof Plugin;
   PluginSettingTab: typeof PluginSettingTab;
   PopoverSuggest: typeof PopoverSuggest;
@@ -3009,14 +3076,9 @@ export function normalizePath(filePath: string): string {
 }
 
 export function createObsidianCompatibilityModule(app: App): ObsidianCompatibilityModule {
-  class Notice {
-    readonly message: string;
-    readonly timeout: number | undefined;
-
-    constructor(message: string, timeout?: number) {
-      this.message = message;
-      this.timeout = timeout;
-      app.notices.show(message);
+  class BoundNotice extends Notice {
+    constructor(message: string | DocumentFragment, duration?: number) {
+      super(message, duration, (text) => app.notices.show(text));
     }
   }
 
@@ -3077,7 +3139,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     moment,
     Modal,
     MomentFormatComponent,
-    Notice,
+    Notice: BoundNotice,
     Plugin,
     PluginSettingTab,
     PopoverSuggest,

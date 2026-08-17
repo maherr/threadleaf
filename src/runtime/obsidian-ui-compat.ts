@@ -904,7 +904,7 @@ export class Scope {
   }
 }
 
-export class Keymap {
+export class UiKeymap {
   private readonly rootScope = new Scope();
 
   getRootScope(): Scope {
@@ -1072,6 +1072,7 @@ export class Modal {
   shouldRestoreSelection = true;
   private openState = false;
   private releasePluginOwnership: (() => void) | null = null;
+  private closeCallback: (() => unknown) | null = null;
 
   constructor(app: App) {
     this.app = app;
@@ -1122,6 +1123,9 @@ export class Modal {
       this.containerEl.remove();
       this.releasePluginOwnership?.();
       this.releasePluginOwnership = null;
+      const closeCallback = this.closeCallback;
+      this.closeCallback = null;
+      closeCallback?.();
     }
   }
 
@@ -1140,6 +1144,11 @@ export class Modal {
     } else {
       this.contentEl.replaceChildren(content);
     }
+    return this;
+  }
+
+  setCloseCallback(callback: () => unknown): this {
+    this.closeCallback = callback;
     return this;
   }
 

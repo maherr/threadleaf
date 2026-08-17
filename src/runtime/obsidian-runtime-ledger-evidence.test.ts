@@ -809,6 +809,162 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
     }
   });
 
+  /** @compatibility-test-id obsidian-runtime.modal-notice-keymap.v1 */
+  it('proves modal, notice, suggest-modal, and keymap lifecycles through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-runtime-ledger-modal-notice-keymap-"),
+    );
+    const pluginPath = path.join(sandboxPath, "modal-notice-keymap-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "modal-notice-keymap-ledger-fixture",
+          name: "Modal notice keymap ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { Keymap, Modal, Notice, Plugin, Scope, SuggestModal } = require("obsidian");',
+          "class FixtureModal extends Modal {",
+          "  onOpen() { this.openCalls = (this.openCalls || 0) + 1; }",
+          "  onClose() { this.closeCalls = (this.closeCalls || 0) + 1; }",
+          "}",
+          "class FixtureSuggestModal extends SuggestModal {",
+          '  getSuggestions(query) { return ["alpha", "beta"].filter((value) => value.includes(query)); }',
+          "  renderSuggestion(value, element) { element.textContent = value.toUpperCase(); }",
+          "  onChooseSuggestion(value) { this.chosen = value; }",
+          "  readInstructions() { return this.getInstructions(); }",
+          "}",
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          "    const keymap = new Keymap(document);",
+          "    const scope = new Scope();",
+          "    const keyCalls = [];",
+          '    scope.register(["Ctrl"], "k", (event, context) => { keyCalls.push([event.key, context.modifiers, context.vkey]); return false; });',
+          "    keymap.pushScope(scope);",
+          '    const keyEvent = new document.defaultView.KeyboardEvent("keydown", { key: "k", ctrlKey: true, cancelable: true });',
+          "    document.dispatchEvent(keyEvent);",
+          "    keymap.popScope(scope);",
+          '    const modEvent = new document.defaultView.KeyboardEvent("keydown", { key: "k", ctrlKey: true });',
+          '    const splitEvent = new document.defaultView.KeyboardEvent("keydown", { key: "k", ctrlKey: true, altKey: true });',
+          '    const windowEvent = new document.defaultView.KeyboardEvent("keydown", { key: "k", ctrlKey: true, altKey: true, shiftKey: true });',
+          "    const modal = new FixtureModal(this.app);",
+          '    const modalFragment = document.createDocumentFragment(); modalFragment.append("Fragment content");',
+          "    let closeCallbackCalls = 0;",
+          '    const modalChain = modal.setTitle("Ledger modal") === modal && modal.setContent("Text content") === modal && modal.setCloseCallback(() => closeCallbackCalls += 1) === modal;',
+          "    modal.setContent(modalFragment);",
+          "    modal.open();",
+          "    const modalWhileOpen = document.body.contains(modal.containerEl);",
+          "    const modalState = { app: modal.app === this.app, scope: modal.scope instanceof Scope, modalEl: modal.modalEl.className, title: modal.titleEl.textContent, content: modal.contentEl.textContent, shouldRestoreSelection: modal.shouldRestoreSelection, openCalls: modal.openCalls, modalChain };",
+          "    modal.close();",
+          "    const modalAfterClose = { inDocument: document.body.contains(modal.containerEl), closeCalls: modal.closeCalls, closeCallbackCalls };",
+          "    const suggest = new FixtureSuggestModal(this.app);",
+          '    suggest.setPlaceholder("Search ledger");',
+          '    suggest.setInstructions([{ command: "Enter", purpose: "choose" }]);',
+          '    const matches = await suggest.getSuggestions("a");',
+          '    const renderedSuggestion = document.createElement("div");',
+          "    suggest.renderSuggestion(matches[0], renderedSuggestion);",
+          "    suggest.open();",
+          '    suggest.inputEl.value = "b";',
+          '    suggest.inputEl.dispatchEvent(new document.defaultView.Event("input", { bubbles: true }));',
+          "    await new Promise((resolve) => setTimeout(resolve, 0));",
+          '    const suggestionRows = [...suggest.resultContainerEl.querySelectorAll(".suggestion-item")].map((element) => element.textContent);',
+          '    suggest.selectActiveSuggestion(new document.defaultView.MouseEvent("click"));',
+          "    const noSuggestion = new FixtureSuggestModal(this.app);",
+          "    noSuggestion.onNoSuggestion();",
+          '    const noticeFragment = document.createDocumentFragment(); noticeFragment.append("Notice fragment");',
+          "    const notice = new Notice(noticeFragment, 0);",
+          "    const noticeInitial = { noticeEl: notice.noticeEl.className, containerEl: notice.containerEl.className, messageEl: notice.messageEl.textContent, connected: document.body.contains(notice.containerEl) };",
+          '    notice.setMessage("Notice text");',
+          "    const noticeAfterText = notice.messageEl.textContent;",
+          '    const updatedNoticeFragment = document.createDocumentFragment(); updatedNoticeFragment.append("Updated fragment");',
+          "    notice.setMessage(updatedNoticeFragment);",
+          "    const noticeAfterFragment = notice.messageEl.textContent;",
+          "    notice.hide();",
+          "    globalThis.__threadleafRuntimeLedgerModalNoticeKeymapProbe = {",
+          "      keyCalls,",
+          "      keyEventPrevented: keyEvent.defaultPrevented,",
+          '      modifier: Keymap.isModifier(modEvent, "Mod"),',
+          "      modEvents: [Keymap.isModEvent(modEvent), Keymap.isModEvent(splitEvent), Keymap.isModEvent(windowEvent), Keymap.isModEvent(null)],",
+          "      modalState,",
+          "      modalWhileOpen,",
+          "      modalAfterClose,",
+          "      suggest: { limit: suggest.limit, emptyStateText: suggest.emptyStateText, inputPlaceholder: suggest.inputEl.placeholder, resultContainer: suggest.resultContainerEl.className, instructions: suggest.readInstructions(), matches, rendered: renderedSuggestion.textContent, rows: suggestionRows, chosen: suggest.chosen, closed: !document.body.contains(suggest.containerEl) },",
+          "      noSuggestion: noSuggestion.resultContainerEl.textContent,",
+          "      noticeInitial,",
+          "      noticeAfterText,",
+          "      noticeAfterFragment,",
+          "      noticeBus: this.app.notices.list(),",
+          "      noticeHidden: !document.body.contains(notice.containerEl),",
+          "    };",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      await withTestDocument(async () => {
+        const host = new PluginHost(fixtureVault);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerModalNoticeKeymapProbe?: unknown })
+              .__threadleafRuntimeLedgerModalNoticeKeymapProbe,
+          ).toEqual({
+            keyCalls: [["k", "Ctrl", "k"]],
+            keyEventPrevented: true,
+            modifier: true,
+            modEvents: ["tab", "split", "window", false],
+            modalState: {
+              app: true,
+              scope: true,
+              modalEl: "modal",
+              title: "Ledger modal",
+              content: "Fragment content",
+              shouldRestoreSelection: true,
+              openCalls: 1,
+              modalChain: true,
+            },
+            modalWhileOpen: true,
+            modalAfterClose: { inDocument: false, closeCalls: 1, closeCallbackCalls: 1 },
+            suggest: {
+              limit: 100,
+              emptyStateText: "No matches found.",
+              inputPlaceholder: "Search ledger",
+              resultContainer: "suggestion-container",
+              instructions: [{ command: "Enter", purpose: "choose" }],
+              matches: ["alpha", "beta"],
+              rendered: "ALPHA",
+              rows: ["BETA"],
+              chosen: "beta",
+              closed: true,
+            },
+            noSuggestion: "No matches found.",
+            noticeInitial: {
+              noticeEl: "notice",
+              containerEl: "notice-container",
+              messageEl: "Notice fragment",
+              connected: true,
+            },
+            noticeAfterText: "Notice text",
+            noticeAfterFragment: "Updated fragment",
+            noticeBus: ["Notice fragment"],
+            noticeHidden: true,
+          });
+        } finally {
+          await host.close();
+        }
+      });
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerModalNoticeKeymapProbe");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   /** @compatibility-test-id obsidian-runtime.core-events-files-vault.v1 */
   /** @compatibility-test-id obsidian-runtime.workspace-core.v1 */
   /** @compatibility-test-id obsidian-runtime.editor-core.v1 */
