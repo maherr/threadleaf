@@ -56,6 +56,8 @@ import {
   Scope,
   SearchComponent,
   Setting,
+  SettingGroup,
+  SettingPage,
   SettingTab,
   SliderComponent,
   SuggestModal,
@@ -3285,6 +3287,8 @@ export interface ObsidianCompatibilityModule {
   SearchComponent: typeof SearchComponent;
   SecretStorage: typeof SecretStorage;
   Setting: typeof Setting;
+  SettingGroup: typeof SettingGroup;
+  SettingPage: typeof SettingPage;
   SettingTab: typeof SettingTab;
   SliderComponent: typeof SliderComponent;
   SuggestModal: typeof SuggestModal;
@@ -3948,6 +3952,8 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     SearchComponent,
     SecretStorage,
     Setting,
+    SettingGroup,
+    SettingPage,
     SettingTab,
     SliderComponent,
     SuggestModal,

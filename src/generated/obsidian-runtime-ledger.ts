@@ -14,15 +14,15 @@ export const obsidianRuntimeLedger = {
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 95,
+    "implemented": 97,
     "partial": 7,
     "unsupported": 0,
-    "missing": 56,
+    "missing": 54,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 557
+    "implementedObligations": 571
   },
   "factory": {
     "keys": [
@@ -84,6 +84,8 @@ export const obsidianRuntimeLedger = {
       "SearchComponent",
       "SecretStorage",
       "Setting",
+      "SettingGroup",
+      "SettingPage",
       "SettingTab",
       "SliderComponent",
       "SuggestModal",
@@ -191,6 +193,8 @@ export const obsidianRuntimeLedger = {
       "SearchComponent",
       "SecretStorage",
       "Setting",
+      "SettingGroup",
+      "SettingPage",
       "SettingTab",
       "SliderComponent",
       "SuggestModal",
@@ -4857,15 +4861,23 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c",
       "name": "SettingGroup",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c",
       "location": {
         "line": 6366,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.settings-components.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-ui-compat.ts",
+        "exportName": "SettingGroup"
+      },
       "obligationIds": [
         "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:1b2cc125324a30f53d13936bff315f1cca0bd84275c0ce6d252052e8f6ba633b",
         "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:5be8eab0347e00a22bb5b640fded83f5ed4ed663f930e767fa58b7766b9a8cfd",
@@ -4876,8 +4888,24 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:dc176cd2f3cb57d79c0286e7bcdbb264b3fc693cc78891f54e9f8d5fe6f687e9"
       ],
       "heritageEdgeIds": [],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:1b2cc125324a30f53d13936bff315f1cca0bd84275c0ce6d252052e8f6ba633b",
+        "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:5be8eab0347e00a22bb5b640fded83f5ed4ed663f930e767fa58b7766b9a8cfd",
+        "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:e45aac324fa2c665c0a859496372fff76f8885d557c8dc74adc7d54697fd041f",
+        "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:fcce77cd64e7f8006369ef71227742c9f22b20dddaddd83d989040d19b7253d1",
+        "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:9614794340c82c82b285f3a54a8a142362a137a1b21bc3f04ff07ae46f282e43",
+        "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:dc16f5c46e657114676e524e5290f40c276b55002da4275fb7fdb1e30e89c34b",
+        "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:dc176cd2f3cb57d79c0286e7bcdbb264b3fc693cc78891f54e9f8d5fe6f687e9"
+      ],
+      "coveredObligationSignatureHashes": [
+        "1b2cc125324a30f53d13936bff315f1cca0bd84275c0ce6d252052e8f6ba633b",
+        "5be8eab0347e00a22bb5b640fded83f5ed4ed663f930e767fa58b7766b9a8cfd",
+        "e45aac324fa2c665c0a859496372fff76f8885d557c8dc74adc7d54697fd041f",
+        "fcce77cd64e7f8006369ef71227742c9f22b20dddaddd83d989040d19b7253d1",
+        "9614794340c82c82b285f3a54a8a142362a137a1b21bc3f04ff07ae46f282e43",
+        "dc16f5c46e657114676e524e5290f40c276b55002da4275fb7fdb1e30e89c34b",
+        "dc176cd2f3cb57d79c0286e7bcdbb264b3fc693cc78891f54e9f8d5fe6f687e9"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -4885,15 +4913,23 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3",
       "name": "SettingPage",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3",
       "location": {
         "line": 6462,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.settings-components.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-ui-compat.ts",
+        "exportName": "SettingPage"
+      },
       "obligationIds": [
         "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:17ee832eea7c105caf3153131e13db3fa487c257f74be9985a8fdd3505e30d85",
         "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:1df8f4f1da833c7f28749832bb61def88513d5f1761c9993ebfff4eacd67c952",
@@ -4904,8 +4940,24 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:baaf26092dfd1a3ff336acafee265914f2b339ef35605a986d0dae68f4c48596"
       ],
       "heritageEdgeIds": [],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:17ee832eea7c105caf3153131e13db3fa487c257f74be9985a8fdd3505e30d85",
+        "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:1df8f4f1da833c7f28749832bb61def88513d5f1761c9993ebfff4eacd67c952",
+        "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:3a1202875730832cdfd44275e884054e1fe7872f1fa875355394aa427bab5ef4",
+        "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:d0c69370924d2b01b57ad08f1ed13617ce65fbd17929d8cf624f66808b68c9af",
+        "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:aa2e84c1045c9c884581137eb6ccc6a66476eb0b40ae56fcf47c92267b307554",
+        "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:5bb60b9d54df4e77ea59fc7cbcd95eded52ebd3f32b3f89fb9a845d16a86b744",
+        "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:baaf26092dfd1a3ff336acafee265914f2b339ef35605a986d0dae68f4c48596"
+      ],
+      "coveredObligationSignatureHashes": [
+        "17ee832eea7c105caf3153131e13db3fa487c257f74be9985a8fdd3505e30d85",
+        "1df8f4f1da833c7f28749832bb61def88513d5f1761c9993ebfff4eacd67c952",
+        "3a1202875730832cdfd44275e884054e1fe7872f1fa875355394aa427bab5ef4",
+        "d0c69370924d2b01b57ad08f1ed13617ce65fbd17929d8cf624f66808b68c9af",
+        "aa2e84c1045c9c884581137eb6ccc6a66476eb0b40ae56fcf47c92267b307554",
+        "5bb60b9d54df4e77ea59fc7cbcd95eded52ebd3f32b3f89fb9a845d16a86b744",
+        "baaf26092dfd1a3ff336acafee265914f2b339ef35605a986d0dae68f4c48596"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -15733,7 +15785,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c",
       "name": "SettingGroup",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:1b2cc125324a30f53d13936bff315f1cca0bd84275c0ce6d252052e8f6ba633b",
@@ -15842,13 +15894,29 @@ export const obsidianRuntimeLedger = {
         }
       ],
       "heritageEdges": [],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:1b2cc125324a30f53d13936bff315f1cca0bd84275c0ce6d252052e8f6ba633b",
+        "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:5be8eab0347e00a22bb5b640fded83f5ed4ed663f930e767fa58b7766b9a8cfd",
+        "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:e45aac324fa2c665c0a859496372fff76f8885d557c8dc74adc7d54697fd041f",
+        "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:fcce77cd64e7f8006369ef71227742c9f22b20dddaddd83d989040d19b7253d1",
+        "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:9614794340c82c82b285f3a54a8a142362a137a1b21bc3f04ff07ae46f282e43",
+        "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:dc16f5c46e657114676e524e5290f40c276b55002da4275fb7fdb1e30e89c34b",
+        "obligation:export:class:SettingGroup:c78bde6786f4650ca1e677364d65a64e2f38d729ee728c553a954d74b6b09e1c:dc176cd2f3cb57d79c0286e7bcdbb264b3fc693cc78891f54e9f8d5fe6f687e9"
+      ],
+      "coveredObligationSignatureHashes": [
+        "1b2cc125324a30f53d13936bff315f1cca0bd84275c0ce6d252052e8f6ba633b",
+        "5be8eab0347e00a22bb5b640fded83f5ed4ed663f930e767fa58b7766b9a8cfd",
+        "e45aac324fa2c665c0a859496372fff76f8885d557c8dc74adc7d54697fd041f",
+        "fcce77cd64e7f8006369ef71227742c9f22b20dddaddd83d989040d19b7253d1",
+        "9614794340c82c82b285f3a54a8a142362a137a1b21bc3f04ff07ae46f282e43",
+        "dc16f5c46e657114676e524e5290f40c276b55002da4275fb7fdb1e30e89c34b",
+        "dc176cd2f3cb57d79c0286e7bcdbb264b3fc693cc78891f54e9f8d5fe6f687e9"
+      ]
     },
     {
       "exportId": "export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3",
       "name": "SettingPage",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:17ee832eea7c105caf3153131e13db3fa487c257f74be9985a8fdd3505e30d85",
@@ -15959,8 +16027,24 @@ export const obsidianRuntimeLedger = {
         }
       ],
       "heritageEdges": [],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:17ee832eea7c105caf3153131e13db3fa487c257f74be9985a8fdd3505e30d85",
+        "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:1df8f4f1da833c7f28749832bb61def88513d5f1761c9993ebfff4eacd67c952",
+        "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:3a1202875730832cdfd44275e884054e1fe7872f1fa875355394aa427bab5ef4",
+        "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:d0c69370924d2b01b57ad08f1ed13617ce65fbd17929d8cf624f66808b68c9af",
+        "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:aa2e84c1045c9c884581137eb6ccc6a66476eb0b40ae56fcf47c92267b307554",
+        "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:5bb60b9d54df4e77ea59fc7cbcd95eded52ebd3f32b3f89fb9a845d16a86b744",
+        "obligation:export:class:SettingPage:731418280376fc92064e49d3842c62f18f16c06aeefc2404206f52bc0ef0add3:baaf26092dfd1a3ff336acafee265914f2b339ef35605a986d0dae68f4c48596"
+      ],
+      "coveredObligationSignatureHashes": [
+        "17ee832eea7c105caf3153131e13db3fa487c257f74be9985a8fdd3505e30d85",
+        "1df8f4f1da833c7f28749832bb61def88513d5f1761c9993ebfff4eacd67c952",
+        "3a1202875730832cdfd44275e884054e1fe7872f1fa875355394aa427bab5ef4",
+        "d0c69370924d2b01b57ad08f1ed13617ce65fbd17929d8cf624f66808b68c9af",
+        "aa2e84c1045c9c884581137eb6ccc6a66476eb0b40ae56fcf47c92267b307554",
+        "5bb60b9d54df4e77ea59fc7cbcd95eded52ebd3f32b3f89fb9a845d16a86b744",
+        "baaf26092dfd1a3ff336acafee265914f2b339ef35605a986d0dae68f4c48596"
+      ]
     },
     {
       "exportId": "export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7",

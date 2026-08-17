@@ -6,6 +6,8 @@ import {
   type DropdownComponent,
   Editor,
   Setting,
+  SettingGroup,
+  SettingPage,
   type SliderComponent,
   type TextComponent,
   type ToggleComponent,
@@ -105,6 +107,70 @@ describe("Obsidian editor compatibility", () => {
     );
     expect(editor.getValue()).toBe("ALPHA WORLD\ndelta");
     expect(changes).toContain("alpha WORLD\ndelta");
+  });
+
+  it("renders grouped settings and a disposable setting page", () => {
+    const dom = new JSDOM("<!doctype html><body><main></main></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    const container = dom.window.document.querySelector("main");
+    expect(container).not.toBeNull();
+    if (!container) {
+      return;
+    }
+
+    let groupedSetting: Setting | null = null;
+    let groupSearchValue = "";
+    let extraClicks = 0;
+    const group = new SettingGroup(container)
+      .setHeading("Grouped settings")
+      .addClass("fixture-group extra-class")
+      .addSetting((setting) => {
+        groupedSetting = setting.setName("Grouped row");
+      })
+      .addSearch((search) => {
+        search.onChange((value) => {
+          groupSearchValue = value;
+        });
+        search.setValue("filter");
+        search.onChanged();
+      })
+      .addExtraButton((button) => {
+        button.setIcon("x").onClick(() => {
+          extraClicks += 1;
+        });
+        button.extraSettingsEl.click();
+      });
+
+    class FixturePage extends SettingPage {
+      override display(): void {
+        this.containerEl.textContent = "Page body";
+      }
+    }
+    const page = (() => {
+      vi.stubGlobal("document", dom.window.document);
+      try {
+        return new FixturePage();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    })();
+    const renderedSetting = groupedSetting as unknown as Setting;
+    page.title = "Fixture page";
+    page.titlebarEl.textContent = page.title;
+    page.display();
+
+    expect(group.listEl.className).toBe("setting-group fixture-group extra-class");
+    expect(group.listEl.firstElementChild?.textContent).toBe("Grouped settings");
+    expect(renderedSetting.nameEl.textContent).toBe("Grouped row");
+    expect(groupSearchValue).toBe("filter");
+    expect(extraClicks).toBe(1);
+    expect(page.rootEl.className).toBe("setting-page");
+    expect(page.titlebarEl.textContent).toBe("Fixture page");
+    expect(page.containerEl.textContent).toBe("Page body");
+    page.hide();
+    expect(page.containerEl.childElementCount).toBe(0);
+    dom.window.close();
   });
 });
 

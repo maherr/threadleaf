@@ -813,6 +813,76 @@ export class Setting {
   }
 }
 
+export class SettingGroup {
+  readonly listEl: HTMLElement;
+  private headingEl: HTMLElement | null = null;
+
+  constructor(containerEl: HTMLElement) {
+    this.listEl = containerEl.ownerDocument.createElement("div");
+    this.listEl.className = "setting-group";
+    containerEl.append(this.listEl);
+  }
+
+  setHeading(text: string | DocumentFragment): this {
+    if (!this.headingEl) {
+      this.headingEl = this.listEl.ownerDocument.createElement("div");
+      this.headingEl.className = "setting-group-heading";
+      this.listEl.prepend(this.headingEl);
+    }
+    replaceElementContent(this.headingEl, text);
+    return this;
+  }
+
+  addClass(...classes: string[]): this {
+    this.listEl.classList.add(
+      ...classes.flatMap((className) => className.split(/\s+/u).filter(Boolean)),
+    );
+    return this;
+  }
+
+  addSetting(callback: (setting: Setting) => void): this {
+    const setting = new Setting(this.listEl);
+    callback(setting);
+    return this;
+  }
+
+  addSearch(callback: (component: SearchComponent) => unknown): this {
+    const component = new SearchComponent(this.listEl);
+    callback(component);
+    return this;
+  }
+
+  addExtraButton(callback: (component: ExtraButtonComponent) => unknown): this {
+    const component = new ExtraButtonComponent(this.listEl);
+    callback(component);
+    return this;
+  }
+}
+
+export abstract class SettingPage {
+  readonly rootEl: HTMLElement;
+  readonly titlebarEl: HTMLElement;
+  readonly containerEl: HTMLElement;
+  title = "";
+
+  constructor() {
+    const doc = currentDocument();
+    this.rootEl = doc.createElement("div");
+    this.rootEl.className = "setting-page";
+    this.titlebarEl = doc.createElement("div");
+    this.titlebarEl.className = "setting-page-titlebar";
+    this.containerEl = doc.createElement("div");
+    this.containerEl.className = "setting-page-content";
+    this.rootEl.append(this.titlebarEl, this.containerEl);
+  }
+
+  abstract display(): void;
+
+  hide(): void {
+    this.containerEl.replaceChildren();
+  }
+}
+
 export interface Instruction {
   command: string;
   purpose: string;
