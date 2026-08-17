@@ -1226,6 +1226,58 @@
         ]
       }
     },
+    "Tasks": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "Tasks"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.tasks.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "831fa8f0b99b408d6d1fd162a956ca427ff9128474bbb42a20b73858924faabd",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.tasks.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "9bdbc224ac8af8bd8a056516fa6169603cfc36d78650bd61651cfc904679501c",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.tasks.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "1c24a28a18adc4b2560bdbaa9f5360a2ba04ca596b83bb4ed66570ba4f37a384",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.tasks.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "9408e16ea034c464d17f58358186726110680168253faebe2c5f811cc54b1003",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.tasks.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
     "Events": {
       "implementation": {
         "source": "src/runtime/obsidian-events.ts",

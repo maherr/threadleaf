@@ -6,6 +6,7 @@ import {
   Platform,
   prepareFuzzySearch,
   setTooltip,
+  Tasks,
 } from "./obsidian-compat";
 
 const previousGlobals = new Map<string, PropertyDescriptor | undefined>();
@@ -128,5 +129,36 @@ describe("Obsidian public utility compatibility", () => {
       });
     }
     dom.window.close();
+  });
+
+  it("aggregates callbacks and promises until late work settles", async () => {
+    const tasks = new Tasks();
+    const events: string[] = [];
+    let releaseLateWork: () => void = () => undefined;
+    const lateWork = new Promise<void>((resolve) => {
+      releaseLateWork = resolve;
+    });
+
+    tasks.add(async () => {
+      events.push("callback");
+      await lateWork;
+      events.push("released");
+    });
+    tasks.addPromise(Promise.resolve().then(() => events.push("promise")));
+
+    expect(tasks.isEmpty()).toBe(false);
+    const settled = tasks.promise();
+    await Promise.resolve();
+    releaseLateWork();
+    await settled;
+
+    expect(events).toEqual(["callback", "promise", "released"]);
+    expect(tasks.isEmpty()).toBe(true);
+    await expect(tasks.promise()).resolves.toBeUndefined();
+
+    const rejected = new Tasks();
+    rejected.addPromise(Promise.reject(new Error("fixture failure")));
+    await expect(rejected.promise()).rejects.toThrow("fixture failure");
+    expect(rejected.isEmpty()).toBe(true);
   });
 });

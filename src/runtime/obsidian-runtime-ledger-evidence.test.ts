@@ -3332,6 +3332,74 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
     }
   });
 
+  /** @compatibility-test-id obsidian-runtime.tasks.v1 */
+  it('proves Tasks through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-runtime-ledger-tasks-"),
+    );
+    const pluginPath = path.join(sandboxPath, "tasks-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "tasks-ledger-fixture",
+          name: "Tasks ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { Plugin, Tasks } = require("obsidian");',
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          "    const tasks = new Tasks();",
+          "    const events = [];",
+          "    let releaseLateWork;",
+          "    const lateWork = new Promise((resolve) => { releaseLateWork = resolve; });",
+          '    tasks.add(async () => { events.push("callback"); await lateWork; events.push("released"); });',
+          '    tasks.addPromise(Promise.resolve().then(() => events.push("promise")));',
+          "    const pendingBeforeRelease = !tasks.isEmpty();",
+          "    const settled = tasks.promise();",
+          "    await Promise.resolve();",
+          "    releaseLateWork();",
+          "    await settled;",
+          "    globalThis.__threadleafRuntimeLedgerTasksProbe = {",
+          "      isTasks: tasks instanceof Tasks,",
+          "      pendingBeforeRelease,",
+          "      events,",
+          "      emptyAfter: tasks.isEmpty(),",
+          "    };",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      await withTestDocument(async () => {
+        const host = new PluginHost(fixtureVault);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerTasksProbe?: unknown })
+              .__threadleafRuntimeLedgerTasksProbe,
+          ).toEqual({
+            isTasks: true,
+            pendingBeforeRelease: true,
+            events: ["callback", "promise", "released"],
+            emptyAfter: true,
+          });
+        } finally {
+          await host.close();
+        }
+      });
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerTasksProbe");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   /** @compatibility-test-id obsidian-runtime.setting-tabs.v1 */
   it('proves setting-tab definition and plugin-settings behavior through require("obsidian")', async () => {
     const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-runtime-ledger-tabs-"));

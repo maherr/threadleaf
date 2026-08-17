@@ -2789,6 +2789,32 @@ export class RenderContext {
   hoverPopover: unknown | null = null;
 }
 
+export class Tasks {
+  readonly #pending = new Set<Promise<unknown>>();
+
+  add(callback: () => Promise<unknown>): void {
+    this.addPromise(Promise.resolve().then(callback));
+  }
+
+  addPromise(promise: Promise<unknown>): void {
+    let tracked: Promise<unknown>;
+    tracked = Promise.resolve(promise).finally(() => {
+      this.#pending.delete(tracked);
+    });
+    this.#pending.add(tracked);
+  }
+
+  isEmpty(): boolean {
+    return this.#pending.size === 0;
+  }
+
+  async promise(): Promise<void> {
+    while (this.#pending.size > 0) {
+      await Promise.all([...this.#pending]);
+    }
+  }
+}
+
 export class SecretStorage extends Events {
   private readonly secrets = new Map<string, string>();
 
@@ -3310,6 +3336,7 @@ export interface ObsidianCompatibilityModule {
   TFile: typeof TFile;
   TAbstractFile: typeof TAbstractFile;
   TFolder: typeof TFolder;
+  Tasks: typeof Tasks;
   TextFileView: typeof TextFileView;
   TextAreaComponent: typeof TextAreaComponent;
   TextComponent: typeof TextComponent;
@@ -3985,6 +4012,7 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     TFile,
     TAbstractFile,
     TFolder,
+    Tasks,
     TextFileView,
     TextAreaComponent,
     TextComponent,

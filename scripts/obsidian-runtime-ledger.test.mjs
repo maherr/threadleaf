@@ -31,17 +31,17 @@ assert.deepEqual(ledger.counts, {
   functions: 47,
   enums: 1,
   variables: 8,
-  implemented: 107,
+  implemented: 108,
   partial: 8,
   unsupported: 0,
-  missing: 43,
+  missing: 42,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
-  implementedObligations: 605,
+  implementedObligations: 609,
 });
-assert.equal(ledger.factory.keys.length, 117);
+assert.equal(ledger.factory.keys.length, 118);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
 assert.equal(
   ledger.exports.some((entry) => entry.name === "sleep"),
@@ -148,6 +148,7 @@ assert.deepEqual(
     ["StringValue", "implemented"],
     ["SuggestModal", "implemented"],
     ["TAbstractFile", "implemented"],
+    ["Tasks", "implemented"],
     ["TextAreaComponent", "implemented"],
     ["TextComponent", "implemented"],
     ["TextFileView", "implemented"],

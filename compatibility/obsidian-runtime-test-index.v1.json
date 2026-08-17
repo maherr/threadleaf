@@ -94,13 +94,13 @@
     {
       "id": "obsidian-runtime.marker-negative-adjacent.v1",
       "path": "scripts/obsidian-runtime-ledger.test.mjs",
-      "line": 191,
+      "line": 192,
       "status": "unsupported"
     },
     {
       "id": "obsidian-runtime.marker-positive-adjacent.v1",
       "path": "scripts/obsidian-runtime-ledger.test.mjs",
-      "line": 190,
+      "line": 191,
       "status": "positive"
     },
     {
@@ -166,7 +166,7 @@
     {
       "id": "obsidian-runtime.setting-tabs.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 3335,
+      "line": 3403,
       "status": "positive"
     },
     {
@@ -184,7 +184,13 @@
     {
       "id": "obsidian-runtime.suggest-components.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 3444,
+      "line": 3512,
+      "status": "positive"
+    },
+    {
+      "id": "obsidian-runtime.tasks.v1",
+      "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
+      "line": 3335,
       "status": "positive"
     },
     {

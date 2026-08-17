@@ -14,15 +14,15 @@ export const obsidianRuntimeLedger = {
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 107,
+    "implemented": 108,
     "partial": 8,
     "unsupported": 0,
-    "missing": 43,
+    "missing": 42,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 605
+    "implementedObligations": 609
   },
   "factory": {
     "keys": [
@@ -95,6 +95,7 @@ export const obsidianRuntimeLedger = {
       "TFile",
       "TAbstractFile",
       "TFolder",
+      "Tasks",
       "TextFileView",
       "TextAreaComponent",
       "TextComponent",
@@ -214,6 +215,7 @@ export const obsidianRuntimeLedger = {
       "TFile",
       "TAbstractFile",
       "TFolder",
+      "Tasks",
       "TextFileView",
       "TextAreaComponent",
       "TextComponent",
@@ -5549,15 +5551,23 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f",
       "name": "Tasks",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f",
       "location": {
         "line": 7007,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.tasks.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "Tasks"
+      },
       "obligationIds": [
         "obligation:export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f:831fa8f0b99b408d6d1fd162a956ca427ff9128474bbb42a20b73858924faabd",
         "obligation:export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f:9bdbc224ac8af8bd8a056516fa6169603cfc36d78650bd61651cfc904679501c",
@@ -5565,8 +5575,18 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f:9408e16ea034c464d17f58358186726110680168253faebe2c5f811cc54b1003"
       ],
       "heritageEdgeIds": [],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f:831fa8f0b99b408d6d1fd162a956ca427ff9128474bbb42a20b73858924faabd",
+        "obligation:export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f:9bdbc224ac8af8bd8a056516fa6169603cfc36d78650bd61651cfc904679501c",
+        "obligation:export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f:1c24a28a18adc4b2560bdbaa9f5360a2ba04ca596b83bb4ed66570ba4f37a384",
+        "obligation:export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f:9408e16ea034c464d17f58358186726110680168253faebe2c5f811cc54b1003"
+      ],
+      "coveredObligationSignatureHashes": [
+        "831fa8f0b99b408d6d1fd162a956ca427ff9128474bbb42a20b73858924faabd",
+        "9bdbc224ac8af8bd8a056516fa6169603cfc36d78650bd61651cfc904679501c",
+        "1c24a28a18adc4b2560bdbaa9f5360a2ba04ca596b83bb4ed66570ba4f37a384",
+        "9408e16ea034c464d17f58358186726110680168253faebe2c5f811cc54b1003"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -17130,7 +17150,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f",
       "name": "Tasks",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f:831fa8f0b99b408d6d1fd162a956ca427ff9128474bbb42a20b73858924faabd",
@@ -17194,8 +17214,18 @@ export const obsidianRuntimeLedger = {
         }
       ],
       "heritageEdges": [],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f:831fa8f0b99b408d6d1fd162a956ca427ff9128474bbb42a20b73858924faabd",
+        "obligation:export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f:9bdbc224ac8af8bd8a056516fa6169603cfc36d78650bd61651cfc904679501c",
+        "obligation:export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f:1c24a28a18adc4b2560bdbaa9f5360a2ba04ca596b83bb4ed66570ba4f37a384",
+        "obligation:export:class:Tasks:7471c3f0a015a76d0b61a416b3f0e27ab82c41f6dc1da0008d25b5401c3d178f:9408e16ea034c464d17f58358186726110680168253faebe2c5f811cc54b1003"
+      ],
+      "coveredObligationSignatureHashes": [
+        "831fa8f0b99b408d6d1fd162a956ca427ff9128474bbb42a20b73858924faabd",
+        "9bdbc224ac8af8bd8a056516fa6169603cfc36d78650bd61651cfc904679501c",
+        "1c24a28a18adc4b2560bdbaa9f5360a2ba04ca596b83bb4ed66570ba4f37a384",
+        "9408e16ea034c464d17f58358186726110680168253faebe2c5f811cc54b1003"
+      ]
     },
     {
       "exportId": "export:class:TextAreaComponent:82022a25c1d9b8692259fd880f233dd0d033897fced04bc878cd7b2b5167f4fa",

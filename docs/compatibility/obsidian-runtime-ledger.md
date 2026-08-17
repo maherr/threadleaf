@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 117 (116 public, 1 internal extra)
+- Factory keys: 118 (117 public, 1 internal extra)
 
 ## Export status
 
@@ -149,7 +149,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | SuggestModal | class | implemented | 4282e1a8e74dc8a6 |
 | TAbstractFile | class | implemented | 33e1dba7bf6c6e2f |
 | TagValue | class | missing | c6c6bafd2fd50797 |
-| Tasks | class | missing | 7471c3f0a015a76d |
+| Tasks | class | implemented | 7471c3f0a015a76d |
 | TextAreaComponent | class | implemented | 82022a25c1d9b869 |
 | TextComponent | class | implemented | 4f2a68c9738f82e5 |
 | TextFileView | class | implemented | 0a4a4ba88dddacf0 |
