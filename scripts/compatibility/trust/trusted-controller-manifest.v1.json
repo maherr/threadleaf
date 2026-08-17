@@ -2,10 +2,50 @@
   "manifestId": "threadleaf-level4-controller-main",
   "manifestVersion": 1,
   "controllerVersion": "level4-controller-v2-phase0",
-  "controllerExecutableSha256": "eb7e66d29230f92ca327232a5cd8f8611d2dc7eaedc17714f1dd5ac98eb1a491",
+  "controllerExecutableSha256": "43266c48af4d4a746e7e320cea6a2aafe9015a53da9bbc0bf63e7d50a16c8df8",
+  "executableClosureSha256": "f6fbd1f3de0c11390d9ece9f5500006a09beb942910230d298f97fb43a1b6712",
+  "executableClosure": {
+    "schemaVersion": 1,
+    "roots": [
+      "scripts/compatibility/level4-controller.mjs",
+      "scripts/compatibility/level4-verifier.mjs"
+    ],
+    "entries": [
+      {
+        "path": "node_modules/.pnpm/canonicalize@2.1.0/node_modules/canonicalize/lib/canonicalize.js",
+        "bytes": 1108,
+        "sha256": "8a22f6848f00747463146fbfb11619944fc5800cf8f1ff0dfb9eb6489a05fe21"
+      },
+      {
+        "path": "scripts/compatibility/level4-artifacts.mjs",
+        "bytes": 16970,
+        "sha256": "d127f1c9939a8c948aabcdbcbeb0bb17ea59ddf99c9de57130d18da19d2315ab"
+      },
+      {
+        "path": "scripts/compatibility/level4-controller.mjs",
+        "bytes": 27832,
+        "sha256": "43266c48af4d4a746e7e320cea6a2aafe9015a53da9bbc0bf63e7d50a16c8df8"
+      },
+      {
+        "path": "scripts/compatibility/level4-verifier.mjs",
+        "bytes": 21725,
+        "sha256": "532c5bdc40e9f96c593a89ffdd0a267191a32a535de775159ebc54031d5f9ac2"
+      },
+      {
+        "path": "src/shared/authority-json-runtime.mjs",
+        "bytes": 797,
+        "sha256": "c7797ea57163f75ef332228bc92d237cadd2c6bfed14e44ddf7714fc67a68224"
+      },
+      {
+        "path": "src/shared/level4-receipt-boundary.mjs",
+        "bytes": 44915,
+        "sha256": "e6bb8a05f8a1cf13e64198f8ae216b50c96c3c039bb5426687db563fa8f4fc6f"
+      }
+    ]
+  },
   "allowedReceiptSchemaVersions": [2],
   "currentHarness": {
     "version": "level4-harness-v1-phase0",
-    "treeSha256": "f4aa6aee396b4a046e58154a1c95892680623056b8ea33a1f45b7f037ade4ae4"
+    "treeSha256": "15dbba183b0285ee212a8f9d39f5733b73bdc04786618b4c84d023ef07c5d52b"
   }
 }

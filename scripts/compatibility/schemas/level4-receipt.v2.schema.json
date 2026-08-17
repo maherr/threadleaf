@@ -150,9 +150,9 @@
     "screenshot": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "purpose", "sha256"],
+      "required": ["artifactId", "purpose", "sha256"],
       "properties": {
-        "path": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "artifactId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
         "purpose": { "$ref": "#/$defs/line" },
         "sha256": { "$ref": "#/$defs/digest" }
       }
@@ -165,6 +165,7 @@
         "keyIdentitySha256",
         "controllerVersion",
         "controllerExecutableSha256",
+        "trustedExecutableClosureSha256",
         "trustedControllerManifestSha256",
         "issuerTrustStoreIdentitySha256"
       ],
@@ -173,6 +174,7 @@
         "keyIdentitySha256": { "$ref": "#/$defs/digest" },
         "controllerVersion": { "$ref": "#/$defs/line" },
         "controllerExecutableSha256": { "$ref": "#/$defs/digest" },
+        "trustedExecutableClosureSha256": { "$ref": "#/$defs/digest" },
         "trustedControllerManifestSha256": { "$ref": "#/$defs/digest" },
         "issuerTrustStoreIdentitySha256": { "$ref": "#/$defs/digest" }
       }
@@ -204,6 +206,7 @@
         "effectiveBuildIdentityDigest",
         "controllerVersion",
         "controllerExecutableSha256",
+        "trustedExecutableClosureSha256",
         "trustedControllerManifestId",
         "trustedControllerManifestSha256",
         "evidenceHarnessVersion",
@@ -263,6 +266,7 @@
         "effectiveBuildIdentityDigest": { "$ref": "#/$defs/digest" },
         "controllerVersion": { "$ref": "#/$defs/line" },
         "controllerExecutableSha256": { "$ref": "#/$defs/digest" },
+        "trustedExecutableClosureSha256": { "$ref": "#/$defs/digest" },
         "trustedControllerManifestId": { "$ref": "#/$defs/identifier" },
         "trustedControllerManifestSha256": { "$ref": "#/$defs/digest" },
         "evidenceHarnessVersion": { "$ref": "#/$defs/line" },

@@ -15,6 +15,7 @@ const idPattern = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/u;
 const noncePattern = /^[a-f0-9]{64}$/u;
 const runIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/u;
+const screenshotArtifactIdPattern = /^sha256:[a-f0-9]{64}$/u;
 const base64Pattern = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u;
 
 function fail(message) {
@@ -79,12 +80,28 @@ function assertSafeInteger(value, label, { minimum = undefined } = {}) {
 }
 
 function assertTimestamp(value, label) {
-  if (
-    typeof value !== "string" ||
-    !timestampPattern.test(value) ||
-    Number.isNaN(Date.parse(value))
-  ) {
+  if (typeof value !== "string" || !timestampPattern.test(value)) {
     fail(`${label} must be a valid UTC RFC 3339 timestamp.`);
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/u.exec(value);
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const leapYear = year % 400 === 0 || (year % 4 === 0 && year % 100 !== 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > daysInMonth[month - 1] ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59
+  ) {
+    fail(`${label} must name a real Gregorian UTC calendar instant.`);
   }
   return value;
 }
@@ -535,8 +552,12 @@ function parseScreenshots(value, label) {
   if (!Array.isArray(value) || value.length > 256) fail(`${label} must be a bounded array.`);
   return value.map((item, index) => {
     const record = assertPlainRecord(item, `${label}[${index}]`);
-    assertExactKeys(record, ["path", "purpose", "sha256"], `${label}[${index}]`);
-    assertOneLine(record.path, `${label}[${index}].path`, 1_024);
+    assertExactKeys(record, ["artifactId", "purpose", "sha256"], `${label}[${index}]`);
+    if (
+      typeof record.artifactId !== "string" ||
+      !screenshotArtifactIdPattern.test(record.artifactId)
+    )
+      fail(`${label}[${index}].artifactId is not a portable content-addressed identifier.`);
     assertOneLine(record.purpose, `${label}[${index}].purpose`, 512);
     assertSha256(record.sha256, `${label}[${index}].sha256`);
     return record;
@@ -572,6 +593,7 @@ export function parseLevel4ReceiptPayloadV2(value) {
       "effectiveBuildIdentityDigest",
       "controllerVersion",
       "controllerExecutableSha256",
+      "trustedExecutableClosureSha256",
       "trustedControllerManifestId",
       "trustedControllerManifestSha256",
       "evidenceHarnessVersion",
@@ -617,6 +639,7 @@ export function parseLevel4ReceiptPayloadV2(value) {
     "electronExecutableSha256",
     "effectiveBuildIdentityDigest",
     "controllerExecutableSha256",
+    "trustedExecutableClosureSha256",
     "trustedControllerManifestSha256",
     "evidenceHarnessTreeSha256",
     "issuerKeyIdentitySha256",
@@ -742,6 +765,7 @@ function parseIssuer(value, label = "issuer") {
       "keyIdentitySha256",
       "controllerVersion",
       "controllerExecutableSha256",
+      "trustedExecutableClosureSha256",
       "trustedControllerManifestSha256",
       "issuerTrustStoreIdentitySha256",
     ],
@@ -751,6 +775,7 @@ function parseIssuer(value, label = "issuer") {
   assertSha256(record.keyIdentitySha256, `${label}.keyIdentitySha256`);
   assertOneLine(record.controllerVersion, `${label}.controllerVersion`, 100);
   assertSha256(record.controllerExecutableSha256, `${label}.controllerExecutableSha256`);
+  assertSha256(record.trustedExecutableClosureSha256, `${label}.trustedExecutableClosureSha256`);
   assertSha256(record.trustedControllerManifestSha256, `${label}.trustedControllerManifestSha256`);
   assertSha256(record.issuerTrustStoreIdentitySha256, `${label}.issuerTrustStoreIdentitySha256`);
   return record;
@@ -804,6 +829,7 @@ export function parseLevel4ReceiptEnvelopeV2(value) {
     payload.issuerKeyIdentitySha256 !== issuer.keyIdentitySha256 ||
     payload.controllerVersion !== issuer.controllerVersion ||
     payload.controllerExecutableSha256 !== issuer.controllerExecutableSha256 ||
+    payload.trustedExecutableClosureSha256 !== issuer.trustedExecutableClosureSha256 ||
     payload.trustedControllerManifestSha256 !== issuer.trustedControllerManifestSha256 ||
     payload.issuerTrustStoreIdentitySha256 !== issuer.issuerTrustStoreIdentitySha256
   )
@@ -855,6 +881,8 @@ function parseControllerManifestShape(value, label) {
       "manifestVersion",
       "controllerVersion",
       "controllerExecutableSha256",
+      "executableClosureSha256",
+      "executableClosure",
       "allowedReceiptSchemaVersions",
       "currentHarness",
     ],
@@ -864,13 +892,66 @@ function parseControllerManifestShape(value, label) {
   assertSafeInteger(record.manifestVersion, `${label}.manifestVersion`, { minimum: 1 });
   assertOneLine(record.controllerVersion, `${label}.controllerVersion`, 100);
   assertSha256(record.controllerExecutableSha256, `${label}.controllerExecutableSha256`);
+  assertSha256(record.executableClosureSha256, `${label}.executableClosureSha256`);
+  const closure = assertPlainRecord(record.executableClosure, `${label}.executableClosure`);
+  assertExactKeys(closure, ["schemaVersion", "roots", "entries"], `${label}.executableClosure`);
+  if (closure.schemaVersion !== 1) fail(`${label}.executableClosure.schemaVersion is unsupported.`);
+  if (
+    JSON.stringify(closure.roots) !==
+    JSON.stringify([
+      "scripts/compatibility/level4-controller.mjs",
+      "scripts/compatibility/level4-verifier.mjs",
+    ])
+  )
+    fail(`${label}.executableClosure.roots are not the trusted controller and verifier roots.`);
+  if (
+    !Array.isArray(closure.entries) ||
+    closure.entries.length === 0 ||
+    closure.entries.length > 256
+  )
+    fail(`${label}.executableClosure.entries is not bounded.`);
+  const closureEntries = closure.entries.map((item, index) => {
+    const entry = assertPlainRecord(item, `${label}.executableClosure.entries[${index}]`);
+    assertExactKeys(
+      entry,
+      ["path", "bytes", "sha256"],
+      `${label}.executableClosure.entries[${index}]`,
+    );
+    if (
+      typeof entry.path !== "string" ||
+      entry.path.length === 0 ||
+      entry.path.includes("\\") ||
+      entry.path.startsWith("/") ||
+      entry.path.normalize("NFC") !== entry.path ||
+      entry.path.split("/").some((part) => part.length === 0 || part === "." || part === "..")
+    )
+      fail(`${label}.executableClosure.entries[${index}].path is not portable.`);
+    assertSafeInteger(entry.bytes, `${label}.executableClosure.entries[${index}].bytes`, {
+      minimum: 0,
+    });
+    assertSha256(entry.sha256, `${label}.executableClosure.entries[${index}].sha256`);
+    return entry;
+  });
+  const sortedPaths = closureEntries.map((entry) => entry.path).sort();
+  if (
+    new Set(sortedPaths).size !== sortedPaths.length ||
+    JSON.stringify(sortedPaths) !== JSON.stringify(closureEntries.map((entry) => entry.path))
+  )
+    fail(`${label}.executableClosure.entries must be unique and deterministically sorted.`);
+  const normalizedClosure = {
+    schemaVersion: 1,
+    roots: [...closure.roots],
+    entries: closureEntries,
+  };
+  if (level4JsonSha256(normalizedClosure) !== record.executableClosureSha256)
+    fail(`${label}.executableClosureSha256 is stale.`);
   if (JSON.stringify(record.allowedReceiptSchemaVersions) !== "[2]")
     fail(`${label}.allowedReceiptSchemaVersions must be [2].`);
   const harness = assertPlainRecord(record.currentHarness, `${label}.currentHarness`);
   assertExactKeys(harness, ["version", "treeSha256"], `${label}.currentHarness`);
   assertOneLine(harness.version, `${label}.currentHarness.version`, 100);
   assertSha256(harness.treeSha256, `${label}.currentHarness.treeSha256`);
-  return { ...record, currentHarness: harness };
+  return { ...record, executableClosure: normalizedClosure, currentHarness: harness };
 }
 
 export function parseLevel4TrustedControllerManifestV1(value) {
@@ -985,6 +1066,7 @@ export function parseLevel4VerificationTupleV2(value) {
       "platform",
       "architecture",
       "controllerExecutableSha256",
+      "trustedExecutableClosureSha256",
       "trustedControllerManifestSha256",
       "evidenceHarnessVersion",
       "evidenceHarnessTreeSha256",
@@ -1002,6 +1084,7 @@ export function parseLevel4VerificationTupleV2(value) {
     "workflowDefinitionSha256",
     "fixtureTreeSha256",
     "controllerExecutableSha256",
+    "trustedExecutableClosureSha256",
     "trustedControllerManifestSha256",
     "evidenceHarnessTreeSha256",
     "issuerKeyIdentitySha256",

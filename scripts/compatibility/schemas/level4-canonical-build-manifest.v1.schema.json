@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:threadleaf:compatibility:level4-canonical-build-manifest:v1",
+  "title": "Threadleaf Level 4 canonical installed build manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "applicationId",
+    "version",
+    "platform",
+    "architecture",
+    "requiredInstalledPaths",
+    "entries"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "applicationId": { "const": "org.threadleaf.Threadleaf" },
+    "version": { "$ref": "#/$defs/text" },
+    "platform": { "$ref": "#/$defs/text" },
+    "architecture": { "$ref": "#/$defs/text" },
+    "requiredInstalledPaths": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/path" }
+    },
+    "entries": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "path", "bytes", "mode"],
+        "properties": {
+          "kind": { "enum": ["file", "directory"] },
+          "path": { "$ref": "#/$defs/path" },
+          "bytes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+          "mode": { "type": "integer", "minimum": 0, "maximum": 511 },
+          "sha256": { "$ref": "#/$defs/digest" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$)).*$"
+    },
+    "text": { "type": "string", "minLength": 1, "maxLength": 100 }
+  }
+}

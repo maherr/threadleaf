@@ -1,4 +1,7 @@
-import { pluginCompatibilityRegistry } from "../generated/plugin-compatibility-registry";
+import {
+  assertPluginCompatibilityRegistryCoherence,
+  pluginCompatibilityRegistry,
+} from "../generated/plugin-compatibility-registry";
 import type { PluginDiagnosticCode } from "./plugin-diagnostics";
 
 export const compatibilityModes = ["restricted", "enabled"] as const;
@@ -451,6 +454,7 @@ export function parsePluginManifest(value: unknown): PluginManifestData {
 export function createPluginCompatibilityReport(
   manifest: Pick<PluginManifestData, "id" | "version">,
 ): PluginCompatibilityReport {
+  assertPluginCompatibilityRegistryCoherence();
   const candidates = pluginCompatibilityRegistry.entries.filter(
     (entry) => entry.plugin.id === manifest.id,
   );

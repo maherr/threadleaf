@@ -14,13 +14,14 @@ import {
   parseLevel4WorkflowDefinitionV2,
 } from "../../src/shared/level4-receipt-boundary.mjs";
 import {
+  buildExecutableClosureManifest,
   buildFileArtifact,
   buildPluginPackageIdentity,
   buildTreeManifest,
-  canonicalJsonFileSha256,
   effectiveBuildIdentityDigest,
-  readJsonFile,
+  readAuthorityJsonFile,
   sha256Bytes,
+  validateCanonicalBuildManifest,
 } from "./level4-artifacts.mjs";
 
 export const level4ControllerVersion = "level4-controller-v2-phase0";
@@ -113,9 +114,9 @@ async function loadTrustContext({
   controllerExecutablePath,
   harnessTreePath,
 }) {
-  const rawPolicy = await readJsonFile(trustPolicyPath, "Level 4 trust policy");
+  const rawPolicy = await readAuthorityJsonFile(trustPolicyPath, "Level 4 trust policy");
   const policy = parseLevel4TrustPolicyV1(rawPolicy);
-  const rawManifest = await readJsonFile(
+  const rawManifest = await readAuthorityJsonFile(
     trustedControllerManifestPath,
     "trusted controller manifest",
   );
@@ -129,14 +130,22 @@ async function loadTrustContext({
     label: "controller executable",
   });
   const harnessManifest = await buildTreeManifest(harnessTreePath, { label: "evidence harness" });
+  const closureRoot = path.resolve(path.dirname(controllerExecutablePath), "../..");
+  const executableClosure = await buildExecutableClosureManifest({
+    rootPath: closureRoot,
+    trustedClosure: manifest.executableClosure,
+  });
   if (controllerArtifact.sha256 !== manifest.controllerExecutableSha256)
     fail("controller executable does not match trusted manifest.");
   if (harnessManifest.treeSha256 !== manifest.currentHarness.treeSha256)
     fail("evidence harness does not match trusted manifest.");
+  if (executableClosure.closureSha256 !== manifest.executableClosureSha256)
+    fail("reachable controller/verifier executable closure is not trusted.");
   return {
     policy,
     manifest,
     controllerExecutableSha256: controllerArtifact.sha256,
+    executableClosureSha256: executableClosure.closureSha256,
     evidenceHarnessTreeSha256: harnessManifest.treeSha256,
     trustedControllerManifestSha256: level4JsonSha256(manifest),
     issuerTrustStoreIdentitySha256: level4JsonSha256(policy),
@@ -180,7 +189,7 @@ function reviewedAuthorityPayload(profile) {
 }
 
 async function loadAuthorityProfile(profilePath, packageIdentity, packageIdentityDigest) {
-  const profile = await readJsonFile(profilePath, "reviewed authority profile");
+  const profile = await readAuthorityJsonFile(profilePath, "reviewed authority profile");
   ensureObject(profile, "reviewed authority profile");
   if (
     profile.schemaVersion !== 1 ||
@@ -211,14 +220,18 @@ async function digestScreenshotList(screenshots = []) {
       ensureObject(item, `screenshot[${index}]`);
       ensureExactKeys(item, ["path", "purpose"], `screenshot[${index}]`);
       const artifact = await buildFileArtifact(item.path, { label: `screenshot ${index}` });
-      return { path: path.resolve(item.path), purpose: item.purpose, sha256: artifact.sha256 };
+      return {
+        artifactId: `sha256:${artifact.sha256}`,
+        purpose: item.purpose,
+        sha256: artifact.sha256,
+      };
     }),
   );
 }
 
 async function buildPayloadArtifacts(input) {
   const workflow = parseLevel4WorkflowDefinitionV2(
-    await readJsonFile(input.workflowDefinitionPath, "workflow definition"),
+    await readAuthorityJsonFile(input.workflowDefinitionPath, "workflow definition"),
   );
   const packageData = await buildPluginPackageIdentity(input.packagePath, {
     distributionTag: input.distributionTag,
@@ -237,10 +250,11 @@ async function buildPayloadArtifacts(input) {
   const installedTree = await buildTreeManifest(input.installedApplicationTreePath, {
     label: "installed application",
   });
-  const buildManifest = await canonicalJsonFileSha256(
-    input.canonicalBuildManifestPath,
-    "canonical build manifest",
-  );
+  const buildManifest = await validateCanonicalBuildManifest(input.canonicalBuildManifestPath, {
+    installedApplicationTreePath: input.installedApplicationTreePath,
+    requiredInstalledPaths: input.requiredInstalledPaths,
+    expected: input.expected,
+  });
   const relevantDist = await buildTreeManifest(input.relevantDistTreePath, {
     label: "relevant dist",
   });
@@ -266,7 +280,7 @@ async function buildPayloadArtifacts(input) {
     stagedPackageTreeSha256: sealedPackage.treeSha256,
     packagedApplicationArtifactSha256: packagedArtifact.sha256,
     installedApplicationTreeSha256: installedTree.treeSha256,
-    canonicalBuildManifestSha256: buildManifest,
+    canonicalBuildManifestSha256: buildManifest.sha256,
     relevantDistTreeSha256: relevantDist.treeSha256,
     electronExecutableSha256: electron.sha256,
   });
@@ -279,7 +293,7 @@ async function buildPayloadArtifacts(input) {
     fixtureTreeSha256: fixtureTree.treeSha256,
     packagedApplicationArtifactSha256: packagedArtifact.sha256,
     installedApplicationTreeSha256: installedTree.treeSha256,
-    canonicalBuildManifestSha256: buildManifest,
+    canonicalBuildManifestSha256: buildManifest.sha256,
     relevantDistTreeSha256: relevantDist.treeSha256,
     electronExecutableSha256: electron.sha256,
     effectiveBuildIdentityDigest: identity.digest,
@@ -447,16 +461,40 @@ function mapFailureState(value) {
 async function writeNoReplace(
   filePath,
   bytes,
-  { mode = 0o600, beforeLink = undefined, afterFlush = undefined } = {},
+  {
+    mode = 0o600,
+    beforeLink = undefined,
+    afterFlush = undefined,
+    afterFinalLink = undefined,
+    beforeTemporaryNameRemoval = undefined,
+    directoryOpen = undefined,
+    directorySync = undefined,
+    cleanupFinal = undefined,
+  } = {},
 ) {
-  await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
-  await fs.chmod(path.dirname(filePath), 0o700);
+  const directoryPath = path.dirname(filePath);
+  await fs.mkdir(directoryPath, { recursive: true, mode: 0o700 });
+  await fs.chmod(directoryPath, 0o700);
+  const pendingDirectory = path.join(directoryPath, ".level4-pending");
+  await fs.mkdir(pendingDirectory, { recursive: true, mode: 0o700 });
+  await fs.chmod(pendingDirectory, 0o700);
   const temporaryPath = path.join(
-    path.dirname(filePath),
+    pendingDirectory,
     `.${path.basename(filePath)}.${randomBytes(12).toString("hex")}.tmp`,
   );
+  const incompleteMarkerPath = path.join(directoryPath, `.${path.basename(filePath)}.incomplete`);
   let handle;
+  let linked = false;
+  let finalRemoved = false;
+  let markerCreated = false;
+  let markerOwned = false;
   try {
+    const markerHandle = await fs.open(incompleteMarkerPath, "wx", 0o600);
+    markerOwned = true;
+    await markerHandle.writeFile("incomplete\n", "utf8");
+    await markerHandle.sync();
+    await markerHandle.close();
+    markerCreated = true;
     handle = await fs.open(temporaryPath, "wx", mode);
     await handle.writeFile(bytes);
     await handle.sync();
@@ -465,18 +503,27 @@ async function writeNoReplace(
     if (afterFlush) await afterFlush();
     if (beforeLink) await beforeLink();
     await fs.link(temporaryPath, filePath);
+    linked = true;
+    if (afterFinalLink) await afterFinalLink();
+    if (beforeTemporaryNameRemoval) await beforeTemporaryNameRemoval();
     await fs.unlink(temporaryPath);
     let directoryHandle;
     try {
-      directoryHandle = await fs.open(path.dirname(filePath), "r");
+      if (directoryOpen) await directoryOpen();
+      directoryHandle = await fs.open(directoryPath, "r");
+      if (directorySync) await directorySync();
       await directoryHandle.sync();
-    } catch (error) {
-      try {
-        await fs.unlink(filePath);
-      } catch {}
-      throw error;
     } finally {
       await directoryHandle?.close();
+    }
+    await fs.unlink(incompleteMarkerPath);
+    markerCreated = false;
+    let finalDirectoryHandle;
+    try {
+      finalDirectoryHandle = await fs.open(directoryPath, "r");
+      await finalDirectoryHandle.sync();
+    } finally {
+      await finalDirectoryHandle?.close();
     }
   } catch (error) {
     try {
@@ -485,6 +532,26 @@ async function writeNoReplace(
     try {
       await fs.unlink(temporaryPath);
     } catch {}
+    if (linked && !finalRemoved) {
+      try {
+        if (cleanupFinal) await cleanupFinal();
+        await fs.unlink(filePath);
+        finalRemoved = true;
+      } catch {}
+    }
+    if (finalRemoved || (!linked && markerOwned)) {
+      try {
+        await fs.unlink(incompleteMarkerPath);
+        markerCreated = false;
+      } catch {}
+    } else if (linked && !markerCreated) {
+      try {
+        const markerHandle = await fs.open(incompleteMarkerPath, "wx", 0o600);
+        await markerHandle.writeFile("incomplete\n", "utf8");
+        await markerHandle.sync();
+        await markerHandle.close();
+      } catch {}
+    }
     throw error;
   }
 }
@@ -523,6 +590,7 @@ async function writeFailedAttempt({
     keyIdentitySha256: issuerKey.keyIdentitySha256,
     controllerVersion: trust.manifest.controllerVersion,
     controllerExecutableSha256: trust.controllerExecutableSha256,
+    trustedExecutableClosureSha256: trust.executableClosureSha256,
     trustedControllerManifestSha256: trust.trustedControllerManifestSha256,
     issuerTrustStoreIdentitySha256: trust.issuerTrustStoreIdentitySha256,
   };
@@ -572,7 +640,14 @@ export async function finalizeLevel4Receipt({
     return { publishable: false, terminalState, attempt };
   }
   if (faults.beforeArtifactBuild) await faults.beforeArtifactBuild();
-  const artifacts = await buildPayloadArtifacts(artifactPaths);
+  const artifacts = await buildPayloadArtifacts({
+    ...artifactPaths,
+    expected: {
+      threadleafVersion: result.threadleafVersion,
+      platform: snapshot.workflow.platform,
+      architecture: snapshot.workflow.architecture,
+    },
+  });
   requireSingleActiveIssuer(artifacts.trust.policy);
   const trustKey = await loadPrivateKey(privateKey);
   const issuerKey = findActiveIssuer(artifacts.trust.policy, trustKey);
@@ -581,6 +656,7 @@ export async function finalizeLevel4Receipt({
     keyIdentitySha256: issuerKey.keyIdentitySha256,
     controllerVersion: artifacts.trust.manifest.controllerVersion,
     controllerExecutableSha256: artifacts.trust.controllerExecutableSha256,
+    trustedExecutableClosureSha256: artifacts.trust.executableClosureSha256,
     trustedControllerManifestSha256: artifacts.trust.trustedControllerManifestSha256,
     issuerTrustStoreIdentitySha256: artifacts.trust.issuerTrustStoreIdentitySha256,
   };
@@ -608,6 +684,7 @@ export async function finalizeLevel4Receipt({
     effectiveBuildIdentityDigest: artifacts.effectiveBuildIdentityDigest,
     controllerVersion: artifacts.trust.manifest.controllerVersion,
     controllerExecutableSha256: artifacts.trust.controllerExecutableSha256,
+    trustedExecutableClosureSha256: artifacts.trust.executableClosureSha256,
     trustedControllerManifestId: artifacts.trust.manifest.manifestId,
     trustedControllerManifestSha256: artifacts.trust.trustedControllerManifestSha256,
     evidenceHarnessVersion: artifacts.trust.manifest.currentHarness.version,
@@ -644,6 +721,11 @@ export async function finalizeLevel4Receipt({
     await writeNoReplace(receiptPath, bytes, {
       beforeLink: faults.beforeReceiptLink,
       afterFlush: faults.afterReceiptFlush,
+      afterFinalLink: faults.afterFinalReceiptLink,
+      beforeTemporaryNameRemoval: faults.beforeReceiptTemporaryNameRemoval,
+      directoryOpen: faults.receiptDirectoryOpen,
+      directorySync: faults.receiptDirectorySync,
+      cleanupFinal: faults.receiptFinalCleanup,
     });
   } catch (error) {
     if (error?.code === "EEXIST") fail(`receipt final name already exists: ${receiptPath}`);

@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { level4JsonSha256, parseLevel4Json } from "../../src/shared/level4-receipt-boundary.mjs";
 
 const sha256Pattern = /^[a-f0-9]{64}$/u;
@@ -40,7 +42,11 @@ function normalizeRelativePath(value, label = "path") {
   ) {
     fail(`${label} is not normalized or traverses a parent.`);
   }
-  return normalized;
+  return value;
+}
+
+function portableCollisionKey(value) {
+  return value.normalize("NFC").toLocaleLowerCase("en-US");
 }
 
 function comparePortablePaths(left, right) {
@@ -60,15 +66,20 @@ async function readDirectoryEntries(rootPath, relativePath, entries, seenPaths) 
       `cannot read directory ${rootPath}: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-  children.sort((left, right) =>
-    comparePortablePaths(left.name.normalize("NFC"), right.name.normalize("NFC")),
-  );
+  children.sort((left, right) => {
+    const normalized = comparePortablePaths(
+      left.name.normalize("NFC"),
+      right.name.normalize("NFC"),
+    );
+    return normalized || comparePortablePaths(left.name, right.name);
+  });
   for (const child of children) {
-    const childName = child.name.normalize("NFC");
+    const childName = child.name;
     const childRelative = relativePath ? `${relativePath}/${childName}` : childName;
     const normalized = normalizeRelativePath(childRelative, "tree entry");
-    if (seenPaths.has(normalized)) fail(`tree contains colliding normalized path ${normalized}.`);
-    seenPaths.add(normalized);
+    const collisionKey = portableCollisionKey(normalized);
+    if (seenPaths.has(collisionKey)) fail(`tree contains colliding normalized path ${normalized}.`);
+    seenPaths.add(collisionKey);
     const childPath = path.join(rootPath, child.name);
     let stat;
     try {
@@ -186,6 +197,20 @@ export async function readJsonFile(filePath, label = "JSON file") {
   return parsed;
 }
 
+export async function readAuthorityJsonFile(
+  filePath,
+  label = "authority JSON file",
+  { requireCanonical = false } = {},
+) {
+  let bytes;
+  try {
+    bytes = await fs.readFile(filePath);
+  } catch (error) {
+    fail(`cannot read ${label}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return parseLevel4Json(bytes, { requireCanonical });
+}
+
 export async function readCanonicalJsonFile(filePath, label = "canonical JSON file") {
   let bytes;
   try {
@@ -197,7 +222,7 @@ export async function readCanonicalJsonFile(filePath, label = "canonical JSON fi
 }
 
 export async function canonicalJsonFileSha256(filePath, label = "JSON file") {
-  return level4JsonSha256(await readJsonFile(filePath, label));
+  return level4JsonSha256(await readAuthorityJsonFile(filePath, label));
 }
 
 function requireDigest(value, label) {
@@ -213,7 +238,7 @@ export async function buildPluginPackageIdentity(
   const manifestPath = path.join(packageRoot, "manifest.json");
   const mainPath = path.join(packageRoot, "main.js");
   const stylesPath = path.join(packageRoot, "styles.css");
-  const manifest = await readJsonFile(manifestPath, "plugin manifest");
+  const manifest = await readAuthorityJsonFile(manifestPath, "plugin manifest");
   if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest)) {
     fail("plugin manifest is not an object.");
   }
@@ -280,4 +305,172 @@ export function effectiveBuildIdentityDigest(input) {
 
 export function assertDigest(value, label) {
   return requireDigest(value, label);
+}
+
+const executableClosureRoots = [
+  "scripts/compatibility/level4-controller.mjs",
+  "scripts/compatibility/level4-verifier.mjs",
+];
+
+function closurePath(rootPath, filePath) {
+  const relative = path.relative(rootPath, filePath).split(path.sep).join("/");
+  if (!relative || relative.startsWith("../") || relative === ".." || path.isAbsolute(relative))
+    fail(`executable closure escapes its repository root: ${filePath}`);
+  return relative;
+}
+
+async function resolveClosureImport(specifier, importerPath, rootPath) {
+  if (specifier.startsWith("node:")) return null;
+  if (specifier.startsWith(".")) {
+    const base = path.resolve(path.dirname(importerPath), specifier);
+    const candidates = path.extname(base)
+      ? [base]
+      : [
+          base,
+          `${base}.mjs`,
+          `${base}.js`,
+          `${base}.cjs`,
+          `${base}.json`,
+          path.join(base, "index.mjs"),
+        ];
+    for (const candidate of candidates) {
+      try {
+        await fs.stat(candidate);
+        return candidate;
+      } catch {}
+    }
+    fail(`executable closure import ${specifier} from ${importerPath} is missing.`);
+  }
+  try {
+    const resolved = createRequire(pathToFileURL(importerPath).href).resolve(specifier);
+    const relative = closurePath(rootPath, resolved);
+    if (relative.includes(".pnpm/")) return resolved;
+    return resolved;
+  } catch (error) {
+    fail(
+      `executable closure import ${specifier} from ${importerPath} could not be resolved: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
+
+function importedSpecifiers(source, filePath) {
+  const result = [];
+  const pattern =
+    /\b(?:import|export)\s+(?:[^"'`]*?\sfrom\s+)?["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']\s*\)/gu;
+  for (const match of source.matchAll(pattern)) result.push(match[1] ?? match[2]);
+  if (/\b(?:import|export)\s+(?:[^"'`]*?\sfrom\s+)?(?:[^"'`\s]|$)/u.test(source)) {
+    // The supported closure is deliberately static. Dynamic or computed imports cannot be
+    // trusted by a declarative manifest and must be made explicit before they can enter it.
+    const unsupported = source.match(/\b(?:import|export)\s+(?:[^"'`]*?\sfrom\s+)?([^"'`\s;]+)/u);
+    if (unsupported?.[1]?.startsWith("(")) {
+      fail(`executable closure contains a non-literal import in ${filePath}.`);
+    }
+  }
+  return result;
+}
+
+async function resolveClosureFile(rootPath, importerPath, specifier) {
+  const resolved = await resolveClosureImport(specifier, importerPath, rootPath);
+  if (resolved === null) return null;
+  let realPath;
+  try {
+    realPath = await fs.realpath(resolved);
+  } catch (error) {
+    fail(
+      `executable closure file ${resolved} is unavailable: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  closurePath(rootPath, realPath);
+  return realPath;
+}
+
+export async function buildExecutableClosureManifest({
+  rootPath,
+  trustedClosure = undefined,
+} = {}) {
+  const repositoryRoot = path.resolve(rootPath ?? process.cwd());
+  const visited = new Map();
+  const visit = async (filePath) => {
+    const realPath = await fs.realpath(filePath).catch((error) => {
+      fail(
+        `executable closure root ${filePath} is unavailable: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
+    const relative = closurePath(repositoryRoot, realPath);
+    if (visited.has(relative)) return;
+    const stat = await fs.stat(realPath);
+    if (!stat.isFile()) fail(`executable closure entry ${relative} is not a regular file.`);
+    const bytes = await fs.readFile(realPath);
+    const entry = { path: relative, bytes: bytes.length, sha256: sha256Bytes(bytes) };
+    visited.set(relative, entry);
+    const source = bytes.toString("utf8");
+    for (const specifier of importedSpecifiers(source, relative)) {
+      const dependency = await resolveClosureFile(repositoryRoot, realPath, specifier);
+      if (dependency !== null) await visit(dependency);
+    }
+  };
+  for (const root of executableClosureRoots) await visit(path.join(repositoryRoot, root));
+  const entries = [...visited.values()].sort((left, right) =>
+    comparePortablePaths(left.path, right.path),
+  );
+  const closure = { schemaVersion: 1, roots: [...executableClosureRoots], entries };
+  const closureSha256 = level4JsonSha256(closure);
+  if (trustedClosure !== undefined) {
+    if (level4JsonSha256(trustedClosure) !== closureSha256)
+      fail("trusted executable closure is missing, extra, or changed reachable code.");
+  }
+  return { ...closure, closureSha256 };
+}
+
+export async function validateCanonicalBuildManifest(
+  manifestPath,
+  { installedApplicationTreePath, requiredInstalledPaths = [], expected },
+) {
+  const manifest = await readAuthorityJsonFile(manifestPath, "canonical build manifest", {
+    requireCanonical: true,
+  });
+  if (
+    manifest === null ||
+    typeof manifest !== "object" ||
+    Array.isArray(manifest) ||
+    Object.keys(manifest).sort().join(",") !==
+      "applicationId,architecture,entries,platform,requiredInstalledPaths,schemaVersion,version"
+  ) {
+    fail("canonical build manifest has an unsupported schema.");
+  }
+  const platform = expected.platform.split("-")[0];
+  if (
+    manifest.schemaVersion !== 1 ||
+    manifest.applicationId !== "org.threadleaf.Threadleaf" ||
+    manifest.version !== expected.threadleafVersion ||
+    manifest.platform !== platform ||
+    manifest.architecture !== expected.architecture
+  ) {
+    fail("canonical build manifest identity is stale or arbitrary.");
+  }
+  if (!Array.isArray(manifest.requiredInstalledPaths) || !Array.isArray(manifest.entries))
+    fail("canonical build manifest inventory is malformed.");
+  const expectedRequired = [...requiredInstalledPaths].sort(comparePortablePaths);
+  const actualRequired = [...manifest.requiredInstalledPaths].sort(comparePortablePaths);
+  if (JSON.stringify(actualRequired) !== JSON.stringify(expectedRequired))
+    fail("canonical build manifest required installed paths differ from verifier inputs.");
+  if (new Set(actualRequired).size !== actualRequired.length)
+    fail("canonical build manifest required installed paths contain duplicates.");
+  const installed = await buildTreeManifest(installedApplicationTreePath, {
+    label: "installed application",
+  });
+  const expectedEntries = installed.entries;
+  if (level4JsonSha256(manifest.entries) !== level4JsonSha256(expectedEntries))
+    fail("canonical build manifest is not the exact installed executable/resource inventory.");
+  for (const requiredPath of actualRequired) {
+    if (!expectedEntries.some((entry) => entry.kind === "file" && entry.path === requiredPath))
+      fail(`canonical build manifest omits required installed file ${requiredPath}.`);
+  }
+  return {
+    manifest,
+    installed,
+    sha256: level4JsonSha256(manifest),
+  };
 }

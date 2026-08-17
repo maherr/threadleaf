@@ -14,9 +14,11 @@ import {
 } from "../../../src/shared/level4-receipt-boundary.mjs";
 import { generatePluginCompatibilityRegistry } from "../../generate-plugin-compatibility-registry.mjs";
 import {
+  buildExecutableClosureManifest,
   buildPluginPackageIdentity,
   buildTreeManifest,
   diffTreeManifests,
+  readAuthorityJsonFile,
   sha256Bytes,
 } from "../level4-artifacts.mjs";
 import { createLevel4ControllerRun, finalizeLevel4Receipt } from "../level4-controller.mjs";
@@ -51,6 +53,19 @@ async function fileExists(filePath) {
   } catch {
     return false;
   }
+}
+
+async function receiptFiles(directory) {
+  return (await fs.readdir(directory)).filter((name) => name.endsWith(".receipt.json"));
+}
+
+async function publishableReceiptFiles(directory) {
+  const names = await receiptFiles(directory);
+  const publishable = [];
+  for (const name of names) {
+    if (!(await fileExists(path.join(directory, `.${name}.incomplete`)))) publishable.push(name);
+  }
+  return publishable;
 }
 
 async function gitHead() {
@@ -144,6 +159,11 @@ async function makeFixture(root) {
   const installedApplicationTreePath = path.join(root, "installed-app");
   await fs.mkdir(installedApplicationTreePath, { recursive: true, mode: 0o700 });
   await writeFile(
+    path.join(installedApplicationTreePath, "bin", "threadleaf"),
+    "#!/bin/sh\n",
+    0o700,
+  );
+  await writeFile(
     path.join(installedApplicationTreePath, "resources.asar"),
     "fixture-installed-application\n",
   );
@@ -160,14 +180,22 @@ async function makeFixture(root) {
   const packagedArtifactPath = path.join(root, "Threadleaf-fixture.tar.xz");
   await writeFile(packagedArtifactPath, "fixture-packaged-artifact\n");
   const canonicalBuildManifestPath = path.join(root, "build-manifest.json");
-  await writeJson(canonicalBuildManifestPath, {
-    schemaVersion: 1,
-    applicationId: "org.threadleaf.Threadleaf",
-    version: "fixture-build",
-    platform: "linux",
-    architecture: "x64",
-    source: "fixture",
+  const installedTree = await buildTreeManifest(installedApplicationTreePath, {
+    label: "installed application",
   });
+  const requiredInstalledPaths = ["bin/threadleaf", "resources.asar"];
+  await writeFile(
+    canonicalBuildManifestPath,
+    canonicalizeLevel4Json({
+      schemaVersion: 1,
+      applicationId: "org.threadleaf.Threadleaf",
+      version: "0.1.0-beta.7",
+      platform: "linux",
+      architecture: "x64",
+      requiredInstalledPaths,
+      entries: installedTree.entries,
+    }),
+  );
   const electronExecutablePath = path.join(root, "electron");
   await writeFile(electronExecutablePath, "#!/bin/sh\nexit 0\n", 0o700);
   const preconditionsPath = path.join(root, "preconditions.json");
@@ -183,6 +211,8 @@ async function makeFixture(root) {
   const beforeTree = await buildTreeManifest(vaultTreeBeforePath, { label: "vault before" });
   const afterTree = await buildTreeManifest(vaultTreeAfterPath, { label: "vault after" });
   const vaultDiff = diffTreeManifests(beforeTree, afterTree);
+  const screenshotPath = path.join(root, "screenshots", "fixture.png");
+  await writeFile(screenshotPath, "fixture-screenshot\n");
 
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const privateKeyPath = path.join(root, "fixture-private-key.pem");
@@ -190,17 +220,15 @@ async function makeFixture(root) {
   const publicKeyBytes = publicKey.export({ type: "spki", format: "der" });
   const publicKeyBase64 = publicKeyBytes.toString("base64");
   const issuerKeyIdentitySha256 = sha256Bytes(publicKeyBytes);
-  const trustedManifest = JSON.parse(
-    await fs.readFile(
-      path.join(
-        repositoryRoot,
-        "scripts",
-        "compatibility",
-        "trust",
-        "trusted-controller-manifest.v1.json",
-      ),
-      "utf8",
+  const trustedManifest = await readAuthorityJsonFile(
+    path.join(
+      repositoryRoot,
+      "scripts",
+      "compatibility",
+      "trust",
+      "trusted-controller-manifest.v1.json",
     ),
+    "trusted controller manifest",
   );
   const trustPolicyPath = path.join(root, "trust-policy.json");
   await writeJson(trustPolicyPath, {
@@ -241,6 +269,7 @@ async function makeFixture(root) {
     canonicalBuildManifestPath,
     relevantDistTreePath,
     requiredDistPaths: ["compatibility-registry.js"],
+    requiredInstalledPaths,
     electronExecutablePath,
     authorityProfilePath,
     preconditionsPath,
@@ -248,7 +277,7 @@ async function makeFixture(root) {
     vaultTreeBeforePath,
     vaultTreeAfterPath,
     distributionTag: "fixture-v1",
-    screenshots: [],
+    screenshots: [{ path: screenshotPath, purpose: "fixture proof screenshot" }],
   };
   return {
     packageData,
@@ -395,8 +424,25 @@ async function main() {
       Buffer.from(canonicalizeLevel4Json(finalized.envelope)).equals(receiptBytes),
       "receipt bytes must be canonical and exact",
     );
+    const receiptText = receiptBytes.toString("utf8");
+    for (const privatePath of [
+      temporaryRoot,
+      repositoryRoot,
+      "/home/",
+      fixture.artifactPaths.screenshots[0].path,
+    ]) {
+      check(
+        !receiptText.includes(privatePath),
+        `receipt must not embed private filesystem path ${privatePath}`,
+      );
+    }
     check(
-      (await fs.readdir(fixture.receiptDirectory)).length === 1,
+      finalized.payload.screenshots[0].artifactId ===
+        `sha256:${finalized.payload.screenshots[0].sha256}`,
+      "signed screenshot evidence must use a portable content-addressed identifier",
+    );
+    check(
+      (await receiptFiles(fixture.receiptDirectory)).length === 1,
       "receipt store must contain one final receipt",
     );
     const signingKey = createPrivateKey(await fs.readFile(fixture.privateKeyPath));
@@ -417,6 +463,46 @@ async function main() {
         artifactPaths: { ...fixture.artifactPaths, ...artifactOverrides },
         expected: { ...expectedCurrent, ...expectedOverrides },
       });
+    const trustedManifest = await readAuthorityJsonFile(
+      fixture.artifactPaths.trustedControllerManifestPath,
+      "fixture trusted controller manifest",
+    );
+    const positiveClosure = await buildExecutableClosureManifest({
+      rootPath: repositoryRoot,
+      trustedClosure: trustedManifest.executableClosure,
+    });
+    check(
+      positiveClosure.closureSha256 === trustedManifest.executableClosureSha256,
+      "trusted executable closure positive control",
+    );
+    const closureClone = path.join(temporaryRoot, "closure-clone");
+    for (const entry of trustedManifest.executableClosure.entries) {
+      const source = path.join(repositoryRoot, entry.path);
+      const destination = path.join(closureClone, entry.path);
+      await fs.mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
+      await fs.copyFile(source, destination);
+    }
+    const canonicalizeLink = path.join(closureClone, "node_modules", "canonicalize");
+    await fs.mkdir(path.dirname(canonicalizeLink), { recursive: true, mode: 0o700 });
+    await fs.symlink(
+      path.relative(
+        path.dirname(canonicalizeLink),
+        path.join(closureClone, "node_modules/.pnpm/canonicalize@2.1.0/node_modules/canonicalize"),
+      ),
+      canonicalizeLink,
+    );
+    await writeFile(
+      path.join(closureClone, "scripts/compatibility/level4-artifacts.mjs"),
+      `${await fs.readFile(path.join(closureClone, "scripts/compatibility/level4-artifacts.mjs"), "utf8")}\n// closure mutation\n`,
+    );
+    await expectReject(
+      () =>
+        buildExecutableClosureManifest({
+          rootPath: closureClone,
+          trustedClosure: trustedManifest.executableClosure,
+        }),
+      "reachable controller dependency mutation",
+    );
     const writeSignedVariant = async (name, mutatePayload, mutateIssuer = (issuer) => issuer) => {
       const payload = structuredClone(finalized.payload);
       mutatePayload(payload);
@@ -429,6 +515,46 @@ async function main() {
       await writeFile(variantPath, canonicalizeLevel4Json(envelope));
       return variantPath;
     };
+
+    const duplicateAuthorityCases = [
+      ["duplicate trust policy", "trustPolicyPath", '{"schemaVersion":1,"schemaVersion":1}'],
+      [
+        "duplicate trusted controller manifest",
+        "trustedControllerManifestPath",
+        '{"manifestId":"x","manifestId":"y"}',
+      ],
+      [
+        "duplicate workflow definition",
+        "workflowDefinitionPath",
+        '{"schemaVersion":2,"schemaVersion":2}',
+      ],
+      [
+        "duplicate canonical build manifest",
+        "canonicalBuildManifestPath",
+        '{"schemaVersion":1,"schemaVersion":1}',
+      ],
+      [
+        "duplicate reviewed authority profile",
+        "authorityProfilePath",
+        '{"schemaVersion":1,"schemaVersion":1}',
+      ],
+    ];
+    for (const [label, artifactKey, raw] of duplicateAuthorityCases) {
+      const duplicatePath = path.join(
+        temporaryRoot,
+        `${artifactKey.replaceAll("Path", "")}.duplicate.json`,
+      );
+      await writeFile(duplicatePath, Buffer.from(raw, "utf8"));
+      await expectReject(() => readAuthorityJsonFile(duplicatePath, label), `${label} strict read`);
+      await expectReject(
+        () => verifyFixture({ [artifactKey]: duplicatePath }),
+        `${label} verification/publication`,
+      );
+      check(
+        (await receiptFiles(fixture.receiptDirectory)).length === 1,
+        `${label} must not add a publishable receipt`,
+      );
+    }
 
     const alteredPath = path.join(temporaryRoot, "altered.receipt.json");
     const altered = JSON.parse(receiptBytes.toString("utf8"));
@@ -538,7 +664,9 @@ async function main() {
     );
     const malformedSignaturePath = path.join(temporaryRoot, "malformed-signature.receipt.json");
     const malformedSignature = JSON.parse(receiptBytes.toString("utf8"));
-    malformedSignature.signature.valueBase64 = `A${malformedSignature.signature.valueBase64.slice(1)}`;
+    const originalSignatureFirstByte = malformedSignature.signature.valueBase64[0];
+    const replacementSignatureFirstByte = originalSignatureFirstByte === "A" ? "B" : "A";
+    malformedSignature.signature.valueBase64 = `${replacementSignatureFirstByte}${malformedSignature.signature.valueBase64.slice(1)}`;
     await writeFile(malformedSignaturePath, canonicalizeLevel4Json(malformedSignature));
     await expectReject(
       () =>
@@ -638,6 +766,26 @@ async function main() {
     await expectReject(
       () => verifyFixture({ canonicalBuildManifestPath: wrongBuildManifestPath }),
       "changed canonical build manifest",
+    );
+    const emptyBuildManifestPath = path.join(temporaryRoot, "empty-build-manifest.json");
+    await writeFile(emptyBuildManifestPath, canonicalizeLevel4Json({}));
+    await expectReject(
+      () => verifyFixture({ canonicalBuildManifestPath: emptyBuildManifestPath }),
+      "empty canonical build manifest",
+    );
+    const missingInstalledPath = path.join(temporaryRoot, "missing-installed");
+    await copyDirectory(fixture.artifactPaths.installedApplicationTreePath, missingInstalledPath);
+    await fs.rm(path.join(missingInstalledPath, "resources.asar"));
+    await expectReject(
+      () => verifyFixture({ installedApplicationTreePath: missingInstalledPath }),
+      "missing installed application file",
+    );
+    const extraInstalledPath = path.join(temporaryRoot, "extra-installed");
+    await copyDirectory(fixture.artifactPaths.installedApplicationTreePath, extraInstalledPath);
+    await writeFile(path.join(extraInstalledPath, "extra-resource.bin"), "extra\n");
+    await expectReject(
+      () => verifyFixture({ installedApplicationTreePath: extraInstalledPath }),
+      "extra installed application file",
     );
     const wrongPreconditionsPath = path.join(temporaryRoot, "wrong-preconditions.json");
     await writeJson(wrongPreconditionsPath, { schemaVersion: 1, policy: "changed" });
@@ -859,7 +1007,7 @@ async function main() {
     });
     check(failed.publishable === false, "missing assertion must produce a nonpublishable attempt");
     check(
-      (await fs.readdir(fixture.receiptDirectory)).length === 1,
+      (await receiptFiles(fixture.receiptDirectory)).length === 1,
       "failed attempt must not enter receipt store",
     );
     const missingAssertionRun = createLevel4ControllerRun({
@@ -946,7 +1094,9 @@ async function main() {
       unavailable.publishable === false,
       "unavailable required delivery must not be publishable",
     );
-    const attemptNames = await fs.readdir(fixture.attemptDirectory);
+    const attemptNames = (await fs.readdir(fixture.attemptDirectory)).filter((name) =>
+      name.endsWith(".json"),
+    );
     check(attemptNames.length >= 3, "non-passing attempts must be isolated from the receipt store");
     const attemptRecord = parseLevel4ControllerAttemptRecordV2(
       JSON.parse(await fs.readFile(path.join(fixture.attemptDirectory, attemptNames[0]), "utf8")),
@@ -1021,11 +1171,120 @@ async function main() {
       ),
       "partial final receipt write must leave no final receipt",
     );
+    const finalizerFaults = [
+      [
+        "after final link",
+        {
+          afterFinalReceiptLink: async () => {
+            throw new Error("after-link");
+          },
+        },
+      ],
+      [
+        "temporary-name removal failure",
+        {
+          beforeReceiptTemporaryNameRemoval: async () => {
+            throw new Error("temporary-remove");
+          },
+        },
+      ],
+      [
+        "receipt directory open failure",
+        {
+          receiptDirectoryOpen: async () => {
+            throw new Error("directory-open");
+          },
+        },
+      ],
+      [
+        "receipt directory fsync failure",
+        {
+          receiptDirectorySync: async () => {
+            throw new Error("directory-sync");
+          },
+        },
+      ],
+      [
+        "final-name cleanup failure",
+        {
+          afterFinalReceiptLink: async () => {
+            throw new Error("after-link-for-cleanup");
+          },
+          receiptFinalCleanup: async () => {
+            throw new Error("final-cleanup");
+          },
+        },
+      ],
+    ];
+    for (const [label, injectedFaults] of finalizerFaults) {
+      const faultRun = createLevel4ControllerRun({
+        workflowId: fixture.workflowDefinition.workflowId,
+        workflowDefinition: fixture.workflowDefinition,
+      });
+      faultRun.observe({
+        kind: "step",
+        source: "fixture",
+        value: { step: label },
+        observedAt: new Date().toISOString(),
+      });
+      await expectReject(
+        () =>
+          finalizeLevel4Receipt({
+            run: faultRun,
+            result: successfulResult(fixture),
+            artifactPaths: fixture.artifactPaths,
+            privateKey: fixture.privateKeyPath,
+            receiptDirectory: fixture.receiptDirectory,
+            attemptDirectory: fixture.attemptDirectory,
+            faults: injectedFaults,
+          }),
+        label,
+      );
+      const candidatePath = path.join(fixture.receiptDirectory, `${faultRun.runId}.receipt.json`);
+      await expectReject(
+        () => verifyFixture({}, {}, candidatePath),
+        `${label} must not be consumable by the verifier`,
+      );
+      check(
+        !(await publishableReceiptFiles(fixture.receiptDirectory)).some((name) =>
+          name.startsWith(faultRun.runId),
+        ),
+        `${label} must leave zero publishable receipt files`,
+      );
+    }
     const symlinkTree = path.join(temporaryRoot, "symlink-tree");
     await fs.mkdir(symlinkTree, { recursive: true, mode: 0o700 });
     await writeFile(path.join(symlinkTree, "real.txt"), "real\n");
     await fs.symlink("real.txt", path.join(symlinkTree, "link.txt"));
     await expectReject(() => buildTreeManifest(symlinkTree), "symlink artifact entry");
+    for (const [label, entries] of [
+      [
+        "same-directory case collision",
+        [
+          ["A.txt", "a\n"],
+          ["a.txt", "A\n"],
+        ],
+      ],
+      [
+        "nested case collision",
+        [
+          ["nested/B.txt", "b\n"],
+          ["nested/b.txt", "B\n"],
+        ],
+      ],
+      [
+        "NFC collision",
+        [
+          ["cafe\u0301.txt", "one\n"],
+          ["caf\u00e9.txt", "two\n"],
+        ],
+      ],
+    ]) {
+      const collisionTree = path.join(temporaryRoot, label.replaceAll(" ", "-"));
+      for (const [relativePath, content] of entries)
+        await writeFile(path.join(collisionTree, relativePath), content);
+      await expectReject(() => buildTreeManifest(collisionTree), label);
+    }
     await expectReject(
       () =>
         finalizeLevel4Receipt({
@@ -1099,7 +1358,8 @@ async function main() {
         vaultTreeAfterPath: fixture.artifactPaths.vaultTreeAfterPath,
         distributionTag: fixture.artifactPaths.distributionTag,
         requiredDistPaths: fixture.artifactPaths.requiredDistPaths,
-        screenshots: [],
+        requiredInstalledPaths: fixture.artifactPaths.requiredInstalledPaths,
+        screenshots: fixture.artifactPaths.screenshots,
         platform: fixture.workflowDefinition.platform,
         architecture: fixture.workflowDefinition.architecture,
         sourceCommit: fixture.sourceCommit,
@@ -1127,6 +1387,84 @@ async function main() {
       !JSON.stringify(generated.registry).includes("fixture-private-key"),
       "isolated registry must not expose private key paths",
     );
+    check(
+      typeof generated.registry.generationId === "string" &&
+        generated.registry.generationId.length === 64,
+      "isolated registry must carry a shared authority generation identity",
+    );
+    check(
+      (await fs.readFile(isolatedTypeScriptPath, "utf8")).includes(generated.registry.generationId),
+      "generated TypeScript must carry the shared authority generation identity",
+    );
+    check(
+      (await fs.readFile(isolatedMarkdownPath, "utf8")).includes(
+        `Generation: ${generated.registry.generationId}`,
+      ),
+      "generated Markdown must carry the shared authority generation identity",
+    );
+
+    const coherentPaths = {
+      registry: path.join(temporaryRoot, "coherent-registry.json"),
+      typeScript: path.join(temporaryRoot, "coherent-registry.ts"),
+      markdown: path.join(temporaryRoot, "coherent-registry.md"),
+    };
+    for (const outputPath of Object.values(coherentPaths))
+      await writeFile(outputPath, "prior-authority-generation\n");
+    const coherentBaseline = new Map(
+      Object.values(coherentPaths).map((outputPath) => [outputPath, fs.readFile(outputPath)]),
+    );
+    for (const failureAt of [1, 2]) {
+      let installCount = 0;
+      await expectReject(
+        () =>
+          generatePluginCompatibilityRegistry({
+            sourcePathOverride: sourcePath,
+            registryPathOverride: coherentPaths.registry,
+            generatedTypeScriptPathOverride: coherentPaths.typeScript,
+            generatedMarkdownPathOverride: coherentPaths.markdown,
+            fixtureOnly: true,
+            beforeOutputInstall: async () => {
+              installCount += 1;
+              if (installCount === failureAt) throw new Error(`projection seam ${failureAt}`);
+            },
+          }),
+        `projection failure at output seam ${failureAt}`,
+      );
+      for (const [outputPath, previous] of coherentBaseline)
+        check(
+          (await fs.readFile(outputPath)).equals(await previous),
+          `projection seam ${failureAt} must roll back ${outputPath}`,
+        );
+      check(
+        !(await fs.readFile(coherentPaths.registry, "utf8")).includes('"compatibilityLevel": 4'),
+        `projection seam ${failureAt} must publish no Level 4 authority row`,
+      );
+    }
+    const preCommitPolicy = JSON.parse(
+      await fs.readFile(fixture.artifactPaths.trustPolicyPath, "utf8"),
+    );
+    await expectReject(
+      () =>
+        generatePluginCompatibilityRegistry({
+          sourcePathOverride: sourcePath,
+          registryPathOverride: coherentPaths.registry,
+          generatedTypeScriptPathOverride: coherentPaths.typeScript,
+          generatedMarkdownPathOverride: coherentPaths.markdown,
+          fixtureOnly: true,
+          beforeAuthorityCommit: async () => {
+            const revoked = structuredClone(preCommitPolicy);
+            revoked.issuerKeys[0].status = "revoked";
+            await writeJson(fixture.artifactPaths.trustPolicyPath, revoked);
+          },
+        }),
+      "trust rotation at true authority commit point",
+    );
+    for (const [outputPath, previous] of coherentBaseline)
+      check(
+        (await fs.readFile(outputPath)).equals(await previous),
+        `pre-commit rotation must roll back ${outputPath}`,
+      );
+    await writeJson(fixture.artifactPaths.trustPolicyPath, preCommitPolicy);
 
     const declarativeSourcePath = path.join(temporaryRoot, "declarative-evidence.json");
     const declarative = { ...sourceEntry };
@@ -1157,7 +1495,7 @@ async function main() {
           generatedTypeScriptPathOverride: path.join(temporaryRoot, "rotation-registry.ts"),
           generatedMarkdownPathOverride: path.join(temporaryRoot, "rotation-registry.md"),
           fixtureOnly: true,
-          beforePublication: async () => {
+          beforeAuthorityCommit: async () => {
             rotatedPolicy.trustStoreVersion = 2;
             await writeJson(fixture.artifactPaths.trustPolicyPath, rotatedPolicy);
           },
@@ -1168,9 +1506,26 @@ async function main() {
       !(await fileExists(path.join(temporaryRoot, "rotation-registry.json"))),
       "trust rotation must publish no isolated Level 4 registry row",
     );
+    await writeJson(fixture.artifactPaths.trustPolicyPath, activePolicy);
 
     process.stdout.write(
-      `${JSON.stringify({ hermetic: true, controllerTerminalState: "completed", receiptCanonical: true, receiptVerified: true, replayIdempotent: true, isolatedRegistryLevel: generated.registry.entries[0].compatibilityLevel, productionRegistryUntouched: true })}\n`,
+      `${JSON.stringify({
+        hermetic: true,
+        controllerTerminalState: "completed",
+        receiptCanonical: true,
+        receiptVerified: true,
+        replayIdempotent: true,
+        controllerClosureBound: true,
+        reachableDependencyMutationRejected: true,
+        strictAuthorityJson: true,
+        duplicateAuthorityKeysRejected: true,
+        semanticBuildManifest: true,
+        screenshotPathPrivate: true,
+        postLinkFinalizationFailClosed: true,
+        coherentPublication: true,
+        isolatedRegistryLevel: generated.registry.entries[0].compatibilityLevel,
+        productionRegistryUntouched: true,
+      })}\n`,
     );
   } finally {
     await fs.rm(temporaryRoot, { recursive: true, force: true });

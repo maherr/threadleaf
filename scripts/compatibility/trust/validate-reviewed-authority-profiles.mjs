@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { parseLevel4Json } from "../../../src/shared/level4-receipt-boundary.mjs";
 
 const trustDirectory = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(trustDirectory, "..", "..", "..");
@@ -16,7 +17,7 @@ function fail(message) {
 
 async function readJson(filePath) {
   try {
-    return JSON.parse(await fs.readFile(filePath, "utf8"));
+    return parseLevel4Json(await fs.readFile(filePath));
   } catch (error) {
     fail(`cannot read ${path.relative(appRoot, filePath)}: ${error.message}`);
   }

@@ -63,7 +63,7 @@ export interface Level4VaultChangeV2 {
 }
 
 export interface Level4ScreenshotV2 {
-  path: string;
+  artifactId: string;
   purpose: string;
   sha256: string;
 }
@@ -104,6 +104,7 @@ export interface Level4ReceiptPayloadV2 {
   effectiveBuildIdentityDigest: string;
   controllerVersion: string;
   controllerExecutableSha256: string;
+  trustedExecutableClosureSha256: string;
   trustedControllerManifestId: string;
   trustedControllerManifestSha256: string;
   evidenceHarnessVersion: string;
@@ -138,6 +139,7 @@ export interface Level4ReceiptIssuerV2 {
   keyIdentitySha256: string;
   controllerVersion: string;
   controllerExecutableSha256: string;
+  trustedExecutableClosureSha256: string;
   trustedControllerManifestSha256: string;
   issuerTrustStoreIdentitySha256: string;
 }
@@ -176,6 +178,12 @@ export interface Level4TrustPolicyV1 {
     manifestVersion: number;
     controllerVersion: string;
     controllerExecutableSha256: string;
+    executableClosure: {
+      schemaVersion: 1;
+      roots: string[];
+      entries: Array<{ path: string; bytes: number; sha256: string }>;
+    };
+    executableClosureSha256: string;
     allowedReceiptSchemaVersions: [2];
     currentHarness: {
       version: string;
@@ -202,6 +210,7 @@ export interface Level4VerificationTupleV2 {
   platform: string;
   architecture: string;
   controllerExecutableSha256: string;
+  trustedExecutableClosureSha256: string;
   trustedControllerManifestSha256: string;
   evidenceHarnessVersion: string;
   evidenceHarnessTreeSha256: string;

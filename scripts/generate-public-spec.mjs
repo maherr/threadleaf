@@ -1708,11 +1708,12 @@ function schemaFor(name) {
       ...common,
       $id: "urn:threadleaf:spec:v1:registry-schema",
       type: "object",
-      required: ["schemaVersion", "generatedBy", "threadleafVersion", "entries"],
+      required: ["schemaVersion", "generatedBy", "threadleafVersion", "generationId", "entries"],
       properties: {
         schemaVersion: { const: 2 },
         generatedBy: { type: "string" },
         threadleafVersion: { type: "string" },
+        generationId: { type: "string", pattern: "^[a-f0-9]{64}$" },
         entries: {
           type: "array",
           items: {

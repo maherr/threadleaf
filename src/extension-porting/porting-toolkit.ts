@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { pluginCompatibilityRegistry } from "../generated/plugin-compatibility-registry";
+import {
+  assertPluginCompatibilityRegistryCoherence,
+  pluginCompatibilityRegistry,
+} from "../generated/plugin-compatibility-registry";
 import { isPathInside } from "../kernel/path-policy";
 import {
   parsePluginPackageInspectionReceipt,
@@ -41,6 +44,9 @@ const maxReportTextLength = 500;
 const maxReceiptBytes = 256 * 1024;
 const maxGeneratedFileBytes = 64 * 1024;
 const supportedPackageEntries = new Set(["manifest.json", "main.js", "styles.css"]);
+function assertGeneratedCompatibilityRegistryCoherence(): void {
+  assertPluginCompatibilityRegistryCoherence();
+}
 
 /**
  * Threadleaf's own running version, recorded on the report as inspection-run metadata only. This
@@ -526,6 +532,7 @@ function compatibilityEvidence(
   receiptStatus: string,
   receipt: PluginPackageInspectionReceipt | null,
 ): PortingCompatibilityEvidence {
+  assertGeneratedCompatibilityRegistryCoherence();
   if (!manifest) {
     return {
       status: "unverified",

@@ -4,7 +4,7 @@ This document is generated from the versioned receipt-aware source [`compatibili
 Discovery in the external community package directory is separate from Threadleaf compatibility evidence.
 A row applies only to the exact plugin and Threadleaf versions shown.
 
-Registry schema: 2. Threadleaf version: 0.1.0-beta.7.
+Registry schema: 2. Threadleaf version: 0.1.0-beta.7. Generation: 1eac9d5437e12847d4464f3983ff5e64b8473e5c3522b79e85d0861d3c7cf2f9.
 
 | Plugin | Plugin version | Threadleaf | Level | Evidence | Last tested |
 | --- | --- | --- | ---: | --- | --- |

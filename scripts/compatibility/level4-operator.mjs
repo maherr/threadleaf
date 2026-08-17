@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseLevel4TrustPolicyV1 } from "../../src/shared/level4-receipt-boundary.mjs";
-import { readJsonFile } from "./level4-artifacts.mjs";
+import { readAuthorityJsonFile } from "./level4-artifacts.mjs";
 import { verifyLevel4Receipt } from "./level4-verifier.mjs";
 
 const rootPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -26,7 +26,9 @@ function usage() {
 }
 
 async function status(policyPath) {
-  const policy = parseLevel4TrustPolicyV1(await readJsonFile(policyPath, "Level 4 trust policy"));
+  const policy = parseLevel4TrustPolicyV1(
+    await readAuthorityJsonFile(policyPath, "Level 4 trust policy"),
+  );
   const activeIssuerCount = policy.issuerKeys.filter((key) => key.status === "active").length;
   const result = {
     configured: activeIssuerCount === 1,
@@ -41,7 +43,7 @@ async function status(policyPath) {
 }
 
 async function verify(configPath) {
-  const config = await readJsonFile(configPath, "Level 4 verifier config");
+  const config = await readAuthorityJsonFile(configPath, "Level 4 verifier config");
   if (
     config === null ||
     typeof config !== "object" ||

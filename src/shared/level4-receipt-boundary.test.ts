@@ -3,6 +3,7 @@ import {
   canonicalizeLevel4Json,
   level4JsonSha256,
   parseLevel4Json,
+  parseLevel4RuntimeObservationV1,
 } from "./level4-receipt-boundary.mjs";
 
 function canonical(value: unknown): string {
@@ -98,5 +99,34 @@ describe("Level 4 receipt strict RFC 8785 boundary", () => {
 
   it("gives semantically equal values one signing digest", () => {
     expect(level4JsonSha256({ b: 2, a: 1 })).toBe(level4JsonSha256({ a: 1, b: 2 }));
+  });
+
+  it("validates Gregorian UTC timestamps without JavaScript date normalization", () => {
+    const base = {
+      schemaVersion: 1,
+      runId: "00000000-0000-4000-8000-000000000000",
+      runNonce: "a".repeat(64),
+      sequence: 1,
+      kind: "step" as const,
+      source: "timestamp-test",
+      value: { ok: true },
+    };
+    for (const observedAt of [
+      "2026-02-29T00:00:00Z",
+      "2026-02-30T00:00:00Z",
+      "2026-02-31T00:00:00Z",
+      "2026-13-01T00:00:00Z",
+      "2026-01-01T24:00:00Z",
+      "2026-01-01T00:60:00Z",
+      "2026-01-01T00:00:60Z",
+    ]) {
+      expect(() => parseLevel4RuntimeObservationV1({ ...base, observedAt })).toThrow();
+    }
+    expect(
+      parseLevel4RuntimeObservationV1({
+        ...base,
+        observedAt: "2024-02-29T23:59:59.123456789Z",
+      }).observedAt,
+    ).toBe("2024-02-29T23:59:59.123456789Z");
   });
 });

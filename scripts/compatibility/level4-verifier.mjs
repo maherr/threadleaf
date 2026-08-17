@@ -15,14 +15,15 @@ import {
   verifyLevel4ReceiptSignature,
 } from "../../src/shared/level4-receipt-boundary.mjs";
 import {
+  buildExecutableClosureManifest,
   buildFileArtifact,
   buildPluginPackageIdentity,
   buildTreeManifest,
-  canonicalJsonFileSha256,
   diffTreeManifests,
   effectiveBuildIdentityDigest,
-  readJsonFile,
+  readAuthorityJsonFile,
   sha256Bytes,
+  validateCanonicalBuildManifest,
 } from "./level4-artifacts.mjs";
 
 function fail(message) {
@@ -76,10 +77,10 @@ function activeIssuer(policy, payload) {
 
 async function loadCurrentTrust({ artifactPaths }) {
   const policy = parseLevel4TrustPolicyV1(
-    await readJsonFile(artifactPaths.trustPolicyPath, "current trust policy"),
+    await readAuthorityJsonFile(artifactPaths.trustPolicyPath, "current trust policy"),
   );
   const manifest = parseLevel4TrustedControllerManifestV1(
-    await readJsonFile(
+    await readAuthorityJsonFile(
       artifactPaths.trustedControllerManifestPath,
       "current trusted controller manifest",
     ),
@@ -95,15 +96,23 @@ async function loadCurrentTrust({ artifactPaths }) {
   const harness = await buildTreeManifest(artifactPaths.harnessTreePath, {
     label: "current evidence harness",
   });
+  const closureRoot = path.resolve(path.dirname(artifactPaths.controllerExecutablePath), "../..");
+  const executableClosure = await buildExecutableClosureManifest({
+    rootPath: closureRoot,
+    trustedClosure: manifest.executableClosure,
+  });
   if (controller.sha256 !== manifest.controllerExecutableSha256)
     fail("current controller executable is not the trusted executable.");
   if (harness.treeSha256 !== manifest.currentHarness.treeSha256)
     fail("current evidence harness is not the trusted harness.");
+  if (executableClosure.closureSha256 !== manifest.executableClosureSha256)
+    fail("reachable controller/verifier executable closure is not trusted.");
   const trustStoreIdentitySha256 = level4JsonSha256(policy);
   return {
     policy,
     manifest,
     controllerExecutableSha256: controller.sha256,
+    executableClosureSha256: executableClosure.closureSha256,
     harnessTreeSha256: harness.treeSha256,
     trustedControllerManifestSha256: level4JsonSha256(manifest),
     trustStoreIdentitySha256,
@@ -112,7 +121,7 @@ async function loadCurrentTrust({ artifactPaths }) {
 
 async function assertAuthorityProfile(profilePath, packageIdentity, packageIdentityDigest) {
   const profile = ensureObject(
-    await readJsonFile(profilePath, "current authority profile"),
+    await readAuthorityJsonFile(profilePath, "current authority profile"),
     "current authority profile",
   );
   if (
@@ -171,16 +180,13 @@ async function assertScreenshots(payload, artifactPaths) {
   for (let index = 0; index < expected.length; index += 1) {
     const declared = payload.screenshots[index];
     const current = expected[index];
-    if (
-      path.resolve(declared.path) !== path.resolve(current.path) ||
-      declared.purpose !== current.purpose
-    )
-      fail("receipt screenshot identity differs from current workflow inputs.");
+    if (declared.purpose !== current.purpose)
+      fail("receipt screenshot purpose differs from current workflow inputs.");
     const artifact = await buildFileArtifact(current.path, {
       label: `current screenshot ${index}`,
     });
-    if (declared.sha256 !== artifact.sha256)
-      fail(`receipt screenshot digest differs from current screenshot ${index}.`);
+    if (declared.artifactId !== `sha256:${artifact.sha256}` || declared.sha256 !== artifact.sha256)
+      fail("receipt screenshot identity differs from current workflow inputs.");
   }
 }
 
@@ -280,9 +286,17 @@ async function assertCurrentArtifacts({ payload, workflow, artifactPaths, expect
   const installed = await buildTreeManifest(artifactPaths.installedApplicationTreePath, {
     label: "installed application",
   });
-  const buildManifest = await canonicalJsonFileSha256(
+  const buildManifest = await validateCanonicalBuildManifest(
     artifactPaths.canonicalBuildManifestPath,
-    "canonical build manifest",
+    {
+      installedApplicationTreePath: artifactPaths.installedApplicationTreePath,
+      requiredInstalledPaths: artifactPaths.requiredInstalledPaths,
+      expected: {
+        threadleafVersion: expected.threadleafVersion,
+        platform: workflow.platform,
+        architecture: workflow.architecture,
+      },
+    },
   );
   const dist = await buildTreeManifest(artifactPaths.relevantDistTreePath, {
     label: "relevant dist",
@@ -313,7 +327,7 @@ async function assertCurrentArtifacts({ payload, workflow, artifactPaths, expect
     fail("packaged application artifact differs from current artifact.");
   if (payload.installedApplicationTreeSha256 !== installed.treeSha256)
     fail("installed application tree differs from current tree.");
-  if (payload.canonicalBuildManifestSha256 !== buildManifest)
+  if (payload.canonicalBuildManifestSha256 !== buildManifest.sha256)
     fail("canonical build manifest differs from current manifest.");
   if (payload.relevantDistTreeSha256 !== dist.treeSha256)
     fail("relevant dist tree differs from current dist.");
@@ -338,7 +352,7 @@ async function assertCurrentArtifacts({ payload, workflow, artifactPaths, expect
     stagedPackageTreeSha256: sealed.treeSha256,
     packagedApplicationArtifactSha256: packaged.sha256,
     installedApplicationTreeSha256: installed.treeSha256,
-    canonicalBuildManifestSha256: buildManifest,
+    canonicalBuildManifestSha256: buildManifest.sha256,
     relevantDistTreeSha256: dist.treeSha256,
     electronExecutableSha256: electron.sha256,
   });
@@ -377,6 +391,21 @@ async function assertCurrentArtifacts({ payload, workflow, artifactPaths, expect
 }
 
 export async function verifyLevel4Receipt({ receiptPath, artifactPaths, expected }) {
+  const receiptDirectory = path.dirname(receiptPath);
+  if (path.basename(receiptPath).startsWith("."))
+    fail("hidden or staged receipt paths are not publishable.");
+  if (path.basename(receiptDirectory) === ".level4-pending")
+    fail("staged receipt paths are not publishable.");
+  const incompleteMarkerPath = path.join(
+    receiptDirectory,
+    `.${path.basename(receiptPath)}.incomplete`,
+  );
+  try {
+    await fs.lstat(incompleteMarkerPath);
+    fail("receipt finalization did not reach durable completion.");
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
   let receiptBytes;
   try {
     receiptBytes = await fs.readFile(receiptPath);
@@ -393,6 +422,8 @@ export async function verifyLevel4Receipt({ receiptPath, artifactPaths, expected
     fail("receipt trusted-controller manifest is stale.");
   if (envelope.payload.controllerExecutableSha256 !== trust.controllerExecutableSha256)
     fail("receipt controller executable identity is stale.");
+  if (envelope.payload.trustedExecutableClosureSha256 !== trust.executableClosureSha256)
+    fail("receipt executable closure identity is stale.");
   if (envelope.payload.evidenceHarnessTreeSha256 !== trust.harnessTreeSha256)
     fail("receipt harness identity is stale.");
   if (envelope.payload.evidenceHarnessVersion !== trust.manifest.currentHarness.version)
@@ -406,7 +437,10 @@ export async function verifyLevel4Receipt({ receiptPath, artifactPaths, expected
   if (!verifyLevel4ReceiptSignature(envelope, issuer.publicKey))
     fail("receipt Ed25519 signature is invalid.");
   const workflow = parseLevel4WorkflowDefinitionV2(
-    await readJsonFile(artifactPaths.workflowDefinitionPath, "current workflow definition"),
+    await readAuthorityJsonFile(
+      artifactPaths.workflowDefinitionPath,
+      "current workflow definition",
+    ),
   );
   const current = await assertCurrentArtifacts({
     payload: envelope.payload,
@@ -425,6 +459,7 @@ export async function verifyLevel4Receipt({ receiptPath, artifactPaths, expected
     platform: envelope.payload.platform,
     architecture: envelope.payload.architecture,
     controllerExecutableSha256: envelope.payload.controllerExecutableSha256,
+    trustedExecutableClosureSha256: envelope.payload.trustedExecutableClosureSha256,
     trustedControllerManifestSha256: envelope.payload.trustedControllerManifestSha256,
     evidenceHarnessVersion: envelope.payload.evidenceHarnessVersion,
     evidenceHarnessTreeSha256: envelope.payload.evidenceHarnessTreeSha256,
