@@ -1522,6 +1522,11 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
       };
       try {
         await fs.cp(fixtureVault, vaultPath, { recursive: true });
+        await fs.mkdir(path.join(vaultPath, ".obsidian"), { recursive: true });
+        await fs.writeFile(
+          path.join(vaultPath, ".obsidian", "app.json"),
+          JSON.stringify({ newFileLocation: "current" }),
+        );
         await fs.mkdir(pluginPath, { recursive: true });
         await fs.writeFile(
           path.join(pluginPath, "manifest.json"),
@@ -1544,6 +1549,8 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
             '    const canvas = vault.getFileByPath("Boards/Overview.canvas");',
             '    const boards = vault.getFolderByPath("Boards");',
             '    if (!welcome || !linked || !canvas || !boards) throw new Error("Vault fixture files are missing");',
+            '    const currentParent = fileManager.getNewFileParent("Boards/Overview.canvas", "New.canvas");',
+            '    const rootParent = fileManager.getNewFileParent("");',
             '    const created = await vault.create("Mutation.md", "created");',
             '    await vault.modify(created, "modified");',
             '    const createdBinary = await vault.createBinary("Mutation.bin", Uint8Array.from([1, 2]).buffer);',
@@ -1591,6 +1598,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
             '      processed: processed.includes("Ledger") && processed.includes("appended"),',
             "      processedFrontmatter,",
             "      generatedLink,",
+            "      newFileParents: { current: currentParent.path, root: rootParent.path },",
             "      copiedFile: copiedFile.path,",
             "      copiedFolder: copiedFolder.path,",
             '      createdFolder: vault.getFolderByPath("Created folder")?.path,',
@@ -1684,6 +1692,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
             processed: true,
             processedFrontmatter: true,
             generatedLink: "[[Linked Note#Project brief|Linked]]",
+            newFileParents: { current: "Boards", root: "" },
             copiedFile: "Copies/Welcome.md",
             copiedFolder: "Copies/Boards",
             createdFolder: "Created folder",

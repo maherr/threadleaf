@@ -1305,10 +1305,27 @@ export class FileManager {
     this.vault = vault;
   }
 
-  getNewFileParent(_sourcePath: string, _newFilePath?: string): TFolder {
-    throw new Error(
-      "FileManager.getNewFileParent is not yet supported: this compatibility runtime does not read Obsidian new-file-location preferences.",
-    );
+  getNewFileParent(sourcePath: string, _newFilePath?: string): TFolder {
+    const settings = readVaultAppSettings(this.vault);
+    const location = settings.newFileLocation;
+    if (location === "folder") {
+      const configuredPath = settings.newFileFolderPath;
+      if (typeof configuredPath === "string") {
+        const configuredFolder = this.vault.getAbstractFileByPath(configuredPath);
+        if (configuredFolder instanceof TFolder) {
+          return configuredFolder;
+        }
+      }
+    } else if (location === "current" && sourcePath) {
+      const sourceDirectory = path.posix.dirname(normalizePath(sourcePath));
+      const currentFolder = this.vault.getAbstractFileByPath(
+        sourceDirectory === "." ? "" : sourceDirectory,
+      );
+      if (currentFolder instanceof TFolder) {
+        return currentFolder;
+      }
+    }
+    return this.vault.getRoot();
   }
 
   /**

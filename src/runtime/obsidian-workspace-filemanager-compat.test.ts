@@ -371,10 +371,15 @@ describe("Obsidian workspace compatibility wedge", () => {
 });
 
 describe("Obsidian FileManager compatibility wedge", () => {
-  it("refuses preference-backed parent selection but generates configured Markdown links", async () => {
+  it("selects the configured new-file parent and generates configured Markdown links", async () => {
     const vault = await createVault({
-      ".obsidian/app.json": JSON.stringify({ newLinkFormat: "shortest" }),
+      ".obsidian/app.json": JSON.stringify({
+        newFileFolderPath: "Projects",
+        newFileLocation: "folder",
+        newLinkFormat: "shortest",
+      }),
       "Notes/Current.md": "current",
+      "Projects/Existing.md": "existing",
       "Notes/Target.md": "target",
     });
     const fileManager = new FileManager(vault);
@@ -382,13 +387,28 @@ describe("Obsidian FileManager compatibility wedge", () => {
     if (!file) {
       throw new Error("Link fixture file was not discovered.");
     }
-    const getConfig = vi.spyOn(vault, "getConfig").mockReturnValue("fabricated preference");
-
-    expect(() => fileManager.getNewFileParent("Notes/Current.md")).toThrow("not yet supported");
+    expect(fileManager.getNewFileParent("Notes/Current.md").path).toBe("Projects");
     expect(fileManager.generateMarkdownLink(file, "Notes/Current.md", "#Heading", "Alias")).toBe(
       "[[Target#Heading|Alias]]",
     );
-    expect(getConfig).not.toHaveBeenCalled();
+  });
+
+  it("uses the current note folder or falls back to the vault root", async () => {
+    const currentVault = await createVault({
+      ".obsidian/app.json": JSON.stringify({ newFileLocation: "current" }),
+      "Notes/Current.md": "current",
+    });
+    const currentFileManager = new FileManager(currentVault);
+    expect(currentFileManager.getNewFileParent("Notes/Current.md").path).toBe("Notes");
+    expect(currentFileManager.getNewFileParent("").path).toBe("");
+
+    const fallbackVault = await createVault({
+      ".obsidian/app.json": JSON.stringify({
+        newFileFolderPath: "Missing",
+        newFileLocation: "folder",
+      }),
+    });
+    expect(new FileManager(fallbackVault).getNewFileParent("Notes/Current.md").path).toBe("");
   });
 
   it("generates relative Markdown links with encoded paths when the vault requests Markdown links", async () => {

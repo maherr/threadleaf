@@ -1464,6 +1464,15 @@
       "coverage": {
         "obligations": [
           {
+            "signatureHash": "9c02cecd73636d8a96b69b728f0faddcaa29c37f17cf7b0d4e145e4b533b8653",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.file-manager-mutations.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
             "signatureHash": "d9bf5c01e7af3c2e15d17501165ae04535b0bf29f8632b52b66863cb90ce9cd4",
             "evidence": [
               {

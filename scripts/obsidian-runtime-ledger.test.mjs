@@ -39,7 +39,7 @@ assert.deepEqual(ledger.counts, {
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
-  implementedObligations: 556,
+  implementedObligations: 557,
 });
 assert.equal(ledger.factory.keys.length, 105);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
