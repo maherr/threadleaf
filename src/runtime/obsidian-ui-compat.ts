@@ -1316,8 +1316,10 @@ export class EditorSuggest<T> {
 }
 
 export class SettingTab {
-  readonly app: App;
-  readonly containerEl: HTMLElement;
+  icon = "";
+  app: App;
+  containerEl: HTMLElement;
+  settingItems: unknown[] = [];
 
   constructor(app: App) {
     this.app = app;
@@ -1325,7 +1327,39 @@ export class SettingTab {
     this.containerEl.className = "vertical-tab-content";
   }
 
-  display(): void {}
+  getSettingDefinitions(): unknown[] {
+    return [];
+  }
+
+  update(): void {
+    const definitions = this.getSettingDefinitions();
+    if (!Array.isArray(definitions)) {
+      throw new TypeError("SettingTab.getSettingDefinitions() must return an array.");
+    }
+    this.settingItems = [...definitions];
+  }
+
+  getControlValue(key: string): unknown {
+    return this.app.vault.getConfig(key);
+  }
+
+  setControlValue(key: string, value: unknown): void | Promise<void> {
+    const vault = this.app.vault as typeof this.app.vault & {
+      setConfig?: (configKey: string, configValue: unknown) => void | Promise<void>;
+    };
+    if (typeof vault.setConfig !== "function") {
+      throw new Error(
+        "SettingTab control writes require a kernel-owned vault configuration adapter.",
+      );
+    }
+    return vault.setConfig(key, value);
+  }
+
+  refreshDomState(): void {}
+
+  display(): void {
+    this.update();
+  }
 
   hide(): void {
     this.containerEl.replaceChildren();
@@ -1338,6 +1372,30 @@ export class PluginSettingTab extends SettingTab {
   constructor(app: App, plugin: Plugin) {
     super(app);
     this.plugin = plugin;
+  }
+
+  override getSettingDefinitions(): unknown[] {
+    return super.getSettingDefinitions();
+  }
+
+  override getControlValue(key: string): unknown {
+    const settings = (this.plugin as Plugin & { settings?: unknown }).settings;
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+      return undefined;
+    }
+    return (settings as Record<string, unknown>)[key];
+  }
+
+  override async setControlValue(key: string, value: unknown): Promise<void> {
+    const plugin = this.plugin as Plugin & { settings?: unknown };
+    const settings = plugin.settings;
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+      throw new Error(
+        `Plugin ${this.plugin.manifest.id} settings must be an object before a control can be written.`,
+      );
+    }
+    (settings as Record<string, unknown>)[key] = value;
+    await this.plugin.saveData(settings);
   }
 }
 

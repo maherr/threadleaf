@@ -62,6 +62,12 @@
       "status": "positive"
     },
     {
+      "id": "obsidian-runtime.setting-tabs.v1",
+      "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
+      "line": 875,
+      "status": "positive"
+    },
+    {
       "id": "obsidian-runtime.settings-components.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
       "line": 586,

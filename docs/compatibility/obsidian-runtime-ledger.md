@@ -110,7 +110,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | parseYaml | function | missing | 48af828ae472e2e3 |
 | Platform | variable | partial | ce92658397c816fa |
 | Plugin | class | partial | e771e8ff5a3f8cba |
-| PluginSettingTab | class | missing | 0afb03b5ff995364 |
+| PluginSettingTab | class | implemented | 0afb03b5ff995364 |
 | PopoverState | enum | missing | 1994d816d82c6a0c |
 | PopoverSuggest | class | missing | 380470a80b007a51 |
 | prepareFuzzySearch | function | implemented | 8ef6a695db24bdb3 |
@@ -138,7 +138,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | Setting | class | implemented | 28f9e763ee1bc0e3 |
 | SettingGroup | class | missing | c78bde6786f4650c |
 | SettingPage | class | missing | 731418280376fc92 |
-| SettingTab | class | missing | b685ce410ff8ca87 |
+| SettingTab | class | partial | b685ce410ff8ca87 |
 | setTooltip | function | missing | d2b2dabab058f3d2 |
 | SliderComponent | class | implemented | d90844d55c39379d |
 | sortSearchResults | function | missing | b51b5d221f8562ad |

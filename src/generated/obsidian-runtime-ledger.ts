@@ -14,15 +14,15 @@ export const obsidianRuntimeLedger = {
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 22,
-    "partial": 15,
+    "implemented": 23,
+    "partial": 16,
     "unsupported": 0,
-    "missing": 121,
+    "missing": 119,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 227
+    "implementedObligations": 241
   },
   "factory": {
     "keys": [
@@ -3019,15 +3019,23 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:PluginSettingTab:0afb03b5ff995364d402a6d08c68a433236f6c0f21901f5f06cf2a393db8e43b",
       "name": "PluginSettingTab",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "0afb03b5ff995364d402a6d08c68a433236f6c0f21901f5f06cf2a393db8e43b",
       "location": {
         "line": 5149,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.setting-tabs.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-ui-compat.ts",
+        "exportName": "PluginSettingTab"
+      },
       "obligationIds": [
         "obligation:export:class:PluginSettingTab:0afb03b5ff995364d402a6d08c68a433236f6c0f21901f5f06cf2a393db8e43b:152e9ca0d0d7ef8d76a0c632d015b26ba153ebcadadbfb7d223db6ea7b3b9ae7",
         "obligation:export:class:PluginSettingTab:0afb03b5ff995364d402a6d08c68a433236f6c0f21901f5f06cf2a393db8e43b:a035e3a447c9982a642f46520e027a1111e684d3556646d046889ada6cd14c93",
@@ -3037,8 +3045,18 @@ export const obsidianRuntimeLedger = {
       "heritageEdgeIds": [
         "heritage:export:class:PluginSettingTab:0afb03b5ff995364d402a6d08c68a433236f6c0f21901f5f06cf2a393db8e43b:5dd97f9d2ceb3df2c59aa7866c15ce73f7b63924e104fc35434c63bd889429a1"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:PluginSettingTab:0afb03b5ff995364d402a6d08c68a433236f6c0f21901f5f06cf2a393db8e43b:152e9ca0d0d7ef8d76a0c632d015b26ba153ebcadadbfb7d223db6ea7b3b9ae7",
+        "obligation:export:class:PluginSettingTab:0afb03b5ff995364d402a6d08c68a433236f6c0f21901f5f06cf2a393db8e43b:a035e3a447c9982a642f46520e027a1111e684d3556646d046889ada6cd14c93",
+        "obligation:export:class:PluginSettingTab:0afb03b5ff995364d402a6d08c68a433236f6c0f21901f5f06cf2a393db8e43b:de56a7af446b89d3879bb0dbee0992230e017d492d08ac83ae86cdfefe51385a",
+        "obligation:export:class:PluginSettingTab:0afb03b5ff995364d402a6d08c68a433236f6c0f21901f5f06cf2a393db8e43b:33f7de12dc5faced58c8aacd6a071c14a944ae8c5b56a16514c199ffd3c7de58"
+      ],
+      "coveredObligationSignatureHashes": [
+        "152e9ca0d0d7ef8d76a0c632d015b26ba153ebcadadbfb7d223db6ea7b3b9ae7",
+        "a035e3a447c9982a642f46520e027a1111e684d3556646d046889ada6cd14c93",
+        "de56a7af446b89d3879bb0dbee0992230e017d492d08ac83ae86cdfefe51385a",
+        "33f7de12dc5faced58c8aacd6a071c14a944ae8c5b56a16514c199ffd3c7de58"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -3828,15 +3846,23 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7",
       "name": "SettingTab",
       "kind": "class",
-      "status": "missing",
+      "status": "partial",
       "signatureHash": "b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7",
       "location": {
         "line": 6565,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.setting-tabs.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-ui-compat.ts",
+        "exportName": "SettingTab"
+      },
       "obligationIds": [
         "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:c4240a88f014c3e29a6ae5982b5d67deebb970360b6822b4ca4cb204d7d6e00e",
         "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
@@ -3851,8 +3877,30 @@ export const obsidianRuntimeLedger = {
         "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:baaf26092dfd1a3ff336acafee265914f2b339ef35605a986d0dae68f4c48596"
       ],
       "heritageEdgeIds": [],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:c4240a88f014c3e29a6ae5982b5d67deebb970360b6822b4ca4cb204d7d6e00e",
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:3a1202875730832cdfd44275e884054e1fe7872f1fa875355394aa427bab5ef4",
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:22411ba7f33cc16828d97991ef883394fdbce9546fe680781190a3aa039f653e",
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:a035e3a447c9982a642f46520e027a1111e684d3556646d046889ada6cd14c93",
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:25e89cd9895787933647f7bf344bcd62fea8c321c361f2bacd3012782435e6fa",
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:de56a7af446b89d3879bb0dbee0992230e017d492d08ac83ae86cdfefe51385a",
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:84771e9a06738b5c47f3fcb504bc27e1b040abdda120a55514fb390df70deeac",
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:bd4466f961ebd1103e0e4cdda44fa3f4f5a17191de1829607324e210022248c8",
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:baaf26092dfd1a3ff336acafee265914f2b339ef35605a986d0dae68f4c48596"
+      ],
+      "coveredObligationSignatureHashes": [
+        "c4240a88f014c3e29a6ae5982b5d67deebb970360b6822b4ca4cb204d7d6e00e",
+        "1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
+        "3a1202875730832cdfd44275e884054e1fe7872f1fa875355394aa427bab5ef4",
+        "22411ba7f33cc16828d97991ef883394fdbce9546fe680781190a3aa039f653e",
+        "a035e3a447c9982a642f46520e027a1111e684d3556646d046889ada6cd14c93",
+        "25e89cd9895787933647f7bf344bcd62fea8c321c361f2bacd3012782435e6fa",
+        "de56a7af446b89d3879bb0dbee0992230e017d492d08ac83ae86cdfefe51385a",
+        "84771e9a06738b5c47f3fcb504bc27e1b040abdda120a55514fb390df70deeac",
+        "bd4466f961ebd1103e0e4cdda44fa3f4f5a17191de1829607324e210022248c8",
+        "baaf26092dfd1a3ff336acafee265914f2b339ef35605a986d0dae68f4c48596"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -12500,7 +12548,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:PluginSettingTab:0afb03b5ff995364d402a6d08c68a433236f6c0f21901f5f06cf2a393db8e43b",
       "name": "PluginSettingTab",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:PluginSettingTab:0afb03b5ff995364d402a6d08c68a433236f6c0f21901f5f06cf2a393db8e43b:152e9ca0d0d7ef8d76a0c632d015b26ba153ebcadadbfb7d223db6ea7b3b9ae7",
@@ -12575,8 +12623,18 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:PluginSettingTab:0afb03b5ff995364d402a6d08c68a433236f6c0f21901f5f06cf2a393db8e43b:152e9ca0d0d7ef8d76a0c632d015b26ba153ebcadadbfb7d223db6ea7b3b9ae7",
+        "obligation:export:class:PluginSettingTab:0afb03b5ff995364d402a6d08c68a433236f6c0f21901f5f06cf2a393db8e43b:a035e3a447c9982a642f46520e027a1111e684d3556646d046889ada6cd14c93",
+        "obligation:export:class:PluginSettingTab:0afb03b5ff995364d402a6d08c68a433236f6c0f21901f5f06cf2a393db8e43b:de56a7af446b89d3879bb0dbee0992230e017d492d08ac83ae86cdfefe51385a",
+        "obligation:export:class:PluginSettingTab:0afb03b5ff995364d402a6d08c68a433236f6c0f21901f5f06cf2a393db8e43b:33f7de12dc5faced58c8aacd6a071c14a944ae8c5b56a16514c199ffd3c7de58"
+      ],
+      "coveredObligationSignatureHashes": [
+        "152e9ca0d0d7ef8d76a0c632d015b26ba153ebcadadbfb7d223db6ea7b3b9ae7",
+        "a035e3a447c9982a642f46520e027a1111e684d3556646d046889ada6cd14c93",
+        "de56a7af446b89d3879bb0dbee0992230e017d492d08ac83ae86cdfefe51385a",
+        "33f7de12dc5faced58c8aacd6a071c14a944ae8c5b56a16514c199ffd3c7de58"
+      ]
     },
     {
       "exportId": "export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7",
@@ -14020,7 +14078,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7",
       "name": "SettingTab",
-      "status": "missing",
+      "status": "partial",
       "obligations": [
         {
           "obligationId": "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:c4240a88f014c3e29a6ae5982b5d67deebb970360b6822b4ca4cb204d7d6e00e",
@@ -14189,8 +14247,30 @@ export const obsidianRuntimeLedger = {
         }
       ],
       "heritageEdges": [],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:c4240a88f014c3e29a6ae5982b5d67deebb970360b6822b4ca4cb204d7d6e00e",
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:3a1202875730832cdfd44275e884054e1fe7872f1fa875355394aa427bab5ef4",
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:22411ba7f33cc16828d97991ef883394fdbce9546fe680781190a3aa039f653e",
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:a035e3a447c9982a642f46520e027a1111e684d3556646d046889ada6cd14c93",
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:25e89cd9895787933647f7bf344bcd62fea8c321c361f2bacd3012782435e6fa",
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:de56a7af446b89d3879bb0dbee0992230e017d492d08ac83ae86cdfefe51385a",
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:84771e9a06738b5c47f3fcb504bc27e1b040abdda120a55514fb390df70deeac",
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:bd4466f961ebd1103e0e4cdda44fa3f4f5a17191de1829607324e210022248c8",
+        "obligation:export:class:SettingTab:b685ce410ff8ca878e3656647c65ab6c4a4b1a4cd90d3b16977c0af17fb22ad7:baaf26092dfd1a3ff336acafee265914f2b339ef35605a986d0dae68f4c48596"
+      ],
+      "coveredObligationSignatureHashes": [
+        "c4240a88f014c3e29a6ae5982b5d67deebb970360b6822b4ca4cb204d7d6e00e",
+        "1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
+        "3a1202875730832cdfd44275e884054e1fe7872f1fa875355394aa427bab5ef4",
+        "22411ba7f33cc16828d97991ef883394fdbce9546fe680781190a3aa039f653e",
+        "a035e3a447c9982a642f46520e027a1111e684d3556646d046889ada6cd14c93",
+        "25e89cd9895787933647f7bf344bcd62fea8c321c361f2bacd3012782435e6fa",
+        "de56a7af446b89d3879bb0dbee0992230e017d492d08ac83ae86cdfefe51385a",
+        "84771e9a06738b5c47f3fcb504bc27e1b040abdda120a55514fb390df70deeac",
+        "bd4466f961ebd1103e0e4cdda44fa3f4f5a17191de1829607324e210022248c8",
+        "baaf26092dfd1a3ff336acafee265914f2b339ef35605a986d0dae68f4c48596"
+      ]
     },
     {
       "exportId": "export:class:SliderComponent:d90844d55c39379dcd52769fdd909d3a10418199ecbbe1ddd33f58d566e0f2da",

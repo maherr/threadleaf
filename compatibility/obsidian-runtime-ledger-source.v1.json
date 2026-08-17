@@ -1657,6 +1657,112 @@
         ]
       }
     },
+    "SettingTab": {
+      "implementation": {
+        "source": "src/runtime/obsidian-ui-compat.ts",
+        "exportName": "SettingTab"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.setting-tabs.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "c4240a88f014c3e29a6ae5982b5d67deebb970360b6822b4ca4cb204d7d6e00e",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.setting-tabs.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.setting-tabs.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "3a1202875730832cdfd44275e884054e1fe7872f1fa875355394aa427bab5ef4",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.setting-tabs.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "22411ba7f33cc16828d97991ef883394fdbce9546fe680781190a3aa039f653e",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.setting-tabs.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "a035e3a447c9982a642f46520e027a1111e684d3556646d046889ada6cd14c93",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.setting-tabs.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "25e89cd9895787933647f7bf344bcd62fea8c321c361f2bacd3012782435e6fa",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.setting-tabs.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "de56a7af446b89d3879bb0dbee0992230e017d492d08ac83ae86cdfefe51385a",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.setting-tabs.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "84771e9a06738b5c47f3fcb504bc27e1b040abdda120a55514fb390df70deeac",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.setting-tabs.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "bd4466f961ebd1103e0e4cdda44fa3f4f5a17191de1829607324e210022248c8",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.setting-tabs.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "baaf26092dfd1a3ff336acafee265914f2b339ef35605a986d0dae68f4c48596",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.setting-tabs.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
     "SliderComponent": {
       "implementation": {
         "source": "src/runtime/obsidian-ui-compat.ts",
@@ -2545,6 +2651,58 @@
             "evidence": [
               {
                 "id": "obsidian-runtime.plugin.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "PluginSettingTab": {
+      "implementation": {
+        "source": "src/runtime/obsidian-ui-compat.ts",
+        "exportName": "PluginSettingTab"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.setting-tabs.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "obligations": [
+          {
+            "signatureHash": "152e9ca0d0d7ef8d76a0c632d015b26ba153ebcadadbfb7d223db6ea7b3b9ae7",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.setting-tabs.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "a035e3a447c9982a642f46520e027a1111e684d3556646d046889ada6cd14c93",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.setting-tabs.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "de56a7af446b89d3879bb0dbee0992230e017d492d08ac83ae86cdfefe51385a",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.setting-tabs.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          },
+          {
+            "signatureHash": "33f7de12dc5faced58c8aacd6a071c14a944ae8c5b56a16514c199ffd3c7de58",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.setting-tabs.v1",
                 "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
               }
             ]

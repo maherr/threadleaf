@@ -871,4 +871,113 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
       await fs.rm(sandboxPath, { recursive: true, force: true });
     }
   });
+
+  /** @compatibility-test-id obsidian-runtime.setting-tabs.v1 */
+  it('proves setting-tab definition and plugin-settings behavior through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-runtime-ledger-tabs-"));
+    const pluginPath = path.join(sandboxPath, "setting-tabs-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "setting-tabs-ledger-fixture",
+          name: "Setting tabs ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { Plugin, PluginSettingTab, SettingTab } = require("obsidian");',
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          '    this.settings = { enabled: false, label: "draft" };',
+          '    const definitions = [{ type: "control", key: "enabled" }];',
+          "    class AppTab extends SettingTab {",
+          "      getSettingDefinitions() { return definitions; }",
+          "    }",
+          "    const appTab = new AppTab(this.app);",
+          "    const definitionsBeforeUpdate = appTab.getSettingDefinitions();",
+          "    appTab.update();",
+          "    const itemsAfterUpdate = appTab.settingItems;",
+          '    appTab.containerEl.append(document.createElement("p"));',
+          "    appTab.display();",
+          "    const itemsAfterDisplay = appTab.settingItems;",
+          "    appTab.refreshDomState();",
+          '    const baseControlValue = appTab.getControlValue("missing");',
+          '    let baseWriteError = "";',
+          '    try { appTab.setControlValue("missing", true); } catch (error) { baseWriteError = error.message; }',
+          "    appTab.hide();",
+          "    const pluginTab = new PluginSettingTab(this.app, this);",
+          "    const pluginDefinitions = pluginTab.getSettingDefinitions();",
+          '    const pluginValueBefore = pluginTab.getControlValue("enabled");',
+          '    await pluginTab.setControlValue("enabled", true);',
+          '    const pluginValueAfter = pluginTab.getControlValue("enabled");',
+          "    const savedSettings = await this.loadData();",
+          "    globalThis.__threadleafRuntimeLedgerSettingTabsProbe = {",
+          "      appTabIsSettingTab: appTab instanceof SettingTab,",
+          "      pluginTabIsPluginSettingTab: pluginTab instanceof PluginSettingTab,",
+          "      app: appTab.app === this.app,",
+          "      icon: appTab.icon,",
+          "      containerClass: appTab.containerEl.className,",
+          "      definitionsBeforeUpdate,",
+          "      itemsAfterUpdate,",
+          "      updateCopiedDefinitions: itemsAfterUpdate !== definitionsBeforeUpdate,",
+          "      itemsAfterDisplay,",
+          "      displayCopiedDefinitions: itemsAfterDisplay !== definitions,",
+          "      baseControlValue,",
+          "      baseWriteError,",
+          "      hiddenChildren: appTab.containerEl.childElementCount,",
+          "      pluginDefinitions,",
+          "      pluginValueBefore,",
+          "      pluginValueAfter,",
+          "      pluginSettings: this.settings,",
+          "      savedSettings,",
+          "    };",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      const testVaultPath = path.join(sandboxPath, "vault");
+      await fs.mkdir(testVaultPath, { recursive: true });
+      await withTestDocument(async () => {
+        const host = new PluginHost(testVaultPath);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerSettingTabsProbe?: unknown })
+              .__threadleafRuntimeLedgerSettingTabsProbe,
+          ).toEqual({
+            appTabIsSettingTab: true,
+            pluginTabIsPluginSettingTab: true,
+            app: true,
+            icon: "",
+            containerClass: "vertical-tab-content",
+            definitionsBeforeUpdate: [{ type: "control", key: "enabled" }],
+            itemsAfterUpdate: [{ type: "control", key: "enabled" }],
+            updateCopiedDefinitions: true,
+            itemsAfterDisplay: [{ type: "control", key: "enabled" }],
+            displayCopiedDefinitions: true,
+            baseControlValue: undefined,
+            baseWriteError:
+              "SettingTab control writes require a kernel-owned vault configuration adapter.",
+            hiddenChildren: 0,
+            pluginDefinitions: [],
+            pluginValueBefore: false,
+            pluginValueAfter: true,
+            pluginSettings: { enabled: true, label: "draft" },
+            savedSettings: { enabled: true, label: "draft" },
+          });
+        } finally {
+          await host.close();
+        }
+      });
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerSettingTabsProbe");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
 });
