@@ -14,14 +14,14 @@
     "enums": 1,
     "variables": 8,
     "implemented": 4,
-    "partial": 9,
+    "partial": 10,
     "unsupported": 0,
-    "missing": 145,
+    "missing": 144,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 50
+    "implementedObligations": 66
   },
   "factory": {
     "keys": [
@@ -970,15 +970,23 @@
       "exportId": "export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff",
       "name": "Editor",
       "kind": "class",
-      "status": "missing",
+      "status": "partial",
       "signatureHash": "31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff",
       "location": {
         "line": 2403,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.editor-core.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-ui-compat.ts",
+        "exportName": "Editor"
+      },
       "obligationIds": [
         "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:c4ccece0510d09467d7e5a427a09a7c2d86f208a8465d9e874b0c627bf4135d8",
         "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:a3e1cf298dfc3f9847e44fe58fc77236d4da35f7a9f40eecae2211b1e224ac69",
@@ -1014,8 +1022,42 @@
         "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:c997a7c7815f9c7697a7e039fc3940cfae407ccbbfc30d00420c143bbb48dab0"
       ],
       "heritageEdgeIds": [],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:ea5878b021e4e73c9b19a60e221e76c207b34842d31fce0fa6c3f8696e20fe4a",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:3abdd9ac0bdde1412ab94403441ae309989032f96028b037d48dc5e4efca8b44",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:0d4c15fb0050d9d00ed69b78db3eda7f3e6d696f368a3c2aa16aeda797d380db",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:fd08b4a1cd4ee67e28bdb95606290a2a38d7d3cd1fbbfa0d8279cbedf4b0e9d9",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:854c4945e63957c7f07fae7a75a6377036015f2c666c590d2c070db7713ee539",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:7f7218ad6f509792f90f92dfd42edd6ffea150817f8b0d849c9f73eed88a499b",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:baeaf612a45ed5b8080e6a7656c376dda9c2be0059f363e808efa1104fcaa9fa",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:8ec7a7d471b72ac711afbfaf19bfeb2c9cc161852f410707ff7fd134e995abe0",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:2d2cc418d50d92306df215333e22641719897e3edd0f54b7312818cd9fd2d39a",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:7720e7bfeb6d5e1250d121edeb0aec4c538925ae8da5594fa14f8d1770738612",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:2c92b13752273354df6dba8bd9ae66269a8230e86163f7bf47c9873a1170b911",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:3839035349431a91912a05998ecdc4631351aa4ee103f4d7c755de38ca942e97",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:88962455928de2fae5b12033ed5981bac79cfe08385cf821dc3bb70f0f2b0af2",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:902f7018b4054a45566e73041c13084cde3d21c659b74ec02c140caf79e9dbf7",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:bdc3eb650ba9c726f713805cec8138a4ce74c354a14c9aac26438f59d66ee409",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:74edc05f9042c01f64b32e96ab8c9ee030197bd373034e341518c2e0e75d9cb2"
+      ],
+      "coveredObligationSignatureHashes": [
+        "ea5878b021e4e73c9b19a60e221e76c207b34842d31fce0fa6c3f8696e20fe4a",
+        "3abdd9ac0bdde1412ab94403441ae309989032f96028b037d48dc5e4efca8b44",
+        "0d4c15fb0050d9d00ed69b78db3eda7f3e6d696f368a3c2aa16aeda797d380db",
+        "fd08b4a1cd4ee67e28bdb95606290a2a38d7d3cd1fbbfa0d8279cbedf4b0e9d9",
+        "854c4945e63957c7f07fae7a75a6377036015f2c666c590d2c070db7713ee539",
+        "7f7218ad6f509792f90f92dfd42edd6ffea150817f8b0d849c9f73eed88a499b",
+        "baeaf612a45ed5b8080e6a7656c376dda9c2be0059f363e808efa1104fcaa9fa",
+        "8ec7a7d471b72ac711afbfaf19bfeb2c9cc161852f410707ff7fd134e995abe0",
+        "2d2cc418d50d92306df215333e22641719897e3edd0f54b7312818cd9fd2d39a",
+        "7720e7bfeb6d5e1250d121edeb0aec4c538925ae8da5594fa14f8d1770738612",
+        "2c92b13752273354df6dba8bd9ae66269a8230e86163f7bf47c9873a1170b911",
+        "3839035349431a91912a05998ecdc4631351aa4ee103f4d7c755de38ca942e97",
+        "88962455928de2fae5b12033ed5981bac79cfe08385cf821dc3bb70f0f2b0af2",
+        "902f7018b4054a45566e73041c13084cde3d21c659b74ec02c140caf79e9dbf7",
+        "bdc3eb650ba9c726f713805cec8138a4ce74c354a14c9aac26438f59d66ee409",
+        "74edc05f9042c01f64b32e96ab8c9ee030197bd373034e341518c2e0e75d9cb2"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -7101,7 +7143,7 @@
     {
       "exportId": "export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff",
       "name": "Editor",
-      "status": "missing",
+      "status": "partial",
       "obligations": [
         {
           "obligationId": "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:c4ccece0510d09467d7e5a427a09a7c2d86f208a8465d9e874b0c627bf4135d8",
@@ -7639,8 +7681,42 @@
         }
       ],
       "heritageEdges": [],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:ea5878b021e4e73c9b19a60e221e76c207b34842d31fce0fa6c3f8696e20fe4a",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:3abdd9ac0bdde1412ab94403441ae309989032f96028b037d48dc5e4efca8b44",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:0d4c15fb0050d9d00ed69b78db3eda7f3e6d696f368a3c2aa16aeda797d380db",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:fd08b4a1cd4ee67e28bdb95606290a2a38d7d3cd1fbbfa0d8279cbedf4b0e9d9",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:854c4945e63957c7f07fae7a75a6377036015f2c666c590d2c070db7713ee539",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:7f7218ad6f509792f90f92dfd42edd6ffea150817f8b0d849c9f73eed88a499b",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:baeaf612a45ed5b8080e6a7656c376dda9c2be0059f363e808efa1104fcaa9fa",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:8ec7a7d471b72ac711afbfaf19bfeb2c9cc161852f410707ff7fd134e995abe0",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:2d2cc418d50d92306df215333e22641719897e3edd0f54b7312818cd9fd2d39a",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:7720e7bfeb6d5e1250d121edeb0aec4c538925ae8da5594fa14f8d1770738612",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:2c92b13752273354df6dba8bd9ae66269a8230e86163f7bf47c9873a1170b911",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:3839035349431a91912a05998ecdc4631351aa4ee103f4d7c755de38ca942e97",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:88962455928de2fae5b12033ed5981bac79cfe08385cf821dc3bb70f0f2b0af2",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:902f7018b4054a45566e73041c13084cde3d21c659b74ec02c140caf79e9dbf7",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:bdc3eb650ba9c726f713805cec8138a4ce74c354a14c9aac26438f59d66ee409",
+        "obligation:export:class:Editor:31acadd4b10e478b4abf884472b05c50c0c95dbf9df809f08227fc5b97104fff:74edc05f9042c01f64b32e96ab8c9ee030197bd373034e341518c2e0e75d9cb2"
+      ],
+      "coveredObligationSignatureHashes": [
+        "ea5878b021e4e73c9b19a60e221e76c207b34842d31fce0fa6c3f8696e20fe4a",
+        "3abdd9ac0bdde1412ab94403441ae309989032f96028b037d48dc5e4efca8b44",
+        "0d4c15fb0050d9d00ed69b78db3eda7f3e6d696f368a3c2aa16aeda797d380db",
+        "fd08b4a1cd4ee67e28bdb95606290a2a38d7d3cd1fbbfa0d8279cbedf4b0e9d9",
+        "854c4945e63957c7f07fae7a75a6377036015f2c666c590d2c070db7713ee539",
+        "7f7218ad6f509792f90f92dfd42edd6ffea150817f8b0d849c9f73eed88a499b",
+        "baeaf612a45ed5b8080e6a7656c376dda9c2be0059f363e808efa1104fcaa9fa",
+        "8ec7a7d471b72ac711afbfaf19bfeb2c9cc161852f410707ff7fd134e995abe0",
+        "2d2cc418d50d92306df215333e22641719897e3edd0f54b7312818cd9fd2d39a",
+        "7720e7bfeb6d5e1250d121edeb0aec4c538925ae8da5594fa14f8d1770738612",
+        "2c92b13752273354df6dba8bd9ae66269a8230e86163f7bf47c9873a1170b911",
+        "3839035349431a91912a05998ecdc4631351aa4ee103f4d7c755de38ca942e97",
+        "88962455928de2fae5b12033ed5981bac79cfe08385cf821dc3bb70f0f2b0af2",
+        "902f7018b4054a45566e73041c13084cde3d21c659b74ec02c140caf79e9dbf7",
+        "bdc3eb650ba9c726f713805cec8138a4ce74c354a14c9aac26438f59d66ee409",
+        "74edc05f9042c01f64b32e96ab8c9ee030197bd373034e341518c2e0e75d9cb2"
+      ]
     },
     {
       "exportId": "export:class:EditorSuggest:b03c36d2fa50ced5e17e119df3b80787079eded0387f70fcf655e9ae3de70014",

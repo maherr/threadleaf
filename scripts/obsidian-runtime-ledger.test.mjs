@@ -32,14 +32,14 @@ assert.deepEqual(ledger.counts, {
   enums: 1,
   variables: 8,
   implemented: 4,
-  partial: 9,
+  partial: 10,
   unsupported: 0,
-  missing: 145,
+  missing: 144,
   ownMembers: 700,
   instanceMembers: 676,
   staticMembers: 24,
   heritageEdges: 89,
-  implementedObligations: 50,
+  implementedObligations: 66,
 });
 assert.equal(ledger.factory.keys.length, 75);
 assert.deepEqual(ledger.factory.internalExtras, ["sleep"]);
@@ -57,6 +57,7 @@ assert.deepEqual(
   [
     ["BaseComponent", "partial"],
     ["Component", "partial"],
+    ["Editor", "partial"],
     ["Events", "implemented"],
     ["MetadataCache", "partial"],
     ["normalizePath", "partial"],

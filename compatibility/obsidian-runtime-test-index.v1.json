@@ -20,15 +20,21 @@
       "status": "positive"
     },
     {
+      "id": "obsidian-runtime.editor-core.v1",
+      "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
+      "line": 79,
+      "status": "positive"
+    },
+    {
       "id": "obsidian-runtime.marker-negative-adjacent.v1",
       "path": "scripts/obsidian-runtime-ledger.test.mjs",
-      "line": 89,
+      "line": 90,
       "status": "unsupported"
     },
     {
       "id": "obsidian-runtime.marker-positive-adjacent.v1",
       "path": "scripts/obsidian-runtime-ledger.test.mjs",
-      "line": 88,
+      "line": 89,
       "status": "positive"
     },
     {

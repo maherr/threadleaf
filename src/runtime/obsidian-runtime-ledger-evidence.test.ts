@@ -76,6 +76,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
 
   /** @compatibility-test-id obsidian-runtime.core-events-files-vault.v1 */
   /** @compatibility-test-id obsidian-runtime.workspace-core.v1 */
+  /** @compatibility-test-id obsidian-runtime.editor-core.v1 */
   it('proves the core events, file identity, vault, and metadata bindings through require("obsidian")', async () => {
     const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-runtime-ledger-core-"));
     const pluginPath = path.join(sandboxPath, "core-ledger-fixture");
@@ -92,7 +93,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
       await fs.writeFile(
         path.join(pluginPath, "main.js"),
         [
-          'const { Events, Plugin, TAbstractFile, TFile, TFolder, Vault, WorkspaceSplit } = require("obsidian");',
+          'const { Editor, Events, Plugin, TAbstractFile, TFile, TFolder, Vault, WorkspaceSplit } = require("obsidian");',
           "class LedgerPlugin extends Plugin {",
           "  async onload() {",
           "    const vault = this.app.vault;",
@@ -109,6 +110,17 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           "    workspace.updateOptions();",
           "    workspace.offref(layoutRef);",
           "    const layout = workspace.getLayout();",
+          "    const editorChanges = [];",
+          "    const editor = new Editor((value) => editorChanges.push(value));",
+          '    editor.setValue("alpha\\nbeta");',
+          "    editor.setSelection({ line: 0, ch: 1 }, { line: 1, ch: 2 });",
+          "    const selected = editor.getSelection();",
+          '    const from = editor.getCursor("from");',
+          '    const to = editor.getCursor("to");',
+          '    editor.replaceSelection("X");',
+          '    editor.setValue("one\\ntwo");',
+          '    editor.replaceRange("T", { line: 1, ch: 0 }, { line: 1, ch: 1 });',
+          "    editor.focus();",
           "    const calls = [];",
           "    const events = new Events();",
           "    const callback = (...args) => calls.push(args);",
@@ -157,6 +169,21 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
           "        activeFileIsNull: workspace.getActiveFile() === null,",
           '        markdownLeaves: workspace.getLeavesOfType("markdown").length,',
           "        layoutCalls,",
+          "      },",
+          "      editor: {",
+          "        isEditor: editor instanceof Editor,",
+          "        selected,",
+          "        from,",
+          "        to,",
+          "        value: editor.getValue(),",
+          "        line: editor.getLine(1),",
+          "        lineCount: editor.lineCount(),",
+          "        lastLine: editor.lastLine(),",
+          "        selectionEmpty: editor.somethingSelected(),",
+          "        offset: editor.posToOffset({ line: 1, ch: 1 }),",
+          "        position: editor.offsetToPos(5),",
+          "        focused: editor.hasFocus(),",
+          "        editorChanges,",
           "      },",
           "      abstract: {",
           "        path: abstract.path,",
@@ -227,6 +254,21 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
             activeFileIsNull: true,
             markdownLeaves: 0,
             layoutCalls: ["layout"],
+          },
+          editor: {
+            isEditor: true,
+            selected: "lpha\nbe",
+            from: { line: 0, ch: 1 },
+            to: { line: 1, ch: 2 },
+            value: "one\nTwo",
+            line: "Two",
+            lineCount: 2,
+            lastLine: 1,
+            selectionEmpty: false,
+            offset: 5,
+            position: { line: 1, ch: 1 },
+            focused: true,
+            editorChanges: ["alpha\nbeta", "aXta", "one\ntwo", "one\nTwo"],
           },
           abstract: {
             path: "Boards/Overview.canvas",

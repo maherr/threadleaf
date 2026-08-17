@@ -44,7 +44,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | DropdownComponent | class | missing | 563d13fef3a6b00c |
 | DurationValue | class | missing | 1b6e3eccbd6b278b |
 | EditableFileView | class | missing | c32178dc1207763b |
-| Editor | class | missing | 31acadd4b10e478b |
+| Editor | class | partial | 31acadd4b10e478b |
 | editorEditorField | variable | missing | 916f430eb29e5f68 |
 | editorInfoField | variable | missing | 3b001a5075d8b718 |
 | editorLivePreviewField | variable | missing | 9dc2e8d15892552f |
