@@ -16,7 +16,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 
 | Export | Kind | Status | Signature |
 | --- | --- | --- | --- |
-| AbstractInputSuggest | class | missing | 1961df74c7585fcf |
+| AbstractInputSuggest | class | implemented | 1961df74c7585fcf |
 | AbstractTextComponent | class | implemented | d3e7b4b7f2ccfbae |
 | addIcon | function | missing | ec68d56929fc1f6d |
 | apiVersion | variable | missing | 9939efa4020032ad |
@@ -112,7 +112,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | Plugin | class | partial | e771e8ff5a3f8cba |
 | PluginSettingTab | class | implemented | 0afb03b5ff995364 |
 | PopoverState | enum | missing | 1994d816d82c6a0c |
-| PopoverSuggest | class | missing | 380470a80b007a51 |
+| PopoverSuggest | class | implemented | 380470a80b007a51 |
 | prepareFuzzySearch | function | implemented | 8ef6a695db24bdb3 |
 | prepareSimpleSearch | function | implemented | 81341d6edc8ec6fa |
 | PrimitiveValue | class | missing | 8a6cb580619668a6 |

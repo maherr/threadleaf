@@ -998,4 +998,109 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
       await fs.rm(sandboxPath, { recursive: true, force: true });
     }
   });
+
+  /** @compatibility-test-id obsidian-runtime.suggest-components.v1 */
+  it('proves popover and input-suggestion behavior through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-runtime-ledger-suggest-"),
+    );
+    const pluginPath = path.join(sandboxPath, "suggest-components-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "suggest-components-ledger-fixture",
+          name: "Suggest components ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { AbstractInputSuggest, Plugin, PopoverSuggest, Scope } = require("obsidian");',
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          "    const popoverSelections = [];",
+          "    class FixturePopover extends PopoverSuggest {",
+          "      renderSuggestion(value, element) { element.textContent = value; }",
+          "      selectSuggestion(value, event) { popoverSelections.push([value, event.type]); this.close(); }",
+          "    }",
+          "    const popoverScope = new Scope();",
+          "    const popover = new FixturePopover(this.app, popoverScope);",
+          '    const manualSuggestion = document.createElement("span");',
+          '    popover.renderSuggestion("Manual", manualSuggestion);',
+          "    popover.open();",
+          "    const popoverOpen = document.body.contains(popover.suggestEl);",
+          '    popover.selectSuggestion("Picked", { type: "click" });',
+          "    const selectedValues = [];",
+          "    class FixtureInputSuggest extends AbstractInputSuggest {",
+          '      getSuggestions(query) { return ["Alpha", "Alpine", "Beta"].filter((value) => value.toLowerCase().startsWith(query.toLowerCase())); }',
+          "      renderSuggestion(value, element) { element.textContent = value; }",
+          "    }",
+          '    const input = document.createElement("input");',
+          "    document.body.append(input);",
+          "    const inputSuggest = new FixtureInputSuggest(this.app, input);",
+          "    inputSuggest.limit = 2;",
+          "    inputSuggest.onSelect((value, event) => selectedValues.push([value, event.type]));",
+          '    inputSuggest.setValue("Al");',
+          '    input.dispatchEvent(new input.ownerDocument.defaultView.Event("input", { bubbles: true }));',
+          "    await new Promise((resolve) => setTimeout(resolve, 0));",
+          '    const suggestions = [...document.querySelectorAll(".suggestion-item")].map((element) => element.textContent);',
+          '    input.dispatchEvent(new input.ownerDocument.defaultView.KeyboardEvent("keydown", { key: "ArrowDown" }));',
+          '    input.dispatchEvent(new input.ownerDocument.defaultView.KeyboardEvent("keydown", { key: "Enter" }));',
+          "    globalThis.__threadleafRuntimeLedgerSuggestProbe = {",
+          "      popoverApp: popover.app === this.app,",
+          "      popoverScope: popover.scope === popoverScope,",
+          "      popoverIsPopover: popover instanceof PopoverSuggest,",
+          "      manualText: manualSuggestion.textContent,",
+          "      popoverOpen,",
+          "      popoverClosed: !document.body.contains(popover.suggestEl),",
+          "      popoverSelections,",
+          "      inputIsInputSuggest: inputSuggest instanceof AbstractInputSuggest,",
+          "      inputValue: inputSuggest.getValue(),",
+          "      inputLimit: inputSuggest.limit,",
+          "      suggestions,",
+          "      selectedValues,",
+          "      inputClosed: !document.body.contains(inputSuggest.suggestEl),",
+          "    };",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      const testVaultPath = path.join(sandboxPath, "vault");
+      await fs.mkdir(testVaultPath, { recursive: true });
+      await withTestDocument(async () => {
+        const host = new PluginHost(testVaultPath);
+        try {
+          await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+          expect(
+            (globalThis as { __threadleafRuntimeLedgerSuggestProbe?: unknown })
+              .__threadleafRuntimeLedgerSuggestProbe,
+          ).toEqual({
+            popoverApp: true,
+            popoverScope: true,
+            popoverIsPopover: true,
+            manualText: "Manual",
+            popoverOpen: true,
+            popoverClosed: true,
+            popoverSelections: [["Picked", "click"]],
+            inputIsInputSuggest: true,
+            inputValue: "Al",
+            inputLimit: 2,
+            suggestions: ["Alpha", "Alpine"],
+            selectedValues: [["Alpine", "keydown"]],
+            inputClosed: true,
+          });
+        } finally {
+          await host.close();
+        }
+      });
+    } finally {
+      Reflect.deleteProperty(globalThis, "__threadleafRuntimeLedgerSuggestProbe");
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
 });

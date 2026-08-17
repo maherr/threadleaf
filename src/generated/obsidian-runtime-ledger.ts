@@ -14,15 +14,15 @@ export const obsidianRuntimeLedger = {
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 24,
+    "implemented": 26,
     "partial": 16,
     "unsupported": 0,
-    "missing": 118,
+    "missing": 116,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
     "heritageEdges": 89,
-    "implementedObligations": 249
+    "implementedObligations": 263
   },
   "factory": {
     "keys": [
@@ -189,15 +189,23 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9",
       "name": "AbstractInputSuggest",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9",
       "location": {
         "line": 294,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.suggest-components.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-ui-compat.ts",
+        "exportName": "AbstractInputSuggest"
+      },
       "obligationIds": [
         "obligation:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:6cb46cc1849b9d2791edff21adf36a8d6d347af2aaf94f89c1963125cb139544",
         "obligation:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:a94e416017a7afebc69801a21e46de06554d4ca394491321dd2be93df4e76c8d",
@@ -210,8 +218,24 @@ export const obsidianRuntimeLedger = {
       "heritageEdgeIds": [
         "heritage:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:178dceba34896cc5a91ac96cb9f493d09af29904420484affb95269d79baadd8"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:6cb46cc1849b9d2791edff21adf36a8d6d347af2aaf94f89c1963125cb139544",
+        "obligation:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:a94e416017a7afebc69801a21e46de06554d4ca394491321dd2be93df4e76c8d",
+        "obligation:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:046f17d3a5be4bccba0f84e961a0f41c2bd23aaf8c92706e118ab8edef9758f7",
+        "obligation:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:c541b49053106964396d4bbcd5fcd65142cdf917175bf4585a5b71b805e34221",
+        "obligation:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:4652e41f742ccc20deec39f6509fc7dd118a01d9d5ff358f1965d75c22758c80",
+        "obligation:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:b6b07c9e227bc41c678c7f5707edb77a3bca1425656e4f9ac5d4a18823fa72c9",
+        "obligation:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:1a8438c83deecd2cf3298ba496a38f5211ab45a9b25513eb3b3bafa3781eca6b"
+      ],
+      "coveredObligationSignatureHashes": [
+        "6cb46cc1849b9d2791edff21adf36a8d6d347af2aaf94f89c1963125cb139544",
+        "a94e416017a7afebc69801a21e46de06554d4ca394491321dd2be93df4e76c8d",
+        "046f17d3a5be4bccba0f84e961a0f41c2bd23aaf8c92706e118ab8edef9758f7",
+        "c541b49053106964396d4bbcd5fcd65142cdf917175bf4585a5b71b805e34221",
+        "4652e41f742ccc20deec39f6509fc7dd118a01d9d5ff358f1965d75c22758c80",
+        "b6b07c9e227bc41c678c7f5707edb77a3bca1425656e4f9ac5d4a18823fa72c9",
+        "1a8438c83deecd2cf3298ba496a38f5211ab45a9b25513eb3b3bafa3781eca6b"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -3110,15 +3134,23 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7",
       "name": "PopoverSuggest",
       "kind": "class",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7",
       "location": {
         "line": 5201,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.suggest-components.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-ui-compat.ts",
+        "exportName": "PopoverSuggest"
+      },
       "obligationIds": [
         "obligation:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
         "obligation:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:ee061518553ee2ddeaebf0849882da1388b4970086d6731a3d45564c79093985",
@@ -3132,8 +3164,24 @@ export const obsidianRuntimeLedger = {
         "heritage:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:7d2b2c069e45f364026dddec59e193ac94a0cfa4d784b0a1e5eab51d877f7e60",
         "heritage:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:e08914b0175a19b0cb1186580d8b941b9caf715cc9df001de040ed60d375c8e4"
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": [],
+      "coveredObligationIds": [
+        "obligation:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
+        "obligation:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:ee061518553ee2ddeaebf0849882da1388b4970086d6731a3d45564c79093985",
+        "obligation:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:2763b3ef09b817e0773743a568df42b943a4eb846d8b29680e0e3357dd9a3464",
+        "obligation:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:a20673f5ebed7a9bb1baf795d0edf689480225e0aab5c840af0337d3ed573a53",
+        "obligation:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:35ba73126c3454a53dd5f8527f6e9075122ffdfeffd1b14c04df827b6db17f69",
+        "obligation:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:56841603e4383f6ce46698724cae5654bd923d76ae0e24d538b422a9fc9bb54f",
+        "obligation:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:4aee0cbee1b193582fbb19ad1fd249764421d55194dd283c0f857f649ee378c0"
+      ],
+      "coveredObligationSignatureHashes": [
+        "1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
+        "ee061518553ee2ddeaebf0849882da1388b4970086d6731a3d45564c79093985",
+        "2763b3ef09b817e0773743a568df42b943a4eb846d8b29680e0e3357dd9a3464",
+        "a20673f5ebed7a9bb1baf795d0edf689480225e0aab5c840af0337d3ed573a53",
+        "35ba73126c3454a53dd5f8527f6e9075122ffdfeffd1b14c04df827b6db17f69",
+        "56841603e4383f6ce46698724cae5654bd923d76ae0e24d538b422a9fc9bb54f",
+        "4aee0cbee1b193582fbb19ad1fd249764421d55194dd283c0f857f649ee378c0"
+      ],
       "requiredBehaviorIds": [],
       "coveredBehaviorIds": []
     },
@@ -5245,7 +5293,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9",
       "name": "AbstractInputSuggest",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:6cb46cc1849b9d2791edff21adf36a8d6d347af2aaf94f89c1963125cb139544",
@@ -5368,8 +5416,24 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:6cb46cc1849b9d2791edff21adf36a8d6d347af2aaf94f89c1963125cb139544",
+        "obligation:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:a94e416017a7afebc69801a21e46de06554d4ca394491321dd2be93df4e76c8d",
+        "obligation:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:046f17d3a5be4bccba0f84e961a0f41c2bd23aaf8c92706e118ab8edef9758f7",
+        "obligation:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:c541b49053106964396d4bbcd5fcd65142cdf917175bf4585a5b71b805e34221",
+        "obligation:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:4652e41f742ccc20deec39f6509fc7dd118a01d9d5ff358f1965d75c22758c80",
+        "obligation:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:b6b07c9e227bc41c678c7f5707edb77a3bca1425656e4f9ac5d4a18823fa72c9",
+        "obligation:export:class:AbstractInputSuggest:1961df74c7585fcfc868ff4851f078fcff7ff2ea04cc7da3f95e9bb42e9595e9:1a8438c83deecd2cf3298ba496a38f5211ab45a9b25513eb3b3bafa3781eca6b"
+      ],
+      "coveredObligationSignatureHashes": [
+        "6cb46cc1849b9d2791edff21adf36a8d6d347af2aaf94f89c1963125cb139544",
+        "a94e416017a7afebc69801a21e46de06554d4ca394491321dd2be93df4e76c8d",
+        "046f17d3a5be4bccba0f84e961a0f41c2bd23aaf8c92706e118ab8edef9758f7",
+        "c541b49053106964396d4bbcd5fcd65142cdf917175bf4585a5b71b805e34221",
+        "4652e41f742ccc20deec39f6509fc7dd118a01d9d5ff358f1965d75c22758c80",
+        "b6b07c9e227bc41c678c7f5707edb77a3bca1425656e4f9ac5d4a18823fa72c9",
+        "1a8438c83deecd2cf3298ba496a38f5211ab45a9b25513eb3b3bafa3781eca6b"
+      ]
     },
     {
       "exportId": "export:class:AbstractTextComponent:d3e7b4b7f2ccfbaecb2e8892be658bd004ee4f09ba924f541cd9fd07059cb425",
@@ -12683,7 +12747,7 @@ export const obsidianRuntimeLedger = {
     {
       "exportId": "export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7",
       "name": "PopoverSuggest",
-      "status": "missing",
+      "status": "implemented",
       "obligations": [
         {
           "obligationId": "obligation:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
@@ -12817,8 +12881,24 @@ export const obsidianRuntimeLedger = {
           }
         }
       ],
-      "coveredObligationIds": [],
-      "coveredObligationSignatureHashes": []
+      "coveredObligationIds": [
+        "obligation:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
+        "obligation:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:ee061518553ee2ddeaebf0849882da1388b4970086d6731a3d45564c79093985",
+        "obligation:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:2763b3ef09b817e0773743a568df42b943a4eb846d8b29680e0e3357dd9a3464",
+        "obligation:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:a20673f5ebed7a9bb1baf795d0edf689480225e0aab5c840af0337d3ed573a53",
+        "obligation:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:35ba73126c3454a53dd5f8527f6e9075122ffdfeffd1b14c04df827b6db17f69",
+        "obligation:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:56841603e4383f6ce46698724cae5654bd923d76ae0e24d538b422a9fc9bb54f",
+        "obligation:export:class:PopoverSuggest:380470a80b007a5187b326b4eac81c65dd72cb5106613963e33b483ae7d283f7:4aee0cbee1b193582fbb19ad1fd249764421d55194dd283c0f857f649ee378c0"
+      ],
+      "coveredObligationSignatureHashes": [
+        "1efa39ed3d5579dec93ee97a1c7ba31996e8939667922d1156c59fde2808ebfb",
+        "ee061518553ee2ddeaebf0849882da1388b4970086d6731a3d45564c79093985",
+        "2763b3ef09b817e0773743a568df42b943a4eb846d8b29680e0e3357dd9a3464",
+        "a20673f5ebed7a9bb1baf795d0edf689480225e0aab5c840af0337d3ed573a53",
+        "35ba73126c3454a53dd5f8527f6e9075122ffdfeffd1b14c04df827b6db17f69",
+        "56841603e4383f6ce46698724cae5654bd923d76ae0e24d538b422a9fc9bb54f",
+        "4aee0cbee1b193582fbb19ad1fd249764421d55194dd283c0f857f649ee378c0"
+      ]
     },
     {
       "exportId": "export:class:PrimitiveValue:8a6cb580619668a61d674f73fee72fdf8e5a379c2577f1d76fbc685999a562ec",

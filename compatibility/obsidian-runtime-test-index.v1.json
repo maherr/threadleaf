@@ -28,13 +28,13 @@
     {
       "id": "obsidian-runtime.marker-negative-adjacent.v1",
       "path": "scripts/obsidian-runtime-ledger.test.mjs",
-      "line": 116,
+      "line": 118,
       "status": "unsupported"
     },
     {
       "id": "obsidian-runtime.marker-positive-adjacent.v1",
       "path": "scripts/obsidian-runtime-ledger.test.mjs",
-      "line": 115,
+      "line": 117,
       "status": "positive"
     },
     {
@@ -77,6 +77,12 @@
       "id": "obsidian-runtime.sleep-extra.v1",
       "path": "scripts/obsidian-runtime-ledger.test.mjs",
       "line": 51,
+      "status": "positive"
+    },
+    {
+      "id": "obsidian-runtime.suggest-components.v1",
+      "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
+      "line": 1002,
       "status": "positive"
     },
     {
