@@ -571,6 +571,87 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
     }
   });
 
+  /** @compatibility-test-id obsidian-runtime.frontmatter-document-functions.v1 */
+  it('proves frontmatter document and binary functions through require("obsidian")', async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-runtime-ledger-frontmatter-document-functions-"),
+    );
+    const pluginPath = path.join(sandboxPath, "frontmatter-document-functions-ledger-fixture");
+    try {
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "frontmatter-document-functions-ledger-fixture",
+          name: "Frontmatter document functions ledger fixture",
+          version: "1.0.0",
+        }),
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        [
+          'const { getBlobArrayBuffer, getFrontMatterInfo, hexToArrayBuffer, parseFrontMatterAliases, parseFrontMatterStringArray, parseYaml, Plugin } = require("obsidian");',
+          "class LedgerPlugin extends Plugin {",
+          "  async onload() {",
+          '    const content = "---\\ntitle: Example\\n---\\n# Note\\n";',
+          "    const info = getFrontMatterInfo(content);",
+          '    const missing = getFrontMatterInfo("# Note\\n");',
+          '    const aliases = parseFrontMatterAliases({ aliases: ["One", "Two"] });',
+          '    const singularAlias = parseFrontMatterAliases({ alias: "Solo" });',
+          '    const stringArray = parseFrontMatterStringArray({ Aliases: ["One", "Two"] }, /alias/i);',
+          '    const parsedYaml = parseYaml("title: Example\\nitems:\\n  - one\\n  - two\\n");',
+          '    const hexBytes = new Uint8Array(hexToArrayBuffer("000102ff"));',
+          '    const blobBytes = new Uint8Array(await getBlobArrayBuffer(new Blob(["hello"])));',
+          "    globalThis.__threadleafRuntimeLedgerFrontmatterDocumentFunctionsProbe = {",
+          "      info,",
+          "      missing,",
+          "      aliases,",
+          "      singularAlias,",
+          "      stringArray,",
+          "      parsedYaml,",
+          "      hexBytes: [...hexBytes],",
+          "      blobBytes: [...blobBytes],",
+          "    };",
+          "  }",
+          "}",
+          "module.exports = LedgerPlugin;",
+          "",
+        ].join("\n"),
+      );
+      const host = new PluginHost(fixtureVault);
+      try {
+        await host.loadAuthorizedPlugin(await testConstructionDispatch(pluginPath));
+        expect(
+          (globalThis as { __threadleafRuntimeLedgerFrontmatterDocumentFunctionsProbe?: unknown })
+            .__threadleafRuntimeLedgerFrontmatterDocumentFunctionsProbe,
+        ).toEqual({
+          info: {
+            exists: true,
+            frontmatter: "title: Example\n",
+            from: 4,
+            to: 19,
+            contentStart: 23,
+          },
+          missing: { exists: false, frontmatter: "", from: 0, to: 0, contentStart: 0 },
+          aliases: ["One", "Two"],
+          singularAlias: ["Solo"],
+          stringArray: ["One", "Two"],
+          parsedYaml: { title: "Example", items: ["one", "two"] },
+          hexBytes: [0, 1, 2, 255],
+          blobBytes: [104, 101, 108, 108, 111],
+        });
+      } finally {
+        await host.close();
+      }
+    } finally {
+      Reflect.deleteProperty(
+        globalThis,
+        "__threadleafRuntimeLedgerFrontmatterDocumentFunctionsProbe",
+      );
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   /** @compatibility-test-id obsidian-runtime.utility-behaviors.v1 */
   it('proves debounce control and tooltip metadata through require("obsidian")', async () => {
     const sandboxPath = await fs.mkdtemp(

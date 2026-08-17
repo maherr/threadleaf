@@ -414,6 +414,162 @@
         ]
       }
     },
+    "getBlobArrayBuffer": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "getBlobArrayBuffer"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.frontmatter-document-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["binary.blob-array-buffer"],
+        "behaviors": [
+          {
+            "id": "binary.blob-array-buffer",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.frontmatter-document-functions.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "getFrontMatterInfo": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "getFrontMatterInfo"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.frontmatter-document-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["frontmatter.info"],
+        "behaviors": [
+          {
+            "id": "frontmatter.info",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.frontmatter-document-functions.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "hexToArrayBuffer": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "hexToArrayBuffer"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.frontmatter-document-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["binary.hex-decode"],
+        "behaviors": [
+          {
+            "id": "binary.hex-decode",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.frontmatter-document-functions.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "parseFrontMatterAliases": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "parseFrontMatterAliases"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.frontmatter-document-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["frontmatter.aliases"],
+        "behaviors": [
+          {
+            "id": "frontmatter.aliases",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.frontmatter-document-functions.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "parseFrontMatterStringArray": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "parseFrontMatterStringArray"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.frontmatter-document-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["frontmatter.string-array"],
+        "behaviors": [
+          {
+            "id": "frontmatter.string-array",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.frontmatter-document-functions.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "parseYaml": {
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "parseYaml"
+      },
+      "evidence": [
+        {
+          "id": "obsidian-runtime.frontmatter-document-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
+      "coverage": {
+        "requiredBehaviorIds": ["yaml.parse"],
+        "behaviors": [
+          {
+            "id": "yaml.parse",
+            "evidence": [
+              {
+                "id": "obsidian-runtime.frontmatter-document-functions.v1",
+                "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+              }
+            ]
+          }
+        ]
+      }
+    },
     "App": {
       "implementation": {
         "source": "src/runtime/obsidian-compat.ts",

@@ -13,7 +13,7 @@ import { pathToFileURL } from "node:url";
 import MarkdownIt from "markdown-it";
 import moment from "moment";
 import TurndownService from "turndown";
-import { parse as parseYaml, stringify as yamlStringify } from "yaml";
+import { parse as parseYamlDocument, stringify as yamlStringify } from "yaml";
 import { ActionRegistry } from "../application/action-registry";
 import { atomicWriteFile, revisionOf } from "../kernel/durability";
 import { maskMarkdownCodeAndComments, parseMarkdownLinks } from "../kernel/markdown-links";
@@ -1236,7 +1236,7 @@ function parseFrontmatter(content: string): Record<string, unknown> | undefined 
     return undefined;
   }
   try {
-    const parsed: unknown = parseYaml(source, { maxAliasCount: 100 });
+    const parsed: unknown = parseYamlDocument(source, { maxAliasCount: 100 });
     if (parsed === null) {
       return {};
     }
@@ -1246,6 +1246,35 @@ function parseFrontmatter(content: string): Record<string, unknown> | undefined 
   } catch {
     return undefined;
   }
+}
+
+export interface FrontMatterInfo {
+  exists: boolean;
+  frontmatter: string;
+  from: number;
+  to: number;
+  contentStart: number;
+}
+
+export function getFrontMatterInfo(content: string): FrontMatterInfo {
+  const opening = /^\ufeff?---[\t ]*(?:\r\n|\n)/u.exec(content);
+  if (!opening) {
+    return { exists: false, frontmatter: "", from: 0, to: 0, contentStart: 0 };
+  }
+  const from = opening[0].length;
+  const remaining = content.slice(from);
+  const closing = /^(?:---|\.\.\.)[\t ]*(?:\r\n|\n|$)/mu.exec(remaining);
+  if (!closing) {
+    return { exists: false, frontmatter: "", from: 0, to: 0, contentStart: 0 };
+  }
+  const to = from + closing.index;
+  return {
+    exists: true,
+    frontmatter: content.slice(from, to),
+    from,
+    to,
+    contentStart: to + closing[0].length,
+  };
 }
 
 export function parseFrontMatterEntry(
@@ -1268,6 +1297,23 @@ export function parseFrontMatterEntry(
     }
   }
   return null;
+}
+
+export function parseFrontMatterStringArray(
+  frontmatter: unknown | null,
+  key: string | RegExp,
+): string[] | null {
+  const entry = parseFrontMatterEntry(frontmatter, key);
+  const values = Array.isArray(entry) ? entry : typeof entry === "string" ? [entry] : null;
+  if (!values) {
+    return null;
+  }
+  return values.filter((value): value is string => typeof value === "string");
+}
+
+export function parseFrontMatterAliases(frontmatter: unknown | null): string[] | null {
+  const aliases = parseFrontMatterStringArray(frontmatter, "aliases");
+  return aliases ?? parseFrontMatterStringArray(frontmatter, "alias");
 }
 
 function isValidTagBody(value: string): boolean {
@@ -1323,6 +1369,10 @@ export function getLinkpath(linktext: string): string {
 
 export function stringifyYaml(value: unknown): string {
   return yamlStringify(value, { aliasDuplicateObjects: false, lineWidth: 0, nullStr: "" });
+}
+
+export function parseYaml(yaml: string): unknown {
+  return parseYamlDocument(yaml, { maxAliasCount: 100 });
 }
 
 function cacheLocation(content: string, offset: number): CacheLocation {
@@ -2642,8 +2692,11 @@ export interface ObsidianCompatibilityModule {
   FileView: typeof FileView;
   FuzzySuggestModal: typeof FuzzySuggestModal;
   getAllTags: typeof getAllTags;
+  getBlobArrayBuffer: typeof getBlobArrayBuffer;
+  getFrontMatterInfo: typeof getFrontMatterInfo;
   getLanguage: typeof getLanguage;
   getLinkpath: typeof getLinkpath;
+  hexToArrayBuffer: typeof hexToArrayBuffer;
   htmlToMarkdown: typeof htmlToMarkdown;
   ItemView: typeof ItemView;
   Keymap: typeof Keymap;
@@ -2690,9 +2743,12 @@ export interface ObsidianCompatibilityModule {
   debounce: typeof debounce;
   getIcon(id: string): SVGSVGElement | null;
   normalizePath(filePath: string): string;
+  parseFrontMatterAliases: typeof parseFrontMatterAliases;
   parseFrontMatterEntry: typeof parseFrontMatterEntry;
+  parseFrontMatterStringArray: typeof parseFrontMatterStringArray;
   parseFrontMatterTags: typeof parseFrontMatterTags;
   parseLinktext: typeof parseLinktext;
+  parseYaml: typeof parseYaml;
   Platform: typeof Platform;
   prepareFuzzySearch: typeof prepareFuzzySearch;
   prepareSimpleSearch: typeof prepareSimpleSearch;
@@ -2715,6 +2771,18 @@ export function arrayBufferToHex(buffer: ArrayBuffer): string {
 export function base64ToArrayBuffer(base64: string): ArrayBuffer {
   const bytes = Buffer.from(base64, "base64");
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+}
+
+export function hexToArrayBuffer(hex: string): ArrayBuffer {
+  if (hex.length % 2 !== 0 || !/^[\da-f]*$/iu.test(hex)) {
+    throw new TypeError("Hex input must contain an even number of hexadecimal characters.");
+  }
+  const bytes = Buffer.from(hex, "hex");
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+}
+
+export async function getBlobArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
+  return blob.arrayBuffer();
 }
 
 const htmlMarkdownConverter = new TurndownService({
@@ -3126,7 +3194,10 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     FileView,
     FuzzySuggestModal,
     getAllTags,
+    getBlobArrayBuffer,
+    getFrontMatterInfo,
     getLinkpath,
+    hexToArrayBuffer,
     ItemView,
     Keymap,
     MarkdownView,
@@ -3140,6 +3211,11 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     Modal,
     MomentFormatComponent,
     Notice: BoundNotice,
+    parseFrontMatterAliases,
+    parseFrontMatterEntry,
+    parseFrontMatterStringArray,
+    parseFrontMatterTags,
+    parseYaml,
     Plugin,
     PluginSettingTab,
     PopoverSuggest,
@@ -3173,8 +3249,6 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     getLanguage,
     htmlToMarkdown,
     normalizePath,
-    parseFrontMatterEntry,
-    parseFrontMatterTags,
     parseLinktext,
     Platform,
     prepareFuzzySearch,

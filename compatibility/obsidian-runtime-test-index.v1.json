@@ -28,13 +28,19 @@
     {
       "id": "obsidian-runtime.core-events-files-vault.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 968,
+      "line": 1049,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.editor-core.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 970,
+      "line": 1051,
+      "status": "positive"
+    },
+    {
+      "id": "obsidian-runtime.frontmatter-document-functions.v1",
+      "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
+      "line": 574,
       "status": "positive"
     },
     {
@@ -46,19 +52,19 @@
     {
       "id": "obsidian-runtime.marker-negative-adjacent.v1",
       "path": "scripts/obsidian-runtime-ledger.test.mjs",
-      "line": 147,
+      "line": 153,
       "status": "unsupported"
     },
     {
       "id": "obsidian-runtime.marker-positive-adjacent.v1",
       "path": "scripts/obsidian-runtime-ledger.test.mjs",
-      "line": 146,
+      "line": 152,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.modal-notice-keymap.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 812,
+      "line": 893,
       "status": "positive"
     },
     {
@@ -82,19 +88,19 @@
     {
       "id": "obsidian-runtime.render-views.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1314,
+      "line": 1395,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.setting-tabs.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1780,
+      "line": 1861,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.settings-components.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1473,
+      "line": 1554,
       "status": "positive"
     },
     {
@@ -106,19 +112,19 @@
     {
       "id": "obsidian-runtime.suggest-components.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1889,
+      "line": 1970,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.ui-interaction-classes.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 659,
+      "line": 740,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.utility-behaviors.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 574,
+      "line": 655,
       "status": "positive"
     },
     {
@@ -130,7 +136,7 @@
     {
       "id": "obsidian-runtime.workspace-core.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 969,
+      "line": 1050,
       "status": "positive"
     },
     {

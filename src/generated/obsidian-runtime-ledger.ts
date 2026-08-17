@@ -14,10 +14,10 @@ export const obsidianRuntimeLedger = {
     "functions": 47,
     "enums": 1,
     "variables": 8,
-    "implemented": 58,
+    "implemented": 64,
     "partial": 13,
     "unsupported": 0,
-    "missing": 87,
+    "missing": 81,
     "ownMembers": 700,
     "instanceMembers": 676,
     "staticMembers": 24,
@@ -48,7 +48,10 @@ export const obsidianRuntimeLedger = {
       "FileView",
       "FuzzySuggestModal",
       "getAllTags",
+      "getBlobArrayBuffer",
+      "getFrontMatterInfo",
       "getLinkpath",
+      "hexToArrayBuffer",
       "ItemView",
       "Keymap",
       "MarkdownView",
@@ -62,6 +65,11 @@ export const obsidianRuntimeLedger = {
       "Modal",
       "MomentFormatComponent",
       "Notice",
+      "parseFrontMatterAliases",
+      "parseFrontMatterEntry",
+      "parseFrontMatterStringArray",
+      "parseFrontMatterTags",
+      "parseYaml",
       "Plugin",
       "PluginSettingTab",
       "PopoverSuggest",
@@ -95,8 +103,6 @@ export const obsidianRuntimeLedger = {
       "getLanguage",
       "htmlToMarkdown",
       "normalizePath",
-      "parseFrontMatterEntry",
-      "parseFrontMatterTags",
       "parseLinktext",
       "Platform",
       "prepareFuzzySearch",
@@ -131,7 +137,10 @@ export const obsidianRuntimeLedger = {
       "FileView",
       "FuzzySuggestModal",
       "getAllTags",
+      "getBlobArrayBuffer",
+      "getFrontMatterInfo",
       "getLinkpath",
+      "hexToArrayBuffer",
       "ItemView",
       "Keymap",
       "MarkdownView",
@@ -145,6 +154,11 @@ export const obsidianRuntimeLedger = {
       "Modal",
       "MomentFormatComponent",
       "Notice",
+      "parseFrontMatterAliases",
+      "parseFrontMatterEntry",
+      "parseFrontMatterStringArray",
+      "parseFrontMatterTags",
+      "parseYaml",
       "Plugin",
       "PluginSettingTab",
       "PopoverSuggest",
@@ -178,8 +192,6 @@ export const obsidianRuntimeLedger = {
       "getLanguage",
       "htmlToMarkdown",
       "normalizePath",
-      "parseFrontMatterEntry",
-      "parseFrontMatterTags",
       "parseLinktext",
       "Platform",
       "prepareFuzzySearch",
@@ -1876,41 +1888,65 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:function:getBlobArrayBuffer:36e0f8e9725fc3ae5e627b96750f801560fc36a4783b0b81f41f196ae2e3f733",
       "name": "getBlobArrayBuffer",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "36e0f8e9725fc3ae5e627b96750f801560fc36a4783b0b81f41f196ae2e3f733",
       "location": {
         "line": 3335,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.frontmatter-document-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "getBlobArrayBuffer"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "binary.blob-array-buffer"
+      ],
+      "coveredBehaviorIds": [
+        "binary.blob-array-buffer"
+      ]
     },
     {
       "exportId": "export:function:getFrontMatterInfo:bc0a1032b37fb45b896917c30e486d0cd48b9e2fe594b27592610b009625cc1f",
       "name": "getFrontMatterInfo",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "bc0a1032b37fb45b896917c30e486d0cd48b9e2fe594b27592610b009625cc1f",
       "location": {
         "line": 3344,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.frontmatter-document-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "getFrontMatterInfo"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "frontmatter.info"
+      ],
+      "coveredBehaviorIds": [
+        "frontmatter.info"
+      ]
     },
     {
       "exportId": "export:function:getIcon:68c885a5426e9933891079d730cbedc0b2f8af7fd52d92e8ef66d9bca852fa51",
@@ -2020,21 +2056,33 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:function:hexToArrayBuffer:dd08182366ea08da09e515ce0c1690adf9caf57ccc9cc5983c7bd93dd28076b2",
       "name": "hexToArrayBuffer",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "dd08182366ea08da09e515ce0c1690adf9caf57ccc9cc5983c7bd93dd28076b2",
       "location": {
         "line": 3420,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.frontmatter-document-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "hexToArrayBuffer"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "binary.hex-decode"
+      ],
+      "coveredBehaviorIds": [
+        "binary.hex-decode"
+      ]
     },
     {
       "exportId": "export:class:HoverPopover:d8787e67d7235c2cd172b9bf5481373f4c4c89ea90d75bcfb0975c71ce2f12c0",
@@ -3219,21 +3267,33 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:function:parseFrontMatterAliases:6591b6101b4100ac6200e4b4e585a0f2a5b9de038eb0f5fe1b2ab9f698e4faaa",
       "name": "parseFrontMatterAliases",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "6591b6101b4100ac6200e4b4e585a0f2a5b9de038eb0f5fe1b2ab9f698e4faaa",
       "location": {
         "line": 4775,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.frontmatter-document-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "parseFrontMatterAliases"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "frontmatter.aliases"
+      ],
+      "coveredBehaviorIds": [
+        "frontmatter.aliases"
+      ]
     },
     {
       "exportId": "export:function:parseFrontMatterEntry:208d94491e23b5b6485b849a2a6068b7518159088a45956c0371e48a872bbdf1",
@@ -3275,21 +3335,33 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:function:parseFrontMatterStringArray:deb327a55cd9c91fa2fe75eb17b4e8b85308491594ff58bce0496f45703bd712",
       "name": "parseFrontMatterStringArray",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "deb327a55cd9c91fa2fe75eb17b4e8b85308491594ff58bce0496f45703bd712",
       "location": {
         "line": 4785,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.frontmatter-document-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "parseFrontMatterStringArray"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "frontmatter.string-array"
+      ],
+      "coveredBehaviorIds": [
+        "frontmatter.string-array"
+      ]
     },
     {
       "exportId": "export:function:parseFrontMatterTags:c9dcb6788b1937d3d38d0f695dcb60f57892603175b9c2d39b6f4ac1536ebcff",
@@ -3387,21 +3459,33 @@ export const obsidianRuntimeLedger = {
       "exportId": "export:function:parseYaml:48af828ae472e2e33e3a0f49687c0daec8ffbb80eebed5a668a9d4925490fffc",
       "name": "parseYaml",
       "kind": "function",
-      "status": "missing",
+      "status": "implemented",
       "signatureHash": "48af828ae472e2e33e3a0f49687c0daec8ffbb80eebed5a668a9d4925490fffc",
       "location": {
         "line": 4817,
         "column": 1
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "id": "obsidian-runtime.frontmatter-document-functions.v1",
+          "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts"
+        }
+      ],
       "negativeEvidence": [],
-      "implementation": null,
+      "implementation": {
+        "source": "src/runtime/obsidian-compat.ts",
+        "exportName": "parseYaml"
+      },
       "obligationIds": [],
       "heritageEdgeIds": [],
       "coveredObligationIds": [],
       "coveredObligationSignatureHashes": [],
-      "requiredBehaviorIds": [],
-      "coveredBehaviorIds": []
+      "requiredBehaviorIds": [
+        "yaml.parse"
+      ],
+      "coveredBehaviorIds": [
+        "yaml.parse"
+      ]
     },
     {
       "exportId": "export:variable:Platform:ce92658397c816faa5ca84e482b7007f9254dcb82318595625c42245c74557c4",

@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 81 (80 public, 1 internal extra)
+- Factory keys: 87 (86 public, 1 internal extra)
 
 ## Export status
 
@@ -59,13 +59,13 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | finishRenderMath | function | missing | 58b4e9583b344203 |
 | FuzzySuggestModal | class | implemented | 042ca80827cde1a8 |
 | getAllTags | function | implemented | c253ffb6b75bcc9e |
-| getBlobArrayBuffer | function | missing | 36e0f8e9725fc3ae |
-| getFrontMatterInfo | function | missing | bc0a1032b37fb45b |
+| getBlobArrayBuffer | function | implemented | 36e0f8e9725fc3ae |
+| getFrontMatterInfo | function | implemented | bc0a1032b37fb45b |
 | getIcon | function | missing | 68c885a5426e9933 |
 | getIconIds | function | missing | 1d6f1c811f777079 |
 | getLanguage | function | implemented | bb51d9b13d4bc56f |
 | getLinkpath | function | implemented | a0344dabcbd756f0 |
-| hexToArrayBuffer | function | missing | dd08182366ea08da |
+| hexToArrayBuffer | function | implemented | dd08182366ea08da |
 | HoverPopover | class | missing | d8787e67d7235c2c |
 | htmlToMarkdown | function | implemented | 22ec65ef974aafbe |
 | HTMLValue | class | missing | 2f7862bd0bf0879d |
@@ -101,13 +101,13 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | NullValue | class | missing | 1324bf65b03915a3 |
 | NumberValue | class | missing | fd1c8c04fc04ea95 |
 | ObjectValue | class | missing | f4b04ddccfe69cc4 |
-| parseFrontMatterAliases | function | missing | 6591b6101b4100ac |
+| parseFrontMatterAliases | function | implemented | 6591b6101b4100ac |
 | parseFrontMatterEntry | function | implemented | 208d94491e23b5b6 |
-| parseFrontMatterStringArray | function | missing | deb327a55cd9c91f |
+| parseFrontMatterStringArray | function | implemented | deb327a55cd9c91f |
 | parseFrontMatterTags | function | implemented | c9dcb6788b1937d3 |
 | parseLinktext | function | implemented | fd10e8b7ba73e829 |
 | parsePropertyId | function | missing | 260ec28552701cc8 |
-| parseYaml | function | missing | 48af828ae472e2e3 |
+| parseYaml | function | implemented | 48af828ae472e2e3 |
 | Platform | variable | partial | ce92658397c816fa |
 | Plugin | class | partial | e771e8ff5a3f8cba |
 | PluginSettingTab | class | implemented | 0afb03b5ff995364 |
