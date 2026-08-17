@@ -59,6 +59,7 @@ import {
   SettingTab,
   SliderComponent,
   SuggestModal,
+  setMarkdownPreviewViewConstructor,
   TextAreaComponent,
   TextComponent,
   TextFileView,
@@ -75,10 +76,16 @@ import {
   CompatibilityIntegrationRegistry,
   type CompatibilityObsidianProtocolHandler,
   Workspace,
+  WorkspaceContainer,
   WorkspaceItem,
+  WorkspaceMobileDrawer,
   WorkspaceParent,
+  WorkspaceRibbon,
+  WorkspaceRoot,
+  WorkspaceSidedock,
   WorkspaceSplit,
   WorkspaceTabs,
+  WorkspaceWindow,
 } from "./obsidian-workspace-compat";
 
 export interface PluginManifest {
@@ -2638,6 +2645,8 @@ export class MarkdownPreviewView extends MarkdownRenderer {
   }
 }
 
+setMarkdownPreviewViewConstructor(MarkdownPreviewView);
+
 export class PluginManager {
   readonly enabledPlugins = new Set<string>();
   readonly manifests: Record<string, PluginManifest> = Object.create(null);
@@ -3273,11 +3282,17 @@ export interface ObsidianCompatibilityModule {
   View: typeof View;
   Vault: typeof Vault;
   Workspace: typeof Workspace;
+  WorkspaceContainer: typeof WorkspaceContainer;
   WorkspaceItem: typeof WorkspaceItem;
   WorkspaceLeaf: typeof WorkspaceLeaf;
+  WorkspaceMobileDrawer: typeof WorkspaceMobileDrawer;
   WorkspaceParent: typeof WorkspaceParent;
+  WorkspaceRibbon: typeof WorkspaceRibbon;
+  WorkspaceRoot: typeof WorkspaceRoot;
+  WorkspaceSidedock: typeof WorkspaceSidedock;
   WorkspaceSplit: typeof WorkspaceSplit;
   WorkspaceTabs: typeof WorkspaceTabs;
+  WorkspaceWindow: typeof WorkspaceWindow;
   addIcon(id: string, svgContent: string): void;
   debounce: typeof debounce;
   getIcon(id: string): SVGSVGElement | null;
@@ -3930,11 +3945,17 @@ export function createObsidianCompatibilityModule(app: App): ObsidianCompatibili
     Vault,
     View,
     Workspace,
+    WorkspaceContainer,
     WorkspaceItem,
     WorkspaceLeaf,
+    WorkspaceMobileDrawer,
     WorkspaceParent,
+    WorkspaceRibbon,
+    WorkspaceRoot,
+    WorkspaceSidedock,
     WorkspaceSplit,
     WorkspaceTabs,
+    WorkspaceWindow,
     addIcon,
     getIcon,
     getIconIds,

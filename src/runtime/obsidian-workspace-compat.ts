@@ -121,11 +121,78 @@ export class WorkspaceTabs extends WorkspaceParent {
   }
 }
 
+function workspaceWindow(): Window {
+  return typeof window === "undefined" ? ({} as Window) : window;
+}
+
+function workspaceDocument(): Document {
+  return typeof document === "undefined" ? ({} as Document) : document;
+}
+
+export abstract class WorkspaceContainer extends WorkspaceSplit {
+  abstract win: Window;
+  abstract doc: Document;
+}
+
+export class WorkspaceMobileDrawer extends WorkspaceParent {
+  parent: WorkspaceParent;
+  collapsed = false;
+
+  constructor(parent: WorkspaceParent = new WorkspaceParent()) {
+    super();
+    this.parent = parent;
+  }
+
+  expand(): void {
+    this.collapsed = false;
+  }
+
+  collapse(): void {
+    this.collapsed = true;
+  }
+
+  toggle(): void {
+    this.collapsed = !this.collapsed;
+  }
+}
+
+export class WorkspaceRibbon {}
+
+export class WorkspaceRoot extends WorkspaceContainer {
+  win = workspaceWindow();
+  doc = workspaceDocument();
+}
+
+export class WorkspaceSidedock extends WorkspaceSplit {
+  collapsed = false;
+
+  toggle(): void {
+    this.collapsed = !this.collapsed;
+  }
+
+  collapse(): void {
+    this.collapsed = true;
+  }
+
+  expand(): void {
+    this.collapsed = false;
+  }
+}
+
+export class WorkspaceWindow extends WorkspaceContainer {
+  win = workspaceWindow();
+  doc = workspaceDocument();
+}
+
 export class Workspace extends Events {
   private activeEditorState: MarkdownFileInfo | null = null;
   activeLeaf: WorkspaceLeaf | null = null;
   readonly containerEl = workspaceContainer();
-  readonly rootSplit = new WorkspaceSplit(this, "vertical");
+  readonly leftSplit = new WorkspaceSidedock(this, "vertical");
+  readonly rightSplit = new WorkspaceSidedock(this, "vertical");
+  readonly leftRibbon = new WorkspaceRibbon();
+  readonly rightRibbon = new WorkspaceRibbon();
+  readonly rootSplit = new WorkspaceRoot(this, "vertical");
   readonly floatingSplit = new WorkspaceSplit(this, "vertical");
   private readonly layoutReadyCallbacks = new Set<() => unknown>();
   private readonly leafGroups = new Map<WorkspaceLeaf, WorkspaceLeafGroup>();

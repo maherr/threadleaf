@@ -10,7 +10,7 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 - Runtime-valued exports: 158 (102 classes, 47 functions, 1 enum, 8 variables)
 - Own class-member obligations: 700 (676 instance, 24 static)
 - Heritage edges: 89
-- Factory keys: 99 (98 public, 1 internal extra)
+- Factory keys: 105 (104 public, 1 internal extra)
 
 ## Export status
 
@@ -162,18 +162,18 @@ This file is generated from the pinned MIT declaration and the checked-in manual
 | Vault | class | partial | 8041bc89ef9d718b |
 | View | class | implemented | b8f2d48cb007660e |
 | Workspace | class | partial | 678ad5eacec977ed |
-| WorkspaceContainer | class | missing | 111dc7e1f6366fe3 |
+| WorkspaceContainer | class | implemented | 111dc7e1f6366fe3 |
 | WorkspaceFloating | class | missing | e7ce5a480a9e4cc1 |
 | WorkspaceItem | class | implemented | 792134b77a9c1bb5 |
 | WorkspaceLeaf | class | implemented | ba2f830d93cd9670 |
-| WorkspaceMobileDrawer | class | missing | d18a5e362fc9f67a |
+| WorkspaceMobileDrawer | class | implemented | d18a5e362fc9f67a |
 | WorkspaceParent | class | partial | 1fb7060d911d2603 |
-| WorkspaceRibbon | class | missing | ffebe640f57faebe |
-| WorkspaceRoot | class | missing | cbd16d72040e24ec |
-| WorkspaceSidedock | class | missing | 7290bfc648754714 |
+| WorkspaceRibbon | class | partial | ffebe640f57faebe |
+| WorkspaceRoot | class | implemented | cbd16d72040e24ec |
+| WorkspaceSidedock | class | implemented | 7290bfc648754714 |
 | WorkspaceSplit | class | implemented | c27a20947773139a |
 | WorkspaceTabs | class | implemented | 351384193e50748c |
-| WorkspaceWindow | class | missing | 4d8f442507ed4e2b |
+| WorkspaceWindow | class | implemented | 4d8f442507ed4e2b |
 
 ## Class obligations
 

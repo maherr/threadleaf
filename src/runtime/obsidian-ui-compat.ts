@@ -1,8 +1,17 @@
-import { type App, MarkdownPreviewView, type Plugin, type TFile } from "./obsidian-compat";
+import type { App, MarkdownPreviewView, Plugin, TFile } from "./obsidian-compat";
 import { BaseComponent, type CompatibilityEventRef, Component } from "./obsidian-components";
 import { createCompatibleIcon } from "./obsidian-icons";
 import type { OpenViewState, WorkspaceTabs } from "./obsidian-workspace-compat";
 import { WorkspaceItem } from "./obsidian-workspace-items";
+
+type MarkdownPreviewViewConstructor = typeof MarkdownPreviewView;
+let markdownPreviewViewConstructor: MarkdownPreviewViewConstructor | null = null;
+
+export function setMarkdownPreviewViewConstructor(
+  previewViewConstructor: MarkdownPreviewViewConstructor,
+): void {
+  markdownPreviewViewConstructor = previewViewConstructor;
+}
 
 function currentDocument(): Document {
   if (typeof document === "undefined") {
@@ -2364,7 +2373,11 @@ export class MarkdownView extends TextFileView {
     this.editor = new Editor((value) => {
       this.data = value;
     });
-    this.previewMode = new MarkdownPreviewView(this.contentEl, this.app, this.file);
+    const PreviewView = markdownPreviewViewConstructor;
+    if (PreviewView === null) {
+      throw new Error("MarkdownView preview constructor has not been registered.");
+    }
+    this.previewMode = new PreviewView(this.contentEl, this.app, this.file);
     this.currentMode = new MarkdownEditView(this);
   }
 
