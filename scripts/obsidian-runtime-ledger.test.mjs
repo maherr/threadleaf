@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { deriveStatus } from "./generate-obsidian-runtime-ledger.mjs";
+import { deriveStatus, validateEvidencePolarity } from "./generate-obsidian-runtime-ledger.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) =>
@@ -77,12 +77,26 @@ for (const reference of source.extras.sleep.evidence) {
   assert.equal(marker?.path, reference.path, reference.id);
 }
 assert.equal(new Set(testIndex.markers.map((marker) => marker.id)).size, testIndex.markers.length);
+/** @compatibility-test-id obsidian-runtime.marker-positive-adjacent.v1 */
+/** @compatibility-test-id obsidian-runtime.marker-negative-adjacent.v1 @compatibility-status unsupported */
+const adjacentMarkerProbe = true;
+assert.equal(adjacentMarkerProbe, true);
+assert.equal(
+  testIndex.markers.find((marker) => marker.id === "obsidian-runtime.marker-positive-adjacent.v1")
+    ?.status,
+  "positive",
+);
+assert.equal(
+  testIndex.markers.find((marker) => marker.id === "obsidian-runtime.marker-negative-adjacent.v1")
+    ?.status,
+  "unsupported",
+);
 
 const positiveMarkers = new Map([["positive.fixture", { status: "positive" }]]);
 const syntheticClass = {
   name: "SyntheticClass",
   kind: "class",
-  obligations: [{ signatureHash: "member.signature" }],
+  obligations: [{ name: "member", signatureHash: "member.signature" }],
 };
 const syntheticBinding = new Map([
   ["SyntheticClass", { kind: "class", members: new Set(["member"]) }],
@@ -102,6 +116,87 @@ assert.equal(
   ),
   "partial",
   "a manual implemented status and structural member match cannot replace obligation evidence",
+);
+const fullSyntheticCoverage = {
+  obligations: [{ signatureHash: "member.signature" }],
+};
+assert.equal(
+  deriveStatus(
+    syntheticClass,
+    {
+      status: "implemented",
+      implementation: { source: "synthetic.ts", exportName: "SyntheticClass" },
+      evidence: [],
+      coverage: fullSyntheticCoverage,
+    },
+    ["SyntheticClass"],
+    syntheticBinding,
+    positiveMarkers,
+  ),
+  "missing",
+  "empty positive evidence cannot promote a fully covered class",
+);
+assert.equal(
+  deriveStatus(
+    syntheticClass,
+    {
+      status: "implemented",
+      implementation: { source: "synthetic.ts", exportName: "SyntheticClass" },
+      negativeEvidence: [{ id: "unsupported.fixture" }],
+      coverage: fullSyntheticCoverage,
+    },
+    ["SyntheticClass"],
+    syntheticBinding,
+    new Map([["unsupported.fixture", { status: "unsupported" }]]),
+  ),
+  "missing",
+  "negative-only evidence with a binding cannot fall through to positive coverage",
+);
+assert.throws(
+  () =>
+    validateEvidencePolarity(
+      {
+        evidence: [{ id: "positive.fixture", path: "scripts/obsidian-runtime-ledger.test.mjs" }],
+        negativeEvidence: [
+          { id: "unsupported.fixture", path: "scripts/obsidian-runtime-ledger.test.mjs" },
+        ],
+      },
+      "mixed fixture",
+    ),
+  /mutually exclusive/u,
+  "positive and negative evidence cannot coexist",
+);
+assert.equal(
+  deriveStatus(
+    syntheticClass,
+    {
+      status: "implemented",
+      implementation: { source: "synthetic.ts", exportName: "SyntheticClass" },
+      evidence: [{ id: "positive.fixture" }],
+      coverage: fullSyntheticCoverage,
+    },
+    ["SyntheticClass"],
+    syntheticBinding,
+    positiveMarkers,
+  ),
+  "implemented",
+  "full executable signature coverage promotes a matching class",
+);
+assert.equal(
+  deriveStatus(
+    syntheticClass,
+    {
+      status: "implemented",
+      implementation: { source: "synthetic.ts", exportName: "SyntheticClass" },
+      evidence: [{ id: "positive.fixture" }],
+      coverage: fullSyntheticCoverage,
+    },
+    ["SyntheticClass"],
+    new Map([["SyntheticClass", { kind: "class", members: new Set() }]]),
+    positiveMarkers,
+  ),
+  "partial",
+  "full signature coverage cannot promote a class when its binding lacks the member",
 );
 assert.equal(
   deriveStatus(

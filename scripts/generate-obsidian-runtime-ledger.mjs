@@ -338,18 +338,30 @@ function markerIndex() {
       if (!/\.(?:ts|tsx|mjs|js)$/u.test(entry.name)) continue;
       const source = readFileSync(fullPath, "utf8");
       const pattern = /@compatibility-test-id\s+([a-z0-9][a-z0-9._-]*)/gu;
+      const comments = [...source.matchAll(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/gu)].map((match) => ({
+        end: (match.index ?? 0) + match[0].length,
+        start: match.index ?? 0,
+        text: match[0],
+      }));
+      const markerCommentForOffset = (offset) => {
+        const comment = comments.find(({ start, end }) => offset >= start && offset < end);
+        if (comment) return comment.text;
+        const lineStart = source.lastIndexOf("\n", offset - 1) + 1;
+        const lineEnd = source.indexOf("\n", offset);
+        return source.slice(lineStart, lineEnd < 0 ? source.length : lineEnd);
+      };
       for (const match of source.matchAll(pattern)) {
         const id = match[1];
         const offset = match.index ?? 0;
         const line = source.slice(0, offset).split("\n").length;
-        const markerWindow = source.slice(
-          Math.max(0, offset - 160),
-          offset + match[0].length + 160,
-        );
-        const statusMatch = markerWindow.match(/@compatibility-status\s+(unsupported|positive)\b/u);
-        if (markerWindow.includes("@compatibility-status") && !statusMatch) {
+        const markerComment = markerCommentForOffset(offset);
+        const statusMatches = [
+          ...markerComment.matchAll(/@compatibility-status\s+(unsupported|positive)\b/gu),
+        ];
+        if (markerComment.includes("@compatibility-status") && statusMatches.length !== 1) {
           fail(`invalid compatibility marker status near ${id}`);
         }
+        const statusMatch = statusMatches[0];
         markers.push({
           id,
           path: path.relative(repositoryRoot, fullPath).split(path.sep).join("/"),
@@ -403,6 +415,18 @@ function evidenceReferences(entry, label, field = "evidence", required = true) {
       path: relativeRepositoryPath(reference.path, `${label}.${field}[${index}].path`),
     };
   });
+}
+
+export function validateEvidencePolarity(entry, label) {
+  const evidence = evidenceReferences(entry, label, "evidence", false);
+  const negativeEvidence = evidenceReferences(entry, label, "negativeEvidence", false);
+  if (evidence.length > 0 && negativeEvidence.length > 0) {
+    fail(`${label} positive and negative evidence are mutually exclusive`);
+  }
+  if (evidence.length === 0 && negativeEvidence.length === 0) {
+    fail(`${label} requires positive or negative executable evidence`);
+  }
+  return { evidence, negativeEvidence };
 }
 
 function validateEvidenceReferences(references, label, markerMap, expectedStatus) {
@@ -535,11 +559,7 @@ function validateSource(source, runtimeExports, factoryKeys, implementationMap, 
       if (entry.implementation.exportName !== name)
         fail(`implementation exportName must equal ${name}`);
     }
-    const evidence = evidenceReferences(entry, name, "evidence", false);
-    const negativeEvidence = evidenceReferences(entry, name, "negativeEvidence", false);
-    if (evidence.length === 0 && negativeEvidence.length === 0) {
-      fail(`${name} requires positive or negative executable evidence`);
-    }
+    const { evidence, negativeEvidence } = validateEvidencePolarity(entry, name);
     validateEvidenceReferences(evidence, name, markerMap, "positive");
     validateEvidenceReferences(negativeEvidence, name, markerMap, "unsupported");
     normalizeCoverage(declared, entry, name, markerMap);
@@ -579,7 +599,11 @@ export function deriveStatus(declared, entry, factoryKeys, implementationMap, ma
     entry?.implementation &&
     factoryKeys.includes(declared.name) &&
     implementationMap.has(declared.name);
-  if (!hasBinding) return negativeReady ? "unsupported" : "missing";
+  if (negativeEvidence.length > 0) {
+    return !hasBinding && negativeReady ? "unsupported" : "missing";
+  }
+  if (positiveEvidence.length === 0) return "missing";
+  if (!hasBinding) return "missing";
   const evidenceReady = positiveEvidence.every(
     (reference) => markerMap.get(reference.id)?.status === "positive",
   );
@@ -592,10 +616,17 @@ export function deriveStatus(declared, entry, factoryKeys, implementationMap, ma
       (coverage.obligations ?? []).map((obligation) => obligation.signatureHash),
     );
     if (covered.size === 0) return "partial";
-    const required = new Set(declared.obligations.map((obligation) => obligation.signatureHash));
-    return [...required].every((signatureHash) => covered.has(signatureHash))
-      ? "implemented"
-      : "partial";
+    const obligationsBySignature = new Map(
+      declared.obligations.map((obligation) => [obligation.signatureHash, obligation]),
+    );
+    const coveredMembersExist = [...covered].every((signatureHash) => {
+      const obligation = obligationsBySignature.get(signatureHash);
+      return obligation !== undefined && binding.members.has(obligation.name);
+    });
+    const allObligationsCovered = declared.obligations.every((obligation) =>
+      covered.has(obligation.signatureHash),
+    );
+    return allObligationsCovered && coveredMembersExist ? "implemented" : "partial";
   }
   const requiredBehaviors = coverage.requiredBehaviorIds ?? [];
   const coveredBehaviors = new Set((coverage.behaviors ?? []).map((behavior) => behavior.id));
