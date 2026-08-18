@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -1890,16 +1891,16 @@ function dataForModel(model) {
 }
 
 function formatJson(fileName, value) {
-  const binary = path.join(rootPath, "node_modules", ".bin", "biome");
+  const binary = createRequire(import.meta.url).resolve("@biomejs/biome/bin/biome");
   const raw = `${JSON.stringify(value, null, 2)}\n`;
-  const result = spawnSync(binary, ["format", "--stdin-file-path", fileName], {
+  const result = spawnSync(process.execPath, [binary, "format", "--stdin-file-path", fileName], {
     cwd: rootPath,
     input: raw,
     encoding: "utf8",
   });
   assert(
     result.status === 0,
-    `Biome could not format ${fileName}: ${result.stderr || result.stdout}`,
+    `Biome could not format ${fileName}: ${result.stderr || result.stdout || result.error?.message || "unknown execution failure"}`,
   );
   return result.stdout;
 }

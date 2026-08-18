@@ -102,6 +102,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Check source on macOS
+        env:
+          THREADLEAF_CONTRIBUTOR_PLATFORM_TESTS: "1"
         run: pnpm check
       - name: Check community theme integrity
         run: pnpm run community-theme:integrity
@@ -165,6 +167,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Check source on Windows
+        env:
+          THREADLEAF_CONTRIBUTOR_PLATFORM_TESTS: "1"
         run: pnpm check
       - name: Check community theme integrity
         run: pnpm run community-theme:integrity
