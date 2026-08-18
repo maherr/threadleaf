@@ -1,6 +1,6 @@
 # Threadleaf Level-4 plugin-bridge upstream mining
 
-**Scope:** read-only discovery for `main` at the user-supplied baseline `f3f0270`. The local decision gate was read first: [Level 4 plugin bridges](file:///home/maher/code/maherr/threadleaf/docs/architecture/level-4-plugin-bridges.md), [native-extension compatibility](file:///home/maher/code/maherr/threadleaf/docs/compatibility/native-extensions.md), and `src/native-extension/marketplace-trust.ts`. Public HTTPS sources only; no source was cloned, fetched, installed, or executed. This report is the sole write.
+**Scope:** read-only discovery for `main` at the user-supplied baseline `f3f0270`. The local decision gate was read first: [Level 4 plugin bridges](../architecture/level-4-plugin-bridges.md), [native-extension compatibility](../compatibility/native-extensions.md), and `src/native-extension/marketplace-trust.ts`. Public HTTPS sources only; no source was cloned, fetched, installed, or executed. This report is the sole write.
 
 ## Executive decision
 

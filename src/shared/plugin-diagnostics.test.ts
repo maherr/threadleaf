@@ -16,7 +16,7 @@ describe("plugin diagnostic serialization", () => {
   });
 
   it("rejects a hostile message that merely appends a known code", () => {
-    const hostile = `Plugin safe: /home/maher/private-token password=super-secret [runtime-load-failed].`;
+    const hostile = `Plugin safe: /home/threadleaf-user/private-token password=super-secret [runtime-load-failed].`;
 
     expect(parsePluginDiagnosticMessage(hostile)).toBeNull();
     expect(pluginDiagnosticMessage("runtime-load-failed")).not.toContain("private-token");

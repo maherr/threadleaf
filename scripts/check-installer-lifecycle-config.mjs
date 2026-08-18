@@ -293,10 +293,19 @@ const linuxCheck = stepWithExactRun(
   "pnpm run release:linux",
   "Linux build and source check",
 );
-const linuxSandbox = stepWithExactRun(
+const linuxSandbox = stepContaining(
   linuxSteps,
-  "sudo install -o root -g root -m 4755 node_modules/electron/dist/chrome-sandbox /usr/local/sbin/threadleaf-chrome-sandbox",
+  "threadleaf-chrome-sandbox",
   "Linux packaged Chromium sandbox preparation",
+);
+assert(
+  linuxSandbox.run
+    .trim()
+    .split("\n")
+    .map((line) => line.trim())
+    .join("\n") ===
+    "pnpm run pack:dir\nsudo install -o root -g root -m 4755 release/linux-unpacked/chrome-sandbox /usr/local/sbin/threadleaf-chrome-sandbox",
+  "Linux CI must package first, then install that exact Chromium sandbox helper.",
 );
 assert(
   linuxSteps.indexOf(linuxSandbox) < linuxSteps.indexOf(linuxCheck),

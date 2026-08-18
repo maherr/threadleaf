@@ -207,7 +207,7 @@ describe("profile and process containment", () => {
       "--device=dri",
       "--share=ipc",
       "--talk-name=org.freedesktop.secrets",
-      "--env=HOME=/home/maher",
+      "--env=HOME=/home/threadleaf-user",
     ];
     for (const violation of previouslyPassingViolations) {
       assert.throws(

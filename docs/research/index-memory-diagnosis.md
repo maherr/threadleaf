@@ -26,7 +26,7 @@ in `benchmarks/results/threadleaf-vault-scale-notes-only.json`. The headless pat
 exactly.
 
 Corpus integrity was verified before any run. All seven `sampleFiles` in
-`/home/maher/worktrees/.bench-corpus/threadleaf-vault-scale-v1/notes-only/manifest.json` match by
+`<home>/worktrees/.bench-corpus/threadleaf-vault-scale-v1/notes-only/manifest.json` match by
 SHA-256 and size, the on-disk byte total is 849,343,388, and the manifest `sampleHash`
 `25c3266e...85830d` matches the value recorded in the failing benchmark result.
 

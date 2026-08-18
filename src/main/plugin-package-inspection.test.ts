@@ -111,7 +111,7 @@ function fakeRuntime(
       if (behavior === "crash" || behavior === "secret-crash") {
         throw new Error(
           behavior === "secret-crash"
-            ? "Error: /home/maher/private-token password=super-secret; at plugin.js:1:1"
+            ? "Error: /home/threadleaf-user/private-token password=super-secret; at plugin.js:1:1"
             : "fixture activation crash",
         );
       }
@@ -132,8 +132,8 @@ function fakeRuntime(
       if (behavior === "sensitive-registration") {
         snapshot.commands = [
           {
-            id: "/home/maher/private-token",
-            name: "password=/home/maher/private-token",
+            id: "/home/threadleaf-user/private-token",
+            name: "password=/home/threadleaf-user/private-token",
             ownerId: pluginId,
           },
         ];
@@ -613,7 +613,7 @@ describe("exact plugin package inspection", () => {
     expect(report.stages.find((stage) => stage.id === "activation")?.diagnostics).toEqual(
       expect.arrayContaining([expect.objectContaining({ code: "activation-crash" })]),
     );
-    expect(serialized).not.toContain("/home/maher/private-token");
+    expect(serialized).not.toContain("/home/threadleaf-user/private-token");
     expect(serialized).not.toContain("super-secret");
     expect(serialized).not.toContain("plugin.js:1:1");
   });
@@ -623,7 +623,7 @@ describe("exact plugin package inspection", () => {
     const report = await inspectPluginPackage(
       withMain(
         input,
-        'const secret = require("/home/maher/private-token"); module.exports = class Fixture {};',
+        'const secret = require("/home/threadleaf-user/private-token"); module.exports = class Fixture {};',
       ),
     );
     expect(report.overall).toBe("fail");
@@ -631,7 +631,7 @@ describe("exact plugin package inspection", () => {
       module: "<unsafe-module-specifier>",
       kind: "unsafe-specifier",
     });
-    expect(JSON.stringify(report)).not.toContain("/home/maher/private-token");
+    expect(JSON.stringify(report)).not.toContain("/home/threadleaf-user/private-token");
   });
 
   it("redacts host paths and secrets from runtime registration evidence", async () => {
@@ -643,7 +643,7 @@ describe("exact plugin package inspection", () => {
       { id: "<redacted>", name: "<redacted>", ownerId: "inspection-safe" },
     ]);
     expect(report.registrations?.viewTypes).toEqual(["<redacted>"]);
-    expect(JSON.stringify(report)).not.toContain("/home/maher/private-token");
+    expect(JSON.stringify(report)).not.toContain("/home/threadleaf-user/private-token");
   });
 
   it("does not leave the materialized disposable package on disk", async () => {

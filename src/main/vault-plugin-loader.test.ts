@@ -261,7 +261,7 @@ describe("vault plugin loader", () => {
     await writePlugin("malformed-json");
     await fs.writeFile(
       path.join(vaultPath, ".obsidian", "plugins", "malformed-json", "manifest.json"),
-      '{"id":"malformed-json","name":"/home/maher/private-token",',
+      '{"id":"malformed-json","name":"/home/threadleaf-user/private-token",',
       "utf8",
     );
     await writePlugin("escaped-package");
@@ -304,7 +304,7 @@ describe("vault plugin loader", () => {
         });
       }
       const serialized = JSON.stringify(discovery);
-      expect(serialized).not.toContain("/home/maher/private-token");
+      expect(serialized).not.toContain("/home/threadleaf-user/private-token");
       expect(serialized).not.toContain("Unexpected token");
       expect(serialized).not.toContain("outside-main.js");
     } finally {

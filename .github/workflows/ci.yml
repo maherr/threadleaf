@@ -57,7 +57,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Install packaged Chromium sandbox helper
-        run: sudo install -o root -g root -m 4755 node_modules/electron/dist/chrome-sandbox /usr/local/sbin/threadleaf-chrome-sandbox
+        run: |
+          pnpm run pack:dir
+          sudo install -o root -g root -m 4755 release/linux-unpacked/chrome-sandbox /usr/local/sbin/threadleaf-chrome-sandbox
       - name: Build and verify Linux packages
         env:
           CHROME_DEVEL_SANDBOX: /usr/local/sbin/threadleaf-chrome-sandbox
