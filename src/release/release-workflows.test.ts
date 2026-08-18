@@ -12,6 +12,7 @@ const immutableActions = new Set([
   "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
   "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
   "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+  "ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756",
   "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
 ]);
 

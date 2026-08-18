@@ -538,6 +538,8 @@ function executable(name: string): string | null {
   return result.status === 0 ? result.stdout.trim() : null;
 }
 
+const fishRuntime = executable("fish") !== null;
+
 describe("CLI schema and generated completion", () => {
   it("keeps help and completion usage on one metadata source", () => {
     const help = renderCliHelp();
@@ -829,7 +831,10 @@ describe("CLI schema and generated completion", () => {
     expect(epipeExit).toBe(cliExitCodes.success);
   });
 
-  it("runs Bash and Fish fixtures without turning vault values into commands or files", async () => {
+  it("runs Bash and Fish fixtures without turning vault values into commands or files", async ({
+    skip,
+  }) => {
+    skip(!fishRuntime, "Fish runtime coverage runs in Linux CI");
     const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-cli-shell-"));
     const cwdEntry = path.join(temporaryRoot, "cwd-entry");
     await fs.writeFile(cwdEntry, "fixture", "utf8");
@@ -1053,7 +1058,10 @@ describe("CLI schema and generated completion", () => {
     }
   });
 
-  it("keeps generated argument continuations parser-valid across grammar states", async () => {
+  it("keeps generated argument continuations parser-valid across grammar states", async ({
+    skip,
+  }) => {
+    skip(!fishRuntime, "Fish runtime coverage runs in Linux CI");
     const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-cli-grammar-"));
     const bashPath = path.join(temporaryRoot, "threadleaf.bash");
     const fishPath = path.join(temporaryRoot, "threadleaf.fish");
@@ -1223,7 +1231,10 @@ describe("CLI schema and generated completion", () => {
     }
   }, 30_000);
 
-  it("suppresses every Bash and Fish candidate after a parser-invalid static/global conflict", async () => {
+  it("suppresses every Bash and Fish candidate after a parser-invalid static/global conflict", async ({
+    skip,
+  }) => {
+    skip(!fishRuntime, "Fish runtime coverage runs in Linux CI");
     const temporaryRoot = await fs.mkdtemp(
       path.join(os.tmpdir(), "threadleaf-cli-fish-conflicts-"),
     );
@@ -1343,7 +1354,10 @@ describe("CLI schema and generated completion", () => {
     }
   }, 30_000);
 
-  it("suppresses Bash and Fish candidates after parser-invalid finite histories", async () => {
+  it("suppresses Bash and Fish candidates after parser-invalid finite histories", async ({
+    skip,
+  }) => {
+    skip(!fishRuntime, "Fish runtime coverage runs in Linux CI");
     const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-cli-finite-oracle-"));
     const bashPath = path.join(temporaryRoot, "threadleaf.bash");
     const fishPath = path.join(temporaryRoot, "threadleaf.fish");
@@ -1607,7 +1621,8 @@ describe("CLI schema and generated completion", () => {
     // five minutes, despite completing well inside this budget in isolation.
   }, 360_000);
 
-  it("keeps root eligibility and literal parser-oracle candidates visible", async () => {
+  it("keeps root eligibility and literal parser-oracle candidates visible", async ({ skip }) => {
+    skip(!fishRuntime, "Fish runtime coverage runs in Linux CI");
     const completionSpec = cliCommandSpecs.find((spec) => spec.id === "completion");
     const helpSpec = cliCommandSpecs.find((spec) => spec.id === "help");
     const searchSpec = cliCommandSpecs.find((spec) => spec.id === "search");
@@ -1706,7 +1721,8 @@ describe("CLI schema and generated completion", () => {
     }
   }, 30_000);
 
-  it("uses literal parser histories as generated completion runtime oracles", async () => {
+  it("uses literal parser histories as generated completion runtime oracles", async ({ skip }) => {
+    skip(!fishRuntime, "Fish runtime coverage runs in Linux CI");
     const temporaryRoot = await fs.mkdtemp(
       path.join(os.tmpdir(), "threadleaf-cli-literal-oracle-"),
     );

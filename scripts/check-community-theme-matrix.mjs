@@ -1886,7 +1886,10 @@ function assertManifestNegativeControls(manifest) {
 }
 
 async function assertStaticCacheControls(manifest) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-community-cache-controls-"));
+  const canonicalTempRoot = await fs.realpath(os.tmpdir());
+  const root = await fs.mkdtemp(
+    path.join(canonicalTempRoot, "threadleaf-community-cache-controls-"),
+  );
   const safeRoot = path.join(root, "safe-root");
   const outside = path.join(root, "outside");
   const theme = manifest.themes[0];

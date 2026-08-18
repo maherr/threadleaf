@@ -9,6 +9,7 @@ const builderPath = path.join(rootPath, "electron-builder.yml");
 const ciPath = path.join(rootPath, ".github", "workflows", "ci.yml");
 const releasePath = path.join(rootPath, ".github", "workflows", "release.yml");
 const lifecycleScriptPath = path.join(rootPath, "scripts", "check-installer-lifecycle.mjs");
+const msvcAction = "ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756";
 
 function assert(condition, message) {
   if (!condition) {
@@ -44,6 +45,30 @@ function stepWithExactRun(steps, command, label) {
     `${label} must have exactly one step with run ${JSON.stringify(command)}, found ${matches.length}.`,
   );
   return matches[0];
+}
+
+function assertMsvcBeforeBuild(steps, buildStep, label) {
+  const actionIndex = steps.findIndex((step) => step.uses === msvcAction);
+  const buildIndex = steps.indexOf(buildStep);
+  assert(actionIndex >= 0, `${label} does not configure the Visual C++ toolchain.`);
+  assert(
+    steps[actionIndex].with?.arch === "x64",
+    `${label} must configure the x64 Visual C++ toolchain.`,
+  );
+  assert(actionIndex < buildIndex, `${label} configures Visual C++ after its native build.`);
+}
+
+function assertFishBeforeCheck(steps, checkStep, label) {
+  const installIndex = steps.findIndex(
+    (step) => typeof step.run === "string" && step.run.includes("apt-get install"),
+  );
+  const checkIndex = steps.indexOf(checkStep);
+  assert(installIndex >= 0, `${label} does not install its native test tools.`);
+  assert(
+    /(?:^|\s)fish(?:\s|$)/u.test(steps[installIndex].run),
+    `${label} does not install the Fish completion runtime.`,
+  );
+  assert(installIndex < checkIndex, `${label} installs Fish after its full source check.`);
 }
 
 function verifyToolchainSteps(document, label) {
@@ -211,6 +236,15 @@ assert(
   "Integrity job does not run the local lifecycle fixture.",
 );
 
+const linuxJob = record(ciJobs.linux, "Linux CI job");
+const linuxSteps = stepsFor(linuxJob, "Linux CI job");
+const linuxCheck = stepWithExactRun(
+  linuxSteps,
+  "pnpm run release:linux",
+  "Linux build and source check",
+);
+assertFishBeforeCheck(linuxSteps, linuxCheck, "Linux CI");
+
 const windowsJob = record(ciJobs.windows, "Windows CI job");
 assert(windowsJob.if === undefined, "Windows lifecycle job cannot be conditionally skipped.");
 assert(
@@ -219,6 +253,7 @@ assert(
 );
 const windowsSteps = stepsFor(windowsJob, "Windows CI job");
 const windowsBuild = stepContaining(windowsSteps, "pack:windows", "Windows package build");
+assertMsvcBeforeBuild(windowsSteps, windowsBuild, "Windows CI");
 assert(
   envValue(windowsBuild, "CSC_IDENTITY_AUTO_DISCOVERY", "Windows package build") === "false",
   "Windows CI must make unsigned status explicit.",
@@ -340,6 +375,7 @@ const releaseLinuxVerify = stepWithExactRun(
   "pnpm run release:linux",
   "Linux release build and verify",
 );
+assertFishBeforeCheck(releaseLinuxSteps, releaseLinuxVerify, "Linux release");
 assert(
   releaseLinuxVerify.if === undefined,
   "Linux release build and verify cannot be conditionally skipped.",
@@ -350,6 +386,12 @@ assert(
 );
 const releaseMacSteps = stepsFor(releaseMac, "signed macOS release job");
 const releaseWindowsSteps = stepsFor(releaseWindows, "signed Windows release job");
+const releaseWindowsBuild = stepContaining(
+  releaseWindowsSteps,
+  "pack:windows:signed",
+  "signed Windows package build",
+);
+assertMsvcBeforeBuild(releaseWindowsSteps, releaseWindowsBuild, "signed Windows release");
 const releaseMacVerify = stepWithExactRun(
   releaseMacSteps,
   "pnpm run test:macos-package",
