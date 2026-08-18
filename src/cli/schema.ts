@@ -2561,7 +2561,9 @@ function bashScript(): string {
     "  if (( _threadleaf_restore_nocasematch )); then shopt -s nocasematch; fi",
     "  return $_threadleaf_completion_status",
     "}",
-    "complete -o nosort -F _threadleaf_completion threadleaf",
+    "if ! complete -o nosort -F _threadleaf_completion threadleaf 2>/dev/null; then",
+    "  complete -F _threadleaf_completion threadleaf",
+    "fi",
     "",
   ].join("\n");
 }

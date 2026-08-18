@@ -620,7 +620,10 @@ describe("CLI schema and generated completion", () => {
 
     expect(bash).toContain("--) after_terminator=1;;");
     expect(bash).toContain("if (( pending_value )); then");
-    expect(bash).toContain("complete -o nosort -F _threadleaf_completion threadleaf");
+    expect(bash).toContain(
+      "if ! complete -o nosort -F _threadleaf_completion threadleaf 2>/dev/null; then",
+    );
+    expect(bash).toContain("complete -F _threadleaf_completion threadleaf");
     expect(zsh).toContain("--) after_terminator=1;;");
     expect(zsh).toContain("if (( pending_value )); then");
     expect(zsh).toContain(
@@ -789,7 +792,9 @@ describe("CLI schema and generated completion", () => {
       },
     });
     expect(generatedExit).toBe(cliExitCodes.success);
-    expect(generated.stdout).toContain("complete -o nosort -F _threadleaf_completion threadleaf");
+    expect(generated.stdout).toContain(
+      "if ! complete -o nosort -F _threadleaf_completion threadleaf 2>/dev/null; then",
+    );
     expect(generated.stderr).toBe("");
 
     const unknown = { stdout: "", stderr: "" };

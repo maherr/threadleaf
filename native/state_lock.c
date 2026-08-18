@@ -978,6 +978,12 @@ static napi_value threadleaf_rename_no_replace(napi_env env, napi_callback_info 
     return threadleaf_filesystem_error(
         env, "io", "The native no-clobber rename did not complete.");
   }
+
+  napi_value undefined;
+  if (napi_get_undefined(env, &undefined) != napi_ok) {
+    return NULL;
+  }
+  return undefined;
 #else
   free(source);
   free(target);
@@ -986,12 +992,6 @@ static napi_value threadleaf_rename_no_replace(napi_env env, napi_callback_info 
       "unsupported",
       "Atomic no-clobber rename is currently available only on Linux.");
 #endif
-
-  napi_value undefined;
-  if (napi_get_undefined(env, &undefined) != napi_ok) {
-    return NULL;
-  }
-  return undefined;
 }
 
 /*
@@ -1087,18 +1087,18 @@ static napi_value threadleaf_probe_anonymous_publish_no_name(
         "io",
         "The anonymous attachment publication probe descriptor did not close cleanly.");
   }
-#else
-  return threadleaf_filesystem_error(
-      env,
-      "unsupported",
-      "Anonymous publication probing is currently available only on Linux.");
-#endif
 
   napi_value undefined;
   if (napi_get_undefined(env, &undefined) != napi_ok) {
     return NULL;
   }
   return undefined;
+#else
+  return threadleaf_filesystem_error(
+      env,
+      "unsupported",
+      "Anonymous publication probing is currently available only on Linux.");
+#endif
 }
 
 /*
@@ -1268,6 +1268,12 @@ static napi_value threadleaf_publish_buffer_no_replace(
         "io",
         "The anonymous attachment publication descriptor did not close cleanly.");
   }
+
+  napi_value undefined;
+  if (napi_get_undefined(env, &undefined) != napi_ok) {
+    return NULL;
+  }
+  return undefined;
 #else
   free(target);
   return threadleaf_filesystem_error(
@@ -1275,12 +1281,6 @@ static napi_value threadleaf_publish_buffer_no_replace(
       "unsupported",
       "Anonymous no-clobber publication is currently available only on Linux.");
 #endif
-
-  napi_value undefined;
-  if (napi_get_undefined(env, &undefined) != napi_ok) {
-    return NULL;
-  }
-  return undefined;
 }
 
 static napi_value threadleaf_platform(napi_env env, napi_callback_info info) {
