@@ -28,8 +28,15 @@ const CACHE_FILE_LIMITS = Object.freeze({
 });
 
 function isContained(rootPath, targetPath) {
-  const relative = path.relative(rootPath, targetPath);
-  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..");
+  // Windows realpath may return a namespaced path for only one operand. Put both paths in the
+  // same canonical representation before comparing, and reject different-drive absolute results.
+  const root = path.toNamespacedPath(path.resolve(rootPath));
+  const target = path.toNamespacedPath(path.resolve(targetPath));
+  const relative = path.relative(root, target);
+  return (
+    relative === "" ||
+    (!path.isAbsolute(relative) && !relative.startsWith(`..${path.sep}`) && relative !== "..")
+  );
 }
 
 function assertSafeRelativePath(relativePath, label = "path") {
