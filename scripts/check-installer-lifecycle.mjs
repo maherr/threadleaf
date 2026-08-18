@@ -31,9 +31,10 @@ const isolatedAppDataPath =
     ? path.join(scratchPath, "appdata", "roaming")
     : path.join(isolatedHomePath, "Library", "Application Support");
 const isolatedLocalAppDataPath = path.join(scratchPath, "appdata", "local");
-// Electron establishes the default userData directory from the npm package name before main.ts
-// can apply the capitalized display name. Keep the lifecycle oracle on that real platform default.
+// Keep native lifecycle state inside the disposable root even on macOS, where LaunchServices can
+// resolve Application Support from the account record instead of the child process's HOME.
 const userDataPath = path.join(isolatedAppDataPath, packageData.name);
+const userDataArgument = `--user-data-dir=${userDataPath}`;
 const processMarker = randomUUID();
 const processMarkerArgument = `--threadleaf-lifecycle-marker=${processMarker}`;
 const candidateVersion = packageData.version;
@@ -840,6 +841,7 @@ async function launchPackage(executablePath, expectedVersion, stage) {
     [
       `--remote-debugging-port=${port}`,
       processMarkerArgument,
+      userDataArgument,
       "--disable-gpu",
       "--password-store=basic",
       "--safe-plugins",
@@ -1150,7 +1152,7 @@ async function runLifecycle() {
   );
   assert(
     await exists(path.join(userDataPath, "settings.json")),
-    "Packaged application did not persist settings into its isolated platform-default app-data directory.",
+    "Packaged application did not persist settings into its explicit isolated app-data directory.",
   );
   await stopPackage(baseline.probe, true);
 
@@ -1239,7 +1241,7 @@ async function runLifecycle() {
     uninstall: platform === "win32" ? "nsis-silent" : "manual-app-removal",
     stateRootPreserved: true,
     appData: {
-      mode: "platform-default",
+      mode: "explicit-isolated",
       root: path.relative(scratchPath, userDataPath).replaceAll(path.sep, "/"),
       isolated: true,
       outsideVault: true,

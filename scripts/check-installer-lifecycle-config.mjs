@@ -170,7 +170,7 @@ assert(
 );
 assert(
   lifecycleScriptText.includes("path.join(isolatedAppDataPath, packageData.name)"),
-  "Lifecycle state must use Electron's package-name-derived platform default.",
+  "Lifecycle state must use the package-name-derived path inside its isolated app-data root.",
 );
 assert(
   builder.nsis?.deleteAppDataOnUninstall === false,
@@ -207,10 +207,11 @@ assert(
 );
 assert(
   !lifecycleScriptText.includes("fs.rm(target") &&
-    !lifecycleScriptText.includes("--user-data-dir") &&
+    lifecycleScriptText.includes("userDataArgument") &&
+    lifecycleScriptText.includes("--user-data-dir=") &&
     lifecycleScriptText.includes("inPlaceReplacementChecks") &&
-    lifecycleScriptText.includes('mode: "platform-default"'),
-  "Installer lifecycle must preserve the target and use platform-default app data.",
+    lifecycleScriptText.includes('mode: "explicit-isolated"'),
+  "Installer lifecycle must preserve the target and use explicit isolated app data.",
 );
 assert(
   lifecycleScriptText.includes('path.join(userDataPath, "settings.json")') &&
