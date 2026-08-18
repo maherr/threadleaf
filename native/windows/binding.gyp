@@ -10,8 +10,7 @@
         "VCCLCompilerTool": {
           "WarningLevel": 4,
           "WarnAsError": "true",
-          "CompileAs": "CompileAsC",
-          "AdditionalOptions": ["/std:c11"]
+          "CompileAs": "CompileAsC"
         }
       }
     }

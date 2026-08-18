@@ -381,6 +381,42 @@ describe("exact plugin package inspection", () => {
     expect(JSON.stringify(report)).not.toContain("/tmp/");
   });
 
+  it.skipIf(process.platform === "win32")(
+    "canonicalizes a symlinked host temp root before trusted runtime construction",
+    async () => {
+      const hostRoot = await fs.mkdtemp(
+        path.join(os.tmpdir(), "threadleaf-inspection-canonical-root-"),
+      );
+      const realTemporaryDirectory = path.join(hostRoot, "real");
+      const aliasedTemporaryDirectory = path.join(hostRoot, "alias");
+      await fs.mkdir(realTemporaryDirectory);
+      await fs.symlink(realTemporaryDirectory, aliasedTemporaryDirectory, "dir");
+
+      const realMkdtemp = fs.mkdtemp.bind(fs);
+      const mkdtempSpy = vi
+        .spyOn(fs, "mkdtemp")
+        .mockImplementation(async (prefix: string, options?: unknown) =>
+          realMkdtemp(
+            path.join(aliasedTemporaryDirectory, path.basename(prefix)),
+            options as Parameters<typeof fs.mkdtemp>[1],
+          ),
+        );
+      try {
+        const report = await inspectPluginPackage(await fixtureInput("inspection-safe"), {
+          runtimeFactory: async (context) => {
+            expect(context.vaultPath).toBe(await fs.realpath(context.vaultPath));
+            expect(context.pluginDirectory).toBe(await fs.realpath(context.pluginDirectory));
+            return fakeRuntime("inspection-safe", "normal", context);
+          },
+        });
+        expect(report.overall).toBe("pass");
+      } finally {
+        mkdtempSpy.mockRestore();
+        await fs.rm(hostRoot, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("never activates the exact package when the caller requests static-only inspection", async () => {
     const input = await fixtureInput("inspection-safe");
     const report = await inspectPluginPackage(input, { timeoutMs: 1_000, runActivation: false });

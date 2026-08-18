@@ -1105,7 +1105,11 @@ function vaultDiff(
 }
 
 async function materializePackage(input: ExactPluginPackageInput): Promise<MaterializedPackage> {
-  const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-inspection-"));
+  const createdRootPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-inspection-"));
+  // macOS commonly exposes its temporary directory through a /var -> /private/var alias.
+  // Construction authority is intentionally path-exact, so carry one canonical spelling from
+  // materialization through inspection rather than rejecting the package as path-swapped later.
+  const rootPath = await fs.realpath(createdRootPath);
   const vaultPath = path.join(rootPath, "vault");
   const pluginDirectory = path.join(vaultPath, ".obsidian", "plugins", input.provenance.pluginId);
   await fs.mkdir(pluginDirectory, { recursive: true, mode: 0o700 });
