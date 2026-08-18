@@ -357,6 +357,10 @@ function portableCollisionKey(value) {
   return value.normalize("NFC").toLocaleLowerCase("en-US");
 }
 
+function portablePathIdentity(value) {
+  return value.normalize("NFC");
+}
+
 async function validateCorpusCheckout(fixtureRoot, actualEntries, declaredEntries, label) {
   const actualByKey = Map.groupBy(actualEntries, (entry) => portableCollisionKey(entry.path));
   const declaredByKey = Map.groupBy(declaredEntries, (entry) => portableCollisionKey(entry.path));
@@ -472,7 +476,12 @@ async function buildFixtureData(definitions) {
         category: text(entry.category, "fixture case category"),
         support: entry.support,
       })),
-      files: declaredEntries,
+      // Filesystems may expose canonically equivalent names in NFC or NFD. Keep checkout
+      // validation byte-exact above, then publish one stable path identity across platforms.
+      files: declaredEntries.map((entry) => ({
+        ...entry,
+        path: portablePathIdentity(entry.path),
+      })),
       source: [
         sourceRef(definition.manifestPath),
         sourceRef(definition.casesPath),
