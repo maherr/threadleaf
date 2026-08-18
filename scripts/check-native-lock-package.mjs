@@ -70,9 +70,10 @@ assert(
   "macOS and Windows package verifiers must retain signed native-artifact inventory checks.",
 );
 assert(
-  platformPackageCheckSources[2].includes("normalizeWindowsTextOutput") &&
-    platformPackageCheckSources[2].includes('replaceAll("\\r\\n", "\\n")'),
-  "The Windows package verifier must normalize native CRLF command output.",
+  platformPackageCheckSources[2].includes("nonEmptyWindowsOutputLines") &&
+    platformPackageCheckSources[2].includes('replaceAll("\\r\\n", "\\n")') &&
+    platformPackageCheckSources[2].includes('.filter((line) => line !== "")'),
+  "The Windows package verifier must normalize CRLF and ignore Electron's blank stdout lines.",
 );
 
 const packageRoot = await realpath(
