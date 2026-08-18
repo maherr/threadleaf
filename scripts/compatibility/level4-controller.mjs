@@ -129,7 +129,10 @@ async function loadTrustContext({
   const controllerArtifact = await buildFileArtifact(controllerExecutablePath, {
     label: "controller executable",
   });
-  const harnessManifest = await buildTreeManifest(harnessTreePath, { label: "evidence harness" });
+  const harnessManifest = await buildTreeManifest(harnessTreePath, {
+    label: "evidence harness",
+    includeModes: false,
+  });
   const closureRoot = path.resolve(path.dirname(controllerExecutablePath), "../..");
   const executableClosure = await buildExecutableClosureManifest({
     rootPath: closureRoot,

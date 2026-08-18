@@ -95,6 +95,7 @@ async function loadCurrentTrust({ artifactPaths }) {
   });
   const harness = await buildTreeManifest(artifactPaths.harnessTreePath, {
     label: "current evidence harness",
+    includeModes: false,
   });
   const closureRoot = path.resolve(path.dirname(artifactPaths.controllerExecutablePath), "../..");
   const executableClosure = await buildExecutableClosureManifest({

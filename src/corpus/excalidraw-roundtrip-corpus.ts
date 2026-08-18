@@ -48,7 +48,7 @@ type ExternalObservationStatus = "observed" | "unverified";
 
 interface CorpusCaseResult {
   message: string;
-  status: "passed" | ExternalObservationStatus;
+  status: "passed" | "platform-unsupported" | ExternalObservationStatus;
 }
 
 const corpusDirectory = path.resolve(process.cwd(), "fixtures/corpus/excalidraw-roundtrip-v1");
@@ -82,6 +82,19 @@ function observationSha256(value: unknown, label: string): string {
   const digest = observationText(value, label);
   assert(/^[a-f0-9]{64}$/u.test(digest), `${label} is not SHA-256`);
   return digest;
+}
+
+async function assertPathMissing(filePath: string): Promise<void> {
+  try {
+    await fs.access(filePath);
+  } catch (error) {
+    assert(
+      error instanceof Error && "code" in error && error.code === "ENOENT",
+      `missing-path assertion failed for ${filePath}`,
+    );
+    return;
+  }
+  fail(`unexpected path exists: ${filePath}`);
 }
 
 async function readJson<T>(filePath: string): Promise<T> {
@@ -493,7 +506,10 @@ async function runAttachmentCase(vaultRoot: string): Promise<void> {
   );
 }
 
-async function runAttachmentRenameCase(vaultRoot: string, stateRoot: string): Promise<void> {
+async function runAttachmentRenameCase(
+  vaultRoot: string,
+  stateRoot: string,
+): Promise<"passed" | "platform-unsupported"> {
   const fromPath = "Assets/Ébauche/diagram.svg";
   const toPath = "Assets/Ébauche/diagram-renamed.svg";
   const kernel = await openKernel(vaultRoot, stateRoot);
@@ -514,6 +530,26 @@ async function runAttachmentRenameCase(vaultRoot: string, stateRoot: string): Pr
     attachment.snapshot.revision,
     { plan, acceptCurrentRewrites: true },
   );
+  if (process.platform !== "linux") {
+    assert(
+      rename.status === "conflict" && rename.reason === "attachment-publish-unavailable",
+      "unsupported platform did not fail attachment publication closed",
+    );
+    const retained = await kernel.readBinary(fromPath, 1024 * 1024);
+    assert(retained.status === "ready", "failed publication did not retain the source");
+    assert(
+      sha256(retained.snapshot.bytes) === sha256(attachment.snapshot.bytes),
+      "failed publication changed the source bytes",
+    );
+    await assertPathMissing(path.join(vaultRoot, toPath));
+    const unchangedDrawing = await kernel.readText("Drawings/Unicode Scene.excalidraw.md");
+    assert(
+      parseExcalidrawMarkdown(unchangedDrawing.content).attachmentReferences[0] ===
+        "../Assets/Ébauche/diagram.svg",
+      "failed publication rewrote the supplied Excalidraw wiki target",
+    );
+    return "platform-unsupported";
+  }
   assert(
     rename.status === "published-source-retained",
     "attachment publication did not retain the source",
@@ -536,6 +572,7 @@ async function runAttachmentRenameCase(vaultRoot: string, stateRoot: string): Pr
       "../Assets/Ébauche/diagram-renamed.svg",
     "attachment move did not round-trip the supplied Excalidraw wiki target",
   );
+  return "passed";
 }
 
 async function runExternalEditCase(vaultRoot: string, stateRoot: string): Promise<void> {
@@ -589,7 +626,13 @@ async function runCase(
     } else if (entry.id === "attachments.manifest-and-reference") {
       await runAttachmentCase(vaultRoot);
     } else if (entry.id === "attachments.rename-reference-rewrite") {
-      await runAttachmentRenameCase(vaultRoot, stateRoot);
+      const status = await runAttachmentRenameCase(vaultRoot, stateRoot);
+      if (status === "platform-unsupported") {
+        return {
+          message: `${entry.id}: platform-unsupported (strict publication failed closed)`,
+          status,
+        };
+      }
     } else if (entry.id === "external-edit.revision-conflict") {
       await runExternalEditCase(vaultRoot, stateRoot);
     } else if (entry.id === "workflow.packaged-electron") {
@@ -609,6 +652,7 @@ async function runCase(
 
 export async function runExcalidrawRoundtripCorpus(): Promise<{
   passed: number;
+  platformUnsupported: number;
   observed: number;
   unverified: number;
 }> {
@@ -618,12 +662,14 @@ export async function runExcalidrawRoundtripCorpus(): Promise<{
   const externalObservations = await verifyCases(cases, manifest);
   const results: CorpusCaseResult[] = [];
   let passed = 0;
+  let platformUnsupported = 0;
   let observed = 0;
   let unverified = 0;
   for (const entry of cases.cases) {
     const result = await runCase(entry, externalObservations);
     results.push(result);
     if (result.status === "passed") passed += 1;
+    else if (result.status === "platform-unsupported") platformUnsupported += 1;
     else if (result.status === "observed") observed += 1;
     else unverified += 1;
   }
@@ -631,7 +677,7 @@ export async function runExcalidrawRoundtripCorpus(): Promise<{
     process.stdout.write(`${result.message}\n`);
   }
   process.stdout.write(
-    `Excalidraw round-trip corpus: ${passed} executable gates, ${observed} observed external, ${unverified} unverified\n`,
+    `Excalidraw round-trip corpus: ${passed} executable gates, ${platformUnsupported} platform-unsupported, ${observed} observed external, ${unverified} unverified\n`,
   );
-  return { passed, observed, unverified };
+  return { passed, platformUnsupported, observed, unverified };
 }

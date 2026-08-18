@@ -5,8 +5,8 @@
     "manifestId": "threadleaf-level4-controller-main",
     "manifestVersion": 1,
     "controllerVersion": "level4-controller-v2-phase0",
-    "controllerExecutableSha256": "43266c48af4d4a746e7e320cea6a2aafe9015a53da9bbc0bf63e7d50a16c8df8",
-    "executableClosureSha256": "f6fbd1f3de0c11390d9ece9f5500006a09beb942910230d298f97fb43a1b6712",
+    "controllerExecutableSha256": "fd076103d26cf31826d6f0075a81b9a45a2cbe14da3e5fb7f8e973e52abb7c34",
+    "executableClosureSha256": "6b5285798a16fd3d115ceeb45abf8519baea7667fee18e03ed0167eb91dcc2b8",
     "executableClosure": {
       "schemaVersion": 1,
       "roots": [
@@ -21,18 +21,18 @@
         },
         {
           "path": "scripts/compatibility/level4-artifacts.mjs",
-          "bytes": 16970,
-          "sha256": "d127f1c9939a8c948aabcdbcbeb0bb17ea59ddf99c9de57130d18da19d2315ab"
+          "bytes": 17130,
+          "sha256": "0fbd5393937f35cd0c554a289ed7b290b685e1ee4aa9af7bfe1cba4257288fe0"
         },
         {
           "path": "scripts/compatibility/level4-controller.mjs",
-          "bytes": 27832,
-          "sha256": "43266c48af4d4a746e7e320cea6a2aafe9015a53da9bbc0bf63e7d50a16c8df8"
+          "bytes": 27864,
+          "sha256": "fd076103d26cf31826d6f0075a81b9a45a2cbe14da3e5fb7f8e973e52abb7c34"
         },
         {
           "path": "scripts/compatibility/level4-verifier.mjs",
-          "bytes": 21725,
-          "sha256": "532c5bdc40e9f96c593a89ffdd0a267191a32a535de775159ebc54031d5f9ac2"
+          "bytes": 21750,
+          "sha256": "8a56fc5a0136556db9fcadf8be506258989e4863702b329619acdf0f66335490"
         },
         {
           "path": "src/shared/authority-json-runtime.mjs",
@@ -49,7 +49,7 @@
     "allowedReceiptSchemaVersions": [2],
     "currentHarness": {
       "version": "level4-harness-v1-phase0",
-      "treeSha256": "3109260dc6292914e7b05a0a8789f5eb1c044c1ed246c3bde26f50ee388d77ba"
+      "treeSha256": "b075d3de1a294ceefdd178e909952678cbf15729689e0c1107a02eb66168f32a"
     }
   },
   "issuerKeys": []

@@ -44,6 +44,12 @@ atomic save wins the revision race, the external bytes remain at the original pa
 plugin bytes become a labeled conflict copy. Interrupted writes and renames are recovered by the
 same journal boundary already used by other vault mutations. No stale Excalidraw save silently wins.
 
+Source-retaining, no-clobber attachment publication is a Linux capability. The Linux corpus proves
+the complete rename, byte-retention, and reference-rewrite workflow. The macOS and Windows lanes
+instead require the same request to fail closed as `attachment-publish-unavailable`, leave the
+source and Markdown bytes unchanged, and create no destination. Their corpus result is reported as
+`platform-unsupported`, never as an executable pass.
+
 ## Packaged Electron workflow
 
 Run:
@@ -146,7 +152,8 @@ sorted manifest digest was
 `a41f0cd8fd984137dc20629af74287d95e80ed0d4b1600053d97537c3e46d2ba` on both sides.
 
 This is external-oracle evidence, not an executable Threadleaf gate. The case remains declared
-`support: "unsupported"`, and `pnpm corpus:check` reports seven executable gates, one observed
-external case, and zero unverified cases. No official Obsidian output, profile, screenshot, or
-private application asset is checked in; the record retains only exact identities, digests,
+`support: "unsupported"`, and the Linux `pnpm corpus:check` reports seven executable gates, zero
+platform-unsupported gates, one observed external case, and zero unverified cases. No official
+Obsidian output, profile, screenshot, or private application asset is checked in; the record
+retains only exact identities, digests,
 isolation facts, observed behavior, and limitations.

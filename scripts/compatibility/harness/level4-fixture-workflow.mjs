@@ -1258,6 +1258,26 @@ async function main() {
     await writeFile(path.join(symlinkTree, "real.txt"), "real\n");
     await fs.symlink("real.txt", path.join(symlinkTree, "link.txt"));
     await expectReject(() => buildTreeManifest(symlinkTree), "symlink artifact entry");
+    const portableSourceTree = path.join(temporaryRoot, "portable-source-tree");
+    const portableSourceFile = path.join(portableSourceTree, "source.mjs");
+    await writeFile(portableSourceFile, "export const portable = true;\n", 0o600);
+    const portableSourceBefore = await buildTreeManifest(portableSourceTree, {
+      label: "portable source",
+      includeModes: false,
+    });
+    await fs.chmod(portableSourceFile, 0o755);
+    const portableSourceAfter = await buildTreeManifest(portableSourceTree, {
+      label: "portable source",
+      includeModes: false,
+    });
+    check(
+      portableSourceBefore.treeSha256 === portableSourceAfter.treeSha256,
+      "portable source identity must ignore host checkout modes",
+    );
+    check(
+      portableSourceAfter.entries.every((entry) => !("mode" in entry)),
+      "portable source identity must not retain host checkout modes",
+    );
     for (const [label, entries] of [
       [
         "same-directory case collision",

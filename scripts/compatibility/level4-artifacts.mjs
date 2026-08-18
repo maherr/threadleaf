@@ -57,7 +57,7 @@ function modeOf(stat) {
   return stat.mode & 0o777;
 }
 
-async function readDirectoryEntries(rootPath, relativePath, entries, seenPaths) {
+async function readDirectoryEntries(rootPath, relativePath, entries, seenPaths, includeModes) {
   let children;
   try {
     children = await fs.readdir(rootPath, { withFileTypes: true });
@@ -88,8 +88,13 @@ async function readDirectoryEntries(rootPath, relativePath, entries, seenPaths) 
       fail(`cannot stat ${childPath}: ${error instanceof Error ? error.message : String(error)}`);
     }
     if (stat.isDirectory()) {
-      entries.push({ kind: "directory", path: normalized, bytes: 0, mode: modeOf(stat) });
-      await readDirectoryEntries(childPath, normalized, entries, seenPaths);
+      entries.push({
+        kind: "directory",
+        path: normalized,
+        bytes: 0,
+        ...(includeModes ? { mode: modeOf(stat) } : {}),
+      });
+      await readDirectoryEntries(childPath, normalized, entries, seenPaths, includeModes);
     } else if (stat.isFile()) {
       let bytes;
       try {
@@ -101,7 +106,7 @@ async function readDirectoryEntries(rootPath, relativePath, entries, seenPaths) 
         kind: "file",
         path: normalized,
         bytes: bytes.length,
-        mode: modeOf(stat),
+        ...(includeModes ? { mode: modeOf(stat) } : {}),
         sha256: sha256Bytes(bytes),
       });
     } else if (stat.isSymbolicLink()) {
@@ -112,7 +117,7 @@ async function readDirectoryEntries(rootPath, relativePath, entries, seenPaths) 
   }
 }
 
-export async function buildTreeManifest(rootPath, { label = "tree" } = {}) {
+export async function buildTreeManifest(rootPath, { label = "tree", includeModes = true } = {}) {
   const absoluteRoot = path.resolve(rootPath);
   let rootStat;
   try {
@@ -122,7 +127,7 @@ export async function buildTreeManifest(rootPath, { label = "tree" } = {}) {
   }
   if (!rootStat.isDirectory()) fail(`tree root ${absoluteRoot} is not a directory.`);
   const entries = [];
-  await readDirectoryEntries(absoluteRoot, "", entries, new Set());
+  await readDirectoryEntries(absoluteRoot, "", entries, new Set(), includeModes);
   entries.sort((left, right) => comparePortablePaths(left.path, right.path));
   const body = { schemaVersion: 1, label, entries };
   const treeIdentity = { schemaVersion: 1, entries };
