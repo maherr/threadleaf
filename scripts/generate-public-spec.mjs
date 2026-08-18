@@ -346,6 +346,68 @@ async function validateGateList(gates, label) {
   }
 }
 
+function portableCollisionKey(value) {
+  return value.normalize("NFC").toLocaleLowerCase("en-US");
+}
+
+async function validateCorpusCheckout(fixtureRoot, actualEntries, declaredEntries, label) {
+  const actualByKey = Map.groupBy(actualEntries, (entry) => portableCollisionKey(entry.path));
+  const declaredByKey = Map.groupBy(declaredEntries, (entry) => portableCollisionKey(entry.path));
+  assert(
+    new Set(declaredEntries.map((entry) => entry.path)).size === declaredEntries.length,
+    `${label} corpus manifest contains duplicate paths`,
+  );
+  assert(
+    new Set(actualEntries.map((entry) => entry.path)).size === actualEntries.length,
+    `${label} checkout contains duplicate paths`,
+  );
+  assert(
+    [...actualByKey.keys()].every((key) => declaredByKey.has(key)),
+    `${label} checkout contains a path outside the corpus manifest`,
+  );
+
+  for (const [key, declaredGroup] of declaredByKey) {
+    const actualGroup = actualByKey.get(key) ?? [];
+    const declaredPaths = declaredGroup.map((entry) => entry.path);
+    const actualPaths = actualGroup.map((entry) => entry.path);
+    if (JSON.stringify(actualPaths) === JSON.stringify(declaredPaths)) {
+      for (const [index, declared] of declaredGroup.entries()) {
+        const actual = actualGroup[index];
+        assert(
+          actual?.bytes === declared.bytes && actual.sha256 === declared.sha256,
+          `${label} corpus manifest is stale for ${declared.path}`,
+        );
+      }
+      continue;
+    }
+
+    assert(
+      actualGroup.length === 1,
+      `${label} checkout does not represent the manifest collision group ${JSON.stringify(declaredPaths)}`,
+    );
+    const actual = actualGroup[0];
+    const actualRealPath = await fs.realpath(path.join(fixtureRoot, actual.path));
+    for (const declared of declaredGroup) {
+      let declaredRealPath;
+      try {
+        declaredRealPath = await fs.realpath(path.join(fixtureRoot, declared.path));
+      } catch {
+        fail(`${label} corpus manifest is missing ${declared.path}`);
+      }
+      assert(
+        declaredRealPath === actualRealPath,
+        `${label} checkout path is not a filesystem alias for ${declared.path}`,
+      );
+    }
+    assert(
+      declaredGroup.some(
+        (declared) => actual.bytes === declared.bytes && actual.sha256 === declared.sha256,
+      ),
+      `${label} filesystem-aliased corpus bytes are stale for ${actual.path}`,
+    );
+  }
+}
+
 async function buildFixtureData(definitions) {
   const fixtures = [];
   for (const definition of definitions) {
@@ -376,9 +438,11 @@ async function buildFixtureData(definitions) {
       bytes: entry.size,
       sha256: entry.sha256,
     }));
-    assert(
-      JSON.stringify(canonicalEntries) === JSON.stringify(declaredEntries),
-      `${definition.directory} corpus manifest is stale`,
+    await validateCorpusCheckout(
+      fixtureRoot,
+      canonicalEntries,
+      declaredEntries,
+      definition.directory,
     );
     const license = await readText(definition.licensePath);
     const provenance = await readText(definition.provenancePath);
@@ -401,7 +465,7 @@ async function buildFixtureData(definitions) {
         category: text(entry.category, "fixture case category"),
         support: entry.support,
       })),
-      files: canonicalEntries,
+      files: declaredEntries,
       source: [
         sourceRef(definition.manifestPath),
         sourceRef(definition.casesPath),

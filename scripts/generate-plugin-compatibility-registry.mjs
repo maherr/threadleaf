@@ -525,6 +525,20 @@ async function assertCurrent(filePath, expected) {
   }
 }
 
+async function syncDirectoryHandle(handle) {
+  try {
+    await handle.sync();
+  } catch (error) {
+    if (
+      process.platform === "win32" &&
+      (error?.code === "EISDIR" || error?.code === "EPERM" || error?.code === "EINVAL")
+    ) {
+      return;
+    }
+    throw error;
+  }
+}
+
 async function writeAtomicReplace(filePath, content) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   const temporaryPath = path.join(
@@ -542,7 +556,7 @@ async function writeAtomicReplace(filePath, content) {
     let directoryHandle;
     try {
       directoryHandle = await fs.open(path.dirname(filePath), "r");
-      await directoryHandle.sync();
+      await syncDirectoryHandle(directoryHandle);
     } finally {
       await directoryHandle?.close();
     }
