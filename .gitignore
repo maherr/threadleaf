@@ -1,4 +1,5 @@
 node_modules/
+native/windows/build/
 dist/
 .bench-dist/
 .bench-corpus/

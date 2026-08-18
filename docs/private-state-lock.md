@@ -66,6 +66,11 @@ The implementation is a project-owned C Node-API addon in
 pins Node-API version 10. No Node implementation is copied into Threadleaf and
 no third-party native dependency is introduced.
 
+The Windows branch uses pinned `node-gyp` as a build tool so it links against
+the pinned Electron runtime's verified header distribution and includes
+Electron's required Windows delay-load hook. The shipped addon remains the
+project-owned C source above; `node-gyp` is not a runtime dependency.
+
 `pnpm run build:native:electron` explicitly rebuilds and loads
 `dist/native/threadleaf-state-lock.node` in the pinned Electron runtime on the
 matching host. Supported target builds are Linux x64, Windows x64, macOS

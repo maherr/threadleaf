@@ -5,6 +5,7 @@ const projectRoot = path.resolve(import.meta.dirname, "..");
 const sourcePath = path.join(projectRoot, "native", "state_lock.c");
 const headerPath = path.join(projectRoot, "native", "include", "threadleaf_node_api.h");
 const buildPath = path.join(projectRoot, "scripts", "build-native-state-lock.mjs");
+const windowsBindingPath = path.join(projectRoot, "native", "windows", "binding.gyp");
 const targetBuildPath = path.join(projectRoot, "scripts", "build-target.mjs");
 const packagePath = path.join(projectRoot, "package.json");
 const builderPath = path.join(projectRoot, "electron-builder.yml");
@@ -16,6 +17,7 @@ const releasePath = path.join(projectRoot, ".github", "workflows", "release.yml"
 const source = await readFile(sourcePath, "utf8");
 const header = await readFile(headerPath, "utf8");
 const buildSource = await readFile(buildPath, "utf8");
+const windowsBinding = await readFile(windowsBindingPath, "utf8");
 const targetBuildSource = await readFile(targetBuildPath, "utf8");
 const packageData = JSON.parse(await readFile(packagePath, "utf8"));
 const builderSource = await readFile(builderPath, "utf8");
@@ -186,9 +188,18 @@ assert(
   buildSource.includes('"-Wall"') &&
     buildSource.includes('"-Wextra"') &&
     buildSource.includes('"-Werror"') &&
-    buildSource.includes('"/W4"') &&
-    buildSource.includes('"/WX"'),
+    windowsBinding.includes('"WarningLevel": 4') &&
+    windowsBinding.includes('"WarnAsError": "true"'),
   "Native builds must treat compiler warnings as errors on every target.",
+);
+assert(
+  buildSource.includes('resolve("node-gyp/bin/node-gyp.js")') &&
+    buildSource.includes("--dist-url=https://electronjs.org/headers") &&
+    buildSource.includes("threadleaf_state_lock.node") &&
+    windowsBinding.includes('"NAPI_VERSION=10"') &&
+    windowsBinding.includes('"win_delay_load_hook": "true"') &&
+    packageData.devDependencies?.["node-gyp"] === "12.4.0",
+  "Windows builds must use pinned node-gyp, Electron's import library, and its delay-load hook.",
 );
 assert(
   electronTargetSource.includes('createRequire(import.meta.url)("electron")') &&

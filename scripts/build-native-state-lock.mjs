@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { access, mkdir, readFile, rm } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
@@ -7,6 +8,7 @@ const sourcePath = path.join(projectRoot, "native", "state_lock.c");
 const outputDirectory = path.join(projectRoot, "dist", "native");
 const outputPath = path.join(outputDirectory, "threadleaf-state-lock.node");
 const includeDirectory = path.join(projectRoot, "native");
+const windowsBuildDirectory = path.join(includeDirectory, "windows");
 const requestedPlatform = process.env.THREADLEAF_NATIVE_TARGET_PLATFORM ?? process.platform;
 const requestedArchitecture = process.env.THREADLEAF_NATIVE_TARGET_ARCH ?? process.arch;
 const THREADLEAF_NAPI_VERSION = 10;
@@ -66,19 +68,6 @@ async function commandExists(command) {
   return false;
 }
 
-async function firstExisting(paths) {
-  for (const candidate of paths) {
-    if (!candidate) continue;
-    try {
-      await access(candidate);
-      return candidate;
-    } catch {
-      // Continue through toolchain candidates.
-    }
-  }
-  return undefined;
-}
-
 function assertTargetHost() {
   assert(
     ["linux", "darwin", "win32"].includes(requestedPlatform),
@@ -112,44 +101,32 @@ function assertTargetHost() {
 }
 
 async function buildWindows(output) {
-  const compiler =
-    process.env.CC ??
-    ((await commandExists("cl.exe"))
-      ? "cl.exe"
-      : await firstExisting([
-          process.env.VCToolsInstallDir
-            ? path.join(process.env.VCToolsInstallDir, "bin", "Hostx64", "x64", "cl.exe")
-            : undefined,
-        ]));
+  const packageData = JSON.parse(await readFile(path.join(projectRoot, "package.json"), "utf8"));
+  const electronVersion = packageData.devDependencies?.electron;
   assert(
-    compiler,
-    "Windows native state-lock builds require cl.exe from the Visual C++ toolchain.",
+    typeof electronVersion === "string" && /^\d+\.\d+\.\d+$/u.test(electronVersion),
+    "Windows native state-lock builds require an exact Electron development dependency.",
   );
-  const nodeLib = await firstExisting([
-    process.env.THREADLEAF_NODE_LIB,
-    path.join(path.dirname(process.execPath), "node.lib"),
-    process.config.variables.node_prefix
-      ? path.join(process.config.variables.node_prefix, "node.lib")
-      : undefined,
-  ]);
-  assert(
-    nodeLib,
-    "Windows native state-lock builds require node.lib; set THREADLEAF_NODE_LIB explicitly if needed.",
+  const nodeGyp = createRequire(import.meta.url).resolve("node-gyp/bin/node-gyp.js");
+  const developmentDirectory = path.join(
+    projectRoot,
+    "node_modules",
+    ".cache",
+    "threadleaf-electron-gyp",
   );
-  await run(compiler, [
-    "/nologo",
-    "/LD",
-    "/O2",
-    "/W4",
-    "/WX",
-    "/std:c11",
-    `/I${includeDirectory}`,
-    sourcePath,
-    `/Fe:${output}`,
-    nodeLib,
+  await run(process.execPath, [
+    nodeGyp,
+    "rebuild",
+    `--target=${electronVersion}`,
+    "--arch=x64",
+    "--dist-url=https://electronjs.org/headers",
+    `--devdir=${developmentDirectory}`,
+    `--directory=${windowsBuildDirectory}`,
   ]);
-  await rm(`${output}.lib`, { force: true });
-  await rm(`${output}.exp`, { force: true });
+  await copyFile(
+    path.join(windowsBuildDirectory, "build", "Release", "threadleaf_state_lock.node"),
+    output,
+  );
 }
 
 async function buildMac(output, architecture) {

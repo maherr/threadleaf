@@ -102,6 +102,9 @@ importers:
       jsdom:
         specifier: 30.0.1
         version: 30.0.1(@noble/hashes@2.3.0)
+      node-gyp:
+        specifier: 12.4.0
+        version: 12.4.0
       tsup:
         specifier: 8.5.1
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(supports-color@7.2.0)(typescript@7.0.2)(yaml@2.8.1)

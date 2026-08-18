@@ -122,7 +122,9 @@ describe("profile and process containment", () => {
     assert.ok(snapshot.captured.some((entry) => entry.path === "Default/Preferences"));
   });
 
-  it("cleans marked detached descendants and red-controls Wayland", async () => {
+  it("cleans marked detached descendants and red-controls Wayland", {
+    skip: process.platform !== "linux",
+  }, async () => {
     const root = await tempRoot();
     const helperPath = await writeHelperScript(root);
     const outputPath = path.join(root, "helper.json");
