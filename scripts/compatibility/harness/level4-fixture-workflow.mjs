@@ -1283,7 +1283,25 @@ async function main() {
       const collisionTree = path.join(temporaryRoot, label.replaceAll(" ", "-"));
       for (const [relativePath, content] of entries)
         await writeFile(path.join(collisionTree, relativePath), content);
-      await expectReject(() => buildTreeManifest(collisionTree), label);
+      const materializedPaths = await Promise.all(
+        entries.map(([relativePath]) => fs.realpath(path.join(collisionTree, relativePath))),
+      );
+      if (new Set(materializedPaths).size === entries.length) {
+        await expectReject(() => buildTreeManifest(collisionTree), label);
+      } else {
+        // A case-insensitive or normalization-folding filesystem prevents the
+        // colliding tree from existing. Prove that both aliases resolved to one
+        // object and that the resulting non-colliding tree remains consumable.
+        check(
+          new Set(materializedPaths).size === 1,
+          `${label} must collapse to exactly one filesystem object`,
+        );
+        const collapsed = await buildTreeManifest(collisionTree);
+        check(
+          collapsed.entries.filter((entry) => entry.kind === "file").length === 1,
+          `${label} filesystem control must contain exactly one file`,
+        );
+      }
     }
     await expectReject(
       () =>
