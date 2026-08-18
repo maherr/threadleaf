@@ -6,8 +6,8 @@ import type {
   PluginSurfaceSnapshot,
   RuntimeSnapshot,
 } from "../shared/contracts";
-import type { PluginConstructionRequest } from "../shared/plugins";
 import type { PluginRendererEnvironment } from "../shared/plugin-runtime-protocol";
+import type { PluginConstructionRequest } from "../shared/plugins";
 import { IsolatedPluginRuntime } from "./isolated-plugin-runtime";
 import type { PluginRuntimePort } from "./plugin-runtime-port";
 

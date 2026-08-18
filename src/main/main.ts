@@ -560,9 +560,7 @@ function setPluginSurfacePresentationVisible(visible: boolean): void {
   }
 }
 
-async function registerCompatibilityPluginView(
-  runtime: ElectronPluginRuntime,
-): Promise<void> {
+async function registerCompatibilityPluginView(runtime: ElectronPluginRuntime): Promise<void> {
   const view = runtime.view;
   const webContents = view.webContents;
   compatibilityPluginViews.add(view);

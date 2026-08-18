@@ -205,6 +205,8 @@ describe("RecoveringPluginRuntime", () => {
   it.each([
     ["vaultId", { vaultId: "wrong-vault" }],
     ["vaultGeneration", { vaultGeneration: 10 }],
+    ["status", { status: "stale" as const }],
+    ["sequence", { sequence: 5 }],
   ])(
     "does not cache an acknowledgement with a mismatched %s for later recovery",
     async (_field, override) => {
@@ -235,6 +237,8 @@ describe("RecoveringPluginRuntime", () => {
   it.each([
     ["vaultId", { vaultId: "wrong-vault" }],
     ["vaultGeneration", { vaultGeneration: 10 }],
+    ["status", { status: "stale" as const }],
+    ["sequence", { sequence: 5 }],
   ])("fails closed when a replacement acknowledges the wrong %s", async (_field, override) => {
     const first = new FakePluginRuntime();
     const replacement = new FakePluginRuntime();

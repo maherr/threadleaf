@@ -257,25 +257,18 @@ export function installObsidianDomCompatibility(
     });
   }
 
-  defineMethod(
-    fragmentPrototype as unknown as ObsidianDomElement,
-    "createEl",
-    function <K extends keyof HTMLElementTagNameMap>(
-      this: ObsidianDomFragment,
-      tagName: K,
-      options?: DomElementOptions | string | null,
-      callback?: (element: HTMLElementTagNameMap[K]) => void,
-    ) {
-      const element = this.ownerDocument.createElement(tagName) as HTMLElementTagNameMap[K] &
-        ObsidianDomElement;
-      if (options) {
-        applyElementOptions(element, options);
-      }
-      this.appendChild(element);
-      callback?.(element);
-      return element;
-    },
-  );
+  defineMethod(fragmentPrototype as unknown as ObsidianDomElement, "createEl", function <
+    K extends keyof HTMLElementTagNameMap,
+  >(this: ObsidianDomFragment, tagName: K, options?: DomElementOptions | string | null, callback?: (element: HTMLElementTagNameMap[K]) => void) {
+    const element = this.ownerDocument.createElement(tagName) as HTMLElementTagNameMap[K] &
+      ObsidianDomElement;
+    if (options) {
+      applyElementOptions(element, options);
+    }
+    this.appendChild(element);
+    callback?.(element);
+    return element;
+  });
   defineMethod(
     fragmentPrototype as unknown as ObsidianDomElement,
     "createDiv",

@@ -125,14 +125,13 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
         return snapshot;
       });
       this.environment = structuredClone(environment);
-      this.environmentSnapshot =
-        operationSnapshot?.pluginEnvironment ?? {
-          status: "applied",
-          vaultId: environment.vaultId,
-          vaultGeneration: environment.vaultGeneration,
-          sequence: environment.sequence,
-          cssChangeTriggered: false,
-        };
+      this.environmentSnapshot = operationSnapshot?.pluginEnvironment ?? {
+        status: "applied",
+        vaultId: environment.vaultId,
+        vaultGeneration: environment.vaultGeneration,
+        sequence: environment.sequence,
+        cssChangeTriggered: false,
+      };
       return this.mergeSnapshot(this.lastPluginId, operationSnapshot);
     });
   }
@@ -348,7 +347,9 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
       let snapshot = await runtime.getSnapshot();
       if (this.environment) {
         if (!runtime.applyEnvironment) {
-          throw new Error("A fresh isolated plugin runtime does not support environment replacement.");
+          throw new Error(
+            "A fresh isolated plugin runtime does not support environment replacement.",
+          );
         }
         snapshot = await runtime.applyEnvironment(this.environment);
         const applied = snapshot.pluginEnvironment;

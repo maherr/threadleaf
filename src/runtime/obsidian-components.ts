@@ -26,11 +26,7 @@ export class Component {
   onload(): void {}
 
   unload(): void {
-    if (
-      !this._loaded &&
-      this.componentChildren.length === 0 &&
-      this.registrations.length === 0
-    ) {
+    if (!this._loaded && this.componentChildren.length === 0 && this.registrations.length === 0) {
       return;
     }
 
