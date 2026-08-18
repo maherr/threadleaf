@@ -4,6 +4,7 @@ import { createPrivateKey, generateKeyPairSync, sign } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { authorityJsonSha256 } from "../../../src/shared/authority-json-runtime.mjs";
 import {
@@ -25,7 +26,7 @@ import { createLevel4ControllerRun, finalizeLevel4Receipt } from "../level4-cont
 import { verifyLevel4Receipt } from "../level4-verifier.mjs";
 
 const execFileAsync = promisify(execFile);
-const repositoryRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../..");
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
 function check(condition, message) {
   assert.equal(condition, true, message);

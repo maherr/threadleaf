@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { promises as fs, constants as fsConstants } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const appRoot = path.resolve(new URL("..", import.meta.url).pathname);
+const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const manifestPath = path.join(appRoot, "visual", "community-themes.v1.json");
 const COMMUNITY_FIXTURE_REQUIRED_FILES = Object.freeze([
   "00 Overview.md",

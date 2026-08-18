@@ -1,8 +1,9 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const repositoryRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const forbiddenControllerImport =
   /(?:from\s*["'][^"']*level4-(?:controller|verifier|operator|receipt-boundary|receipts)|import\s*\(\s*["'][^"']*level4-(?:controller|verifier|operator|receipt-boundary|receipts)|require\s*\(\s*["'][^"']*level4-(?:controller|verifier|operator|receipt-boundary|receipts))/u;
 const forbiddenPromotion =
@@ -60,6 +61,12 @@ async function main() {
     path.join(repositoryRoot, "src", "plugin-renderer"),
   ];
   const builtRoots = [path.join(repositoryRoot, "dist")];
+  for (const productionRoot of productionRoots) {
+    const discovered = await filesUnder(productionRoot);
+    if (discovered.length === 0) {
+      fail(`production root is missing or empty: ${productionRoot}`);
+    }
+  }
   const production = await checkLevel4Boundary({ sourceRoots: productionRoots, builtRoots });
   const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-level4-boundary-"));
   await fs.chmod(temporaryRoot, 0o700);

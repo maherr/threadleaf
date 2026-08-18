@@ -1,7 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const benchmarkRoot = path.dirname(new URL(import.meta.url).pathname);
+const benchmarkRoot = path.dirname(fileURLToPath(import.meta.url));
 const schemaPath = path.join(benchmarkRoot, "performance-acceptance-result-schema.json");
 const resultsDirectory = path.join(benchmarkRoot, "results");
 const schemaOnly = process.argv.includes("--schema-only");
