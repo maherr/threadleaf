@@ -66,7 +66,9 @@ assert(
 );
 assert(
   platformPackageCheckSources.some((source) => source.includes("codesign")) &&
-    platformPackageCheckSources.some((source) => source.includes("Get-AuthenticodeSignature")),
+    platformPackageCheckSources.some(
+      (source) => source.includes("Get-AuthenticodeSignature") && source.includes('"pwsh.exe"'),
+    ),
   "macOS and Windows package verifiers must retain signed native-artifact inventory checks.",
 );
 assert(

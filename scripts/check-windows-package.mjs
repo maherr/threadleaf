@@ -108,8 +108,7 @@ function powershellLiteral(value) {
 function signatureFor(filePath) {
   const script = `$signature = Get-AuthenticodeSignature -LiteralPath ${powershellLiteral(filePath)}; [pscustomobject]@{ Status = $signature.Status.ToString(); Subject = $signature.SignerCertificate.Subject } | ConvertTo-Json -Compress`;
   return JSON.parse(
-    command("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script])
-      .stdout,
+    command("pwsh.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script]).stdout,
   );
 }
 
