@@ -113,6 +113,10 @@ function signatureFor(filePath) {
   );
 }
 
+function normalizeWindowsTextOutput(value) {
+  return value.replaceAll("\r\n", "\n");
+}
+
 function verifyApplication(rootPath, label) {
   const executablePath = path.join(rootPath, "Threadleaf.exe");
   for (const requiredPath of [
@@ -143,12 +147,16 @@ function verifyApplication(rootPath, label) {
   }
   const version = command(executablePath, ["--version"]);
   assert(version.stderr === "", `${label} --version wrote stderr: ${version.stderr}`);
-  assert(version.stdout === `${packageData.version}\n`, `${label} has the wrong version.`);
+  assert(
+    normalizeWindowsTextOutput(version.stdout) === `${packageData.version}\n`,
+    `${label} has the wrong version: ${JSON.stringify(version.stdout)}.`,
+  );
   const updateTrust = command(executablePath, ["--update-trust"]);
   assert(updateTrust.stderr === "", `${label} --update-trust wrote stderr: ${updateTrust.stderr}`);
   assert(
-    updateTrust.stdout === `${requireSigned ? "signed-release-v1" : "none"}\n`,
-    `${label} has the wrong update trust marker.`,
+    normalizeWindowsTextOutput(updateTrust.stdout) ===
+      `${requireSigned ? "signed-release-v1" : "none"}\n`,
+    `${label} has the wrong update trust marker: ${JSON.stringify(updateTrust.stdout)}.`,
   );
   return executablePath;
 }

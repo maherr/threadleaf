@@ -69,6 +69,11 @@ assert(
     platformPackageCheckSources.some((source) => source.includes("Get-AuthenticodeSignature")),
   "macOS and Windows package verifiers must retain signed native-artifact inventory checks.",
 );
+assert(
+  platformPackageCheckSources[2].includes("normalizeWindowsTextOutput") &&
+    platformPackageCheckSources[2].includes('replaceAll("\\r\\n", "\\n")'),
+  "The Windows package verifier must normalize native CRLF command output.",
+);
 
 const packageRoot = await realpath(
   await mkdtemp(path.join(os.tmpdir(), "threadleaf-native-package-")),
