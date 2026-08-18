@@ -28,8 +28,9 @@ if (targetArchitecture === "universal") {
   assert(targetPlatform === "darwin", "Only macOS can produce a universal native addon package.");
 }
 
-const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-const child = spawn(pnpm, ["run", "build"], {
+const packageManagerCli = process.env.npm_execpath;
+assert(packageManagerCli, "Native package builds must run through the pinned package manager.");
+const child = spawn(process.execPath, [packageManagerCli, "run", "build"], {
   stdio: "inherit",
   env: {
     ...process.env,

@@ -226,6 +226,11 @@ assert(
   "Every native package command must select a matching native host build.",
 );
 assert(
+  targetBuildSource.includes("process.env.npm_execpath") &&
+    targetBuildSource.includes("spawn(process.execPath"),
+  "Native package builds must invoke the pinned package-manager CLI portably.",
+);
+assert(
   packageData.scripts?.["build:main"]?.includes("build:native:electron") &&
     packageData.scripts?.["test:native-lock-electron"]?.includes("build:native:electron"),
   "The main build and focused gate must perform the Electron-target native rebuild.",

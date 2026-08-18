@@ -33,17 +33,9 @@ function runShell(shell: string, scriptPath: string, command: string, cwd: strin
   return result.stdout.trimEnd().split("\n").filter(Boolean);
 }
 
-function runShellAsync(
-  shell: string,
-  scriptPath: string,
-  command: string,
-  cwd: string,
-): Promise<string[]> {
+function runShellAsync(shell: string, commandPath: string, cwd: string): Promise<string[]> {
   return new Promise((resolve, reject) => {
-    // Generated exhaustive batches can exceed Windows' command-line transport limit and arrive
-    // at Git Bash truncated in the middle of a quoted token. Standard input preserves the exact
-    // script bytes and exercises the shell rather than the host argument encoder.
-    const child = spawn(shell, [], { cwd });
+    const child = spawn(shell, [path.basename(commandPath)], { cwd });
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8");
@@ -55,7 +47,6 @@ function runShellAsync(
       stderr += chunk;
     });
     child.on("error", reject);
-    child.stdin.end(`source ${shellQuote(scriptPath)}; ${command}\n`);
     child.on("close", (status) => {
       if (status !== 0 || stderr !== "") {
         reject(new Error(`${shell} fixture failed (${status}): ${stderr}`));
@@ -521,7 +512,13 @@ async function shellOutputByState(
           }
         }
       }
-      return runShellAsync(shell, scriptPath, commandLines.join("; "), cwd);
+      const commandPath = path.join(cwd, `${shell}-oracle-${offset}.${shell}`);
+      await fs.writeFile(
+        commandPath,
+        `source ${shellQuote(`./${path.basename(scriptPath)}`)}; ${commandLines.join("; ")}\n`,
+        "utf8",
+      );
+      return runShellAsync(shell, commandPath, cwd);
     }),
   );
   const output = new Map<string, string[]>();
