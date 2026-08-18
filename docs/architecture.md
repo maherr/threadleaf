@@ -857,7 +857,7 @@ MiB each; general attachment reads are bounded at 16 MiB. One preview accepts at
 ancestry set stops cycles while allowing finite same-note section embeds.
 Oversized, missing, ambiguous, external, malformed, unsupported, stale-vault, and out-of-vault
 targets remain labeled placeholders. SVG and unsupported non-note wiki embeds remain inert.
-External links also stay inert during beta rather than broadening IPC for shell access prematurely.
+External links stay inert while shell egress remains outside the reviewed capability boundary.
 
 Native attachment actions do not reuse external-link or generic shell authority. Their handler
 accepts only the owned main renderer and one typed `{ action, path, expectedRevision,

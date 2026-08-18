@@ -8,12 +8,12 @@ itself 1.0 (the roadmap's own
 
 ## Everything is pre-1.0
 
-Threadleaf is `0.1.0-beta.8` ([`package.json`](../../package.json)).
-[`CHANGELOG.md`](../../CHANGELOG.md) states that the project "uses Semantic Versioning... once public
-releases begin," meaning SemVer is not strictly in force yet. Read every "stable" claim below as
+Threadleaf is `0.1.0` ([`package.json`](../../package.json)).
+[`CHANGELOG.md`](../../CHANGELOG.md) states that the project uses Semantic Versioning. Because the
+application is still pre-1.0, read every "stable" claim below as
 "governed by an explicit, versioned contract that changes deliberately and is recorded in the
 changelog," not as "will never break." Nothing described as stable here is exempt from breaking in a
-beta if a compatibility or safety invariant in [`docs/charter.md`](../charter.md) requires it; that
+pre-1.0 release if a compatibility or safety invariant in [`docs/charter.md`](../charter.md) requires it; that
 has priority over API stability while the project is pre-1.0.
 
 ## Versioned, contract-governed surfaces
@@ -92,7 +92,7 @@ otherwise, and expect this document and the README to be updated together when i
 
 ## Deprecation windows and breaking-change announcements
 
-**Today, pre-1.0:** any of the surfaces above can still change between beta releases, including in a
+**Today, pre-1.0:** any of the surfaces above can still change between releases, including in a
 breaking way, without a soak period. What is consistent is that a breaking change will be recorded
 as a `Changed` or `Removed` entry in [`CHANGELOG.md`](../../CHANGELOG.md), which already follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and that a native extension manifest or API

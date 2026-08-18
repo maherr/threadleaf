@@ -1,6 +1,6 @@
 # Contributing
 
-Threadleaf is a public daily-drive beta. Contributions should close a documented product,
+Threadleaf is a public pre-1.0 desktop application. Contributions should close a documented product,
 compatibility, accessibility, performance, or reliability gap rather than add unmeasured breadth.
 
 Before contributing:

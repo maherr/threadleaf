@@ -228,7 +228,7 @@ export function createSupportBundleData(input: SupportBundleInput) {
 
 export function createSupportBundleMarkdown(input: SupportBundleInput): string {
   const diagnostics = createSupportBundleData(input);
-  return `# Threadleaf beta support bundle
+  return `# Threadleaf support bundle
 
 Generated: ${input.generatedAt}
 

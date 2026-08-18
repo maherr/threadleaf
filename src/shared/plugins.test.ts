@@ -115,7 +115,7 @@ describe("plugin compatibility settings", () => {
       level: 0,
       status: "verified",
       testedVersion: "2.25.3",
-      testedThreadleafVersion: "0.1.0-beta.8",
+      testedThreadleafVersion: "0.1.0",
       lastTested: "2026-08-16",
     });
     expect(
@@ -124,7 +124,7 @@ describe("plugin compatibility settings", () => {
       level: 2,
       status: "verified",
       testedVersion: "2.26.4",
-      testedThreadleafVersion: "0.1.0-beta.8",
+      testedThreadleafVersion: "0.1.0",
       lastTested: "2026-08-16",
       evidenceMode: "direct",
       platforms: expect.arrayContaining([
@@ -143,7 +143,7 @@ describe("plugin compatibility settings", () => {
       level: 0,
       status: "different-version",
       testedVersion: "2.26.4",
-      testedThreadleafVersion: "0.1.0-beta.8",
+      testedThreadleafVersion: "0.1.0",
       lastTested: "2026-08-16",
     });
     expect(createPluginCompatibilityReport({ id: "unknown-plugin", version: "1.0.0" })).toEqual({

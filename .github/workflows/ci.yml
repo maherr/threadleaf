@@ -56,7 +56,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y fish libfuse2t64 rpm xvfb
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Install packaged Chromium sandbox helper
+        run: sudo install -o root -g root -m 4755 node_modules/electron/dist/chrome-sandbox /usr/local/sbin/threadleaf-chrome-sandbox
       - name: Build and verify Linux packages
+        env:
+          CHROME_DEVEL_SANDBOX: /usr/local/sbin/threadleaf-chrome-sandbox
         run: pnpm run release:linux
       - name: Verify reviewed plugin package E2E
         run: pnpm run test:plugin-packages-e2e:built

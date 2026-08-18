@@ -1581,7 +1581,7 @@ printf 'THREADLEAF_NATIVE_ATTACHMENT_RECEIVER {"version":1,"action":"%s","pathSh
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${userDataPath}`,
       "--disable-gpu",
-      "--disable-setuid-sandbox",
+      ...(process.env.CHROME_DEVEL_SANDBOX ? [] : ["--disable-setuid-sandbox"]),
     ],
     {
       cwd: appRoot,

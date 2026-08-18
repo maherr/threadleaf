@@ -10,8 +10,8 @@ about Obsidian describe widely known, stable facts about its product; Obsidian's
 public, so those statements are general knowledge rather than citations into a repository, and are
 kept intentionally general rather than pinned to specific numbers that could go stale.
 
-This is maintained against Threadleaf 0.1.0-beta.8 and its 2026-08-18 Phase 3 acceptance state.
-Threadleaf is a young beta. Read this alongside the [project charter](../charter.md) and
+This is maintained against Threadleaf 0.1.0 and its 2026-08-18 Phase 3 acceptance state.
+Threadleaf is a young pre-1.0 application. Read this alongside the [project charter](../charter.md) and
 [roadmap](../roadmap.md), which are more current than any snapshot comparison can stay.
 
 ## Where Threadleaf is ahead today
@@ -82,7 +82,7 @@ requirement" under "what better means" and "offline operation remains complete" 
 background network check; checking, downloading, and installing an update are three separate,
 explicit user actions, and unsigned or development builds never initialize the update provider at
 all (see [`docs/releases.md`](../releases.md), "Manual signed updates"). The privacy-safe support
-bundle described in [`docs/beta-feedback.md`](../beta-feedback.md) is saved locally, and "nothing is
+bundle described in [`docs/support-and-feedback.md`](../support-and-feedback.md) is saved locally, and "nothing is
 uploaded."
 
 ### Three smaller things worth knowing about
@@ -139,13 +139,12 @@ capability-limited extension tier" (see [`docs/charter.md`](../charter.md) and
 ### Years of product polish
 
 Obsidian has been in continuous public development since 2020, with correspondingly deep UI and
-workflow refinement. Threadleaf is an early-stage beta. Its own roadmap lists open work for tables,
+workflow refinement. Threadleaf is a young pre-1.0 application. Its own roadmap lists open work for tables,
 math, diagrams, and large-document editing in Live Preview beyond current partial support, JSON
 Canvas editing, high-contrast and localization support, and accessibility audits across every
 reachable control (see [`docs/roadmap.md`](../roadmap.md), Phase 5). Its
-[security policy](../../SECURITY.md) says it plainly: "Threadleaf is an early-stage beta. Keep an
-ordinary external backup of any vault you use with it, and do not rely on it as your only copy of
-important notes yet."
+[security policy](../../SECURITY.md) says it plainly: "Threadleaf is a pre-1.0 stable release. Keep
+an ordinary external backup of any vault you use with it, as you should for any local-first editor."
 
 ### A working hosted sync service
 

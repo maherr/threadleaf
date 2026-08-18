@@ -1,4 +1,4 @@
-# Beta feedback
+# Support and feedback
 
 Threadleaf can save a privacy-safe Markdown support bundle from Settings > About and updates or the
 Save privacy-safe support bundle command in Ctrl/Cmd+K. Nothing is uploaded. Review the generated

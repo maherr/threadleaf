@@ -1,7 +1,7 @@
 # Security policy
 
-Threadleaf is an early-stage beta. Keep an ordinary external backup of any vault you use with it, and
-do not rely on it as your only copy of important notes yet.
+Threadleaf is a pre-1.0 stable release. Keep an ordinary external backup of any vault you use with
+it, as you should for any local-first editor.
 
 Report security issues through GitHub's private vulnerability reporting for
 [`maherr/threadleaf`](https://github.com/maherr/threadleaf/security/advisories/new), not through a

@@ -54,7 +54,7 @@ function assertGeneratedCompatibilityRegistryCoherence(): void {
  * version: see the `PluginPackageInspectionOptions.appVersion` doc comment in
  * plugin-package-inspection.ts for why that comparison was removed there.
  */
-const defaultPortingAppVersion = "0.1.0-beta.8";
+const defaultPortingAppVersion = "0.1.0";
 
 export type PortingDiagnosticSeverity = "info" | "warning" | "error";
 

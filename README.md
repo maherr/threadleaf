@@ -22,8 +22,8 @@ application. It is checked for pixel drift rather than maintained as a separate 
 
 ## Download
 
-Threadleaf `0.1.0-beta.8` is available for Linux x86_64 from the
-[GitHub release](https://github.com/maherr/threadleaf/releases/tag/v0.1.0-beta.8):
+Threadleaf `0.1.0` is available for Linux x86_64 from the
+[GitHub release](https://github.com/maherr/threadleaf/releases/tag/v0.1.0):
 
 - **AppImage:** portable, no installation required. Verify the checksum, make it executable, and
   launch it.
@@ -32,18 +32,18 @@ Threadleaf `0.1.0-beta.8` is available for Linux x86_64 from the
 - **Reproducible archive:** the normalized unpacked application, complete file manifest, and
   checksum for independent build comparison.
 
-These first public Linux artifacts are unsigned beta builds. Their exact checksums and verification
-evidence are published beside them. Keep an ordinary external backup while field testing. macOS
-and Windows packages remain contributor artifacts until their public native lifecycle and signing
-gates pass.
+The public Linux artifacts are unsigned stable builds. Their exact checksums, reproducible archive,
+and verification evidence are published beside them. Keep an ordinary external backup as normal
+local-first practice. macOS and Windows packages remain contributor artifacts until signing and
+notarization gates pass.
 
-See the [beta.8 release notes](docs/release-notes/0.1.0-beta.8.md) for verification commands,
+See the [0.1.0 release notes](docs/release-notes/0.1.0.md) for verification commands,
 supported workflows, and known boundaries.
 
 ## Status
 
-Threadleaf 0.1.0-beta.8 passes the current Phase 3 acceptance gate for maintainer-led Linux desktop
-daily-drive testing. This is a scoped product claim, not universal feature parity with Obsidian;
+Threadleaf 0.1.0 passes the Phase 3 acceptance gate as a stable Linux desktop release. This is a
+scoped product claim, not universal feature parity with Obsidian;
 the exact advantages and acknowledged gaps are kept in the
 [checked comparison](docs/launch/comparison.md). Its Phase 0 architecture
 proof loads an unchanged CommonJS fixture
@@ -59,7 +59,7 @@ converge across internal writes, external edits, renames, conflicts, event gaps,
 fallbacks. Multi-file operations durably retain every proposal and resume safely after interruption.
 
 Phase 2's daily-drive exit gate is complete. Remaining breadth stays explicit in the roadmap and
-does not block the current desktop beta. The production runtime composes the kernel, watcher,
+does not block the current desktop release. The production runtime composes the kernel, watcher,
 index, one shared
 action registry, and the compatibility host. The Electron workspace can open an arbitrary local
 Markdown folder, restore the last successful selection, edit through CodeMirror, inspect headings,
@@ -319,7 +319,7 @@ writes `.obsidian/` or vault Markdown; unsupported, missing, conflicting, and ot
 candidates, plus stale plans, remain blocked, and plugin runtime changes require an explicit reload
 or restart.
 
-The current Linux build has crossed the daily-drive beta handoff: real-scale copied-vault use,
+The current Linux build has crossed the stable-release handoff: real-scale copied-vault use,
 editor and crash recovery, isolated compatibility plugins, unchanged Excalidraw workflows,
 installable packages, privacy-safe feedback, and a distinct-package upgrade and rollback sequence
 all pass. Keep an ordinary external backup while field testing. Live Preview now provides
@@ -335,15 +335,12 @@ than a development server. A fresh package opens an external, read-only demo vau
 license beside the application resources, rejects forged demo-vault mutations in the backend, and
 ignores development-only vault overrides. The package checks launch the AppImage end to end,
 inspect the RPM metadata and payload, and write SHA-256 checksums. A separate proof compares two
-independent unpacked application trees and normalized archives byte for byte. Native macOS ARM64,
-Intel, universal macOS, and Windows x64 package verification are hosted lanes and were not rerun
-for this candidate. Pinned native CI and a manual fail-closed
-signing workflow define matching Linux, macOS ARM64 and Intel, universal macOS, and Windows x64
-lanes. This candidate's local proof is Linux-only; macOS and Windows runtime, signing, and
-installer results remain pending until their native hosted jobs execute. Those jobs carry an
-installer lifecycle gate that reuses one disposable vault and private state root across install,
-interruption recovery, restart, upgrade, rollback, and removal. These are contributor artifacts,
-not a signed public release.
+independent unpacked application trees and normalized archives byte for byte. Pinned native CI
+also verifies source and unsigned packages on macOS ARM64, macOS Intel, and Windows x64. The Intel
+macOS and Windows lanes exercise one disposable vault and private state root across install,
+interruption recovery, restart, upgrade, rollback, and removal. Those packages remain contributor
+artifacts rather than public downloads until signing and notarization are available; the stable
+public release is Linux x86_64.
 
 The packaged smoke also starts a second process against the same GUI profile and requires the
 first process to remain alive while the second exits. This Electron single-instance check is GUI
@@ -399,7 +396,7 @@ both directions before an artifact is handed off.
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 - [Governance](docs/governance/governance.md)
-- [Beta feedback guide](docs/beta-feedback.md)
+- [Support and feedback guide](docs/support-and-feedback.md)
 
 ## Development
 
@@ -614,7 +611,7 @@ page in light and dark modes:
 pnpm run test:publish-export
 ```
 
-The Linux upgrade gate builds a previous baseline and the current beta as byte-distinct AppImages,
+The Linux upgrade gate builds a previous baseline and the current release as byte-distinct AppImages,
 then drives baseline, candidate, and rollback against one isolated vault and private-state root:
 
 ```sh

@@ -506,7 +506,7 @@ describe("support bundle", () => {
   it("keeps private runtime and settings values out of the Markdown report", () => {
     const report = createSupportBundleMarkdown(supportInput);
 
-    expect(report).toContain("# Threadleaf beta support bundle");
+    expect(report).toContain("# Threadleaf support bundle");
     expect(report).toContain("## Feedback");
     expect(report).toContain("## Aggregate diagnostics");
     expect(report).toContain('"noteCount": 42');

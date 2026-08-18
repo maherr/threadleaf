@@ -1,9 +1,10 @@
 # Release engineering
 
-Threadleaf 0.1.0-beta.8 is a maintainer-led daily-drive beta. Native contributor lanes create
-unsigned Linux x64, macOS ARM64 and x64, and Windows x64 artifacts. These remain contributor builds,
-not signed public releases. A separate manual workflow fails closed unless Windows signing and
-Apple Developer ID plus notarization credentials are present. Nothing publishes automatically.
+Threadleaf 0.1.0 is the stable Linux x86_64 release. Native contributor lanes also create unsigned
+macOS ARM64 and x64, and Windows x64 artifacts; those remain unpublished contributor builds until
+their signing and notarization gates pass. A separate manual workflow fails closed unless Windows
+signing and Apple Developer ID plus notarization credentials are present. Nothing publishes
+automatically.
 
 ## Exact final-asset staging
 
@@ -93,12 +94,10 @@ addon, runs independent-process `CLI-LOCK-01` and the packaged Electron native p
 bundle identifier, version, external demo vault, license, application archive, and GitHub update
 provider. It fully tests the ZIP, verifies the DMG checksum, recomputes every update-metadata size
 and SHA-512 digest, and writes SHA-256 checksums. The source and package contracts are configured
-for native ARM64, Intel, and universal macOS hosts, but this candidate has no hosted macOS runtime
-result yet. The Intel lifecycle gate additionally mounts
+for native ARM64, Intel, and universal macOS hosts. The Intel lifecycle gate additionally mounts
 the DMG into a temporary root, launches a disposable vault through CDP, exercises create/edit/
 restart, replaces the app with distinct candidate and baseline builds, removes the app, and proves
-private state and vault bytes survive. Its evidence is retained as a CI artifact; the first hosted
-run remains pending.
+private state and vault bytes survive. Its privacy-safe evidence is retained as a CI artifact.
 
 Contributor macOS packages explicitly disable identity discovery and hardened runtime because they
 are unsigned. This makes the boundary visible: Gatekeeper should reject them. A release candidate
@@ -141,6 +140,23 @@ locally.
 
 The CI workflow can run on pull requests, pushes to `main`, or manual dispatch. It never signs,
 publishes, or receives release credentials.
+
+Ubuntu package UI checks install the exact Electron `chrome-sandbox` helper as a root-owned mode
+`4755` executable and pass its path through `CHROME_DEVEL_SANDBOX`. This adapts Chromium's
+[documented raw-build sandbox setup](https://chromium.googlesource.com/chromium/src/+/main/docs/linux/suid_sandbox_development.md)
+for hosted CI without weakening the package with `--no-sandbox`. Chromium's separate
+[AppArmor guidance](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md)
+confirms that downloaded builds on Ubuntu 23.10 and newer cannot assume unprivileged user
+namespaces are available.
+
+The installed lifecycle gate retains a strict Ready assertion but allows up to 90 seconds after
+CDP attachment, recording every distinct rendered startup transition and workspace-open diagnostic.
+Electron documents that even initial rendering can be late for a complex application, and its
+[BrowserWindow guidance](https://www.electronjs.org/docs/latest/api/browser-window#showing-the-window-gracefully)
+does not define a portable readiness duration. Two bounded searches of Electron's official docs
+and issue history found no conflicting fixed deadline. A timeout still fails with the last rendered
+state, transition history, process output, and screenshot, so slower forward progress is visible
+without converting a wedge into success.
 
 ## Signed release candidate
 
@@ -196,8 +212,8 @@ Native state locking is built as a direct Node-API addon before the TypeScript m
 focused `test:native-lock-source`, `test:native-lock-electron`, `test:native-lock`, and
 `test:native-lock-package` gates cover ABI surface, target-Electron loading, Linux child-process
 behavior, atomic no-clobber rename, anonymous exact-byte publication without a target-side stage,
-and the unpacked Electron module path. A local Linux pass does not claim macOS or Windows runtime or
-installer proof; those remain pending native hosted lanes.
+and the unpacked Electron module path. Native CI separately proves macOS and Windows runtime and
+installer behavior without promoting those unsigned packages to public downloads.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -242,7 +258,7 @@ changes.
 On Fedora, the built RPM can be exercised through the same contract after installation:
 
 ```sh
-sudo dnf install ./release/Threadleaf-0.1.0-beta.8-linux-x86_64.rpm
+sudo dnf install ./release/Threadleaf-0.1.0-linux-x86_64.rpm
 THREADLEAF_PACKAGED_EXECUTABLE=/opt/Threadleaf/threadleaf \
   THREADLEAF_PACKAGED_SCREENSHOT_DIR=/tmp/threadleaf-installed-visual \
   xvfb-run -a node scripts/check-packaged-app.mjs
@@ -318,9 +334,9 @@ state continuity, vault preservation, rollback, and cleanup only. It does not pr
 Developer ID, notarization, Gatekeeper, a public update feed, or store publication. The manual
 signed workflow keeps those gates separate and fails closed when credentials are absent.
 
-## Remaining release gates
+## Remaining signed multi-platform gates
 
-Signed public releases still require the first hosted Intel macOS and Windows runs, real signing
-authority, a successful signed release and update-feed rehearsal, Linux native-container signing,
-native package-manager upgrade and downgrade tests, and published support and security-response
-procedures. Until those gates pass, every local package remains clearly labeled unsigned.
+Signed macOS and Windows downloads still require real signing authority plus a successful signed
+release and update-feed rehearsal. Signed Linux containers and native package-manager upgrade and
+downgrade tests remain future hardening. Until those gates pass, every artifact accurately states
+whether it is unsigned; they do not block the checksum-verifiable stable Linux release.

@@ -285,7 +285,7 @@ try {
   assert(firstSave.status.includes("Nothing was uploaded"), "Saved state lost upload guidance.");
 
   const report = await fs.readFile(reportPath, "utf8");
-  assert(report.includes("# Threadleaf beta support bundle"), "Support report lacks its title.");
+  assert(report.includes("# Threadleaf support bundle"), "Support report lacks its title.");
   assert(report.includes('"aggregateOnly": true'), "Support report lacks its privacy marker.");
   assert(report.includes('"noteCount": 1'), "Support report lacks the aggregate note count.");
   for (const canary of privateCanaries) {

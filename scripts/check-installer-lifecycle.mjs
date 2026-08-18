@@ -47,14 +47,16 @@ const candidateEdit = "Candidate edit survives an upgrade.\n";
 const rollbackEdit = "Rollback edit remains writable.\n";
 const linkedContent = "# Linked\n\nThis note must remain byte-for-byte unchanged.\n";
 const commandLog = [];
+const renderedStateTransitions = [];
 const launchedProcesses = new Set();
 let launchMarkerObserved = false;
 let inPlaceReplacementChecks = 0;
 let activeProbe = null;
 let evidenceWritten = false;
 let windowsShortcutPath = null;
-const lifecycleEnvironment =
-  platform === "win32"
+const packageReadyTimeoutMs = 90_000;
+const lifecycleEnvironment = {
+  ...(platform === "win32"
     ? {
         APPDATA: isolatedAppDataPath,
         HOMEDRIVE: "C:",
@@ -64,7 +66,9 @@ const lifecycleEnvironment =
       }
     : {
         HOME: isolatedHomePath,
-      };
+      }),
+  THREADLEAF_WORKSPACE_OPEN_DIAGNOSTICS: "1",
+};
 
 function assert(condition, message) {
   if (!condition) {
@@ -482,10 +486,26 @@ function packageStateExpression() {
       window.threadleaf.getSettings(),
       window.threadleaf.getAppUpdate(),
     ]);
+    const runtimeState = document.querySelector("#runtime-state")?.textContent ?? null;
     return {
-      ready: snapshot.workspace?.state === "ready" && document.querySelector("#runtime-state")?.textContent === "Ready",
+      ready: snapshot.workspace?.state === "ready" && runtimeState === "Ready",
       vaultPath: snapshot.vault.path,
       vaultId: snapshot.vault.id,
+      startup: snapshot.startup ? {
+        phase: snapshot.startup.phase,
+        source: snapshot.startup.source,
+        targetName: snapshot.startup.targetName,
+        targetPath: snapshot.startup.targetPath,
+      } : null,
+      workspaceState: snapshot.workspace?.state ?? null,
+      census: snapshot.workspace?.census ? {
+        state: snapshot.workspace.census.state,
+        discovered: snapshot.workspace.census.discovered,
+        indexed: snapshot.workspace.census.indexed,
+        total: snapshot.workspace.census.total,
+        error: snapshot.workspace.census.error,
+      } : null,
+      runtimeState,
       activePath: snapshot.workspace?.activeNote?.path ?? null,
       activeRevision: snapshot.workspace?.activeNote?.revision ?? null,
       tabs: snapshot.workspace?.tabs.map((tab) => tab.path) ?? [],
@@ -892,6 +912,7 @@ async function installPackage(paths, target, replacementExpected) {
 }
 
 async function launchPackage(executablePath, expectedVersion, stage) {
+  const launchStartedAt = Date.now();
   const port = await availablePort();
   const child = spawn(
     executablePath,
@@ -928,17 +949,33 @@ async function launchPackage(executablePath, expectedVersion, stage) {
   activeProbe = probe;
   await probe.cdp.send("Page.enable");
   let lastState = null;
+  let lastRenderedState = "";
   try {
-    await waitFor(async () => {
-      lastState = await evaluate(probe, packageStateExpression());
-      return lastState.ready && (await identifiesSameDirectory(lastState.vaultPath, vaultPath))
-        ? lastState
-        : null;
-    }, `${expectedVersion} package did not restore the disposable vault`);
+    await waitFor(
+      async () => {
+        lastState = await evaluate(probe, packageStateExpression());
+        const renderedState = JSON.stringify(lastState);
+        if (renderedState !== lastRenderedState) {
+          lastRenderedState = renderedState;
+          if (renderedStateTransitions.length < 256) {
+            renderedStateTransitions.push({
+              stage,
+              elapsedMs: Date.now() - launchStartedAt,
+              state: JSON.parse(sanitize(renderedState)),
+            });
+          }
+        }
+        return lastState.ready && (await identifiesSameDirectory(lastState.vaultPath, vaultPath))
+          ? lastState
+          : null;
+      },
+      `${expectedVersion} package did not restore the disposable vault`,
+      packageReadyTimeoutMs,
+    );
   } catch (error) {
     await captureScreenshot(probe, `${stage}-failure`);
     throw new Error(
-      `${error instanceof Error ? error.message : String(error)}. Last rendered state: ${JSON.stringify(lastState)}. Last process output: ${JSON.stringify(output.slice(-20))}`,
+      `${error instanceof Error ? error.message : String(error)}. Last rendered state: ${JSON.stringify(lastState)}. Rendered transitions: ${JSON.stringify(renderedStateTransitions.filter((transition) => transition.stage === stage))}. Last process output: ${JSON.stringify(output.slice(-20))}`,
     );
   }
   const state = await evaluate(probe, packageStateExpression());
@@ -1301,6 +1338,8 @@ async function runLifecycle() {
     vaultBytesPreserved: true,
     shortcut: windowsShortcutPath ? "created-and-removed" : "not-created-by-installer",
     descendantCleanup: "launch-marker",
+    packageReadyTimeoutMs,
+    renderedStateTransitions,
     launchMarkerObserved,
     macDmgDetach: platform === "darwin" ? "verified-unmounted" : "not-applicable",
     candidate: candidateManifest,
@@ -1321,6 +1360,8 @@ try {
     platform,
     architecture,
     error: sanitize(message),
+    packageReadyTimeoutMs,
+    renderedStateTransitions,
     rendererOutput: activeProbe?.output?.slice(-100).map(sanitize) ?? [],
   });
   throw new Error(sanitize(message));

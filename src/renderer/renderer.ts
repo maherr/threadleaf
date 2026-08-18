@@ -2505,7 +2505,7 @@ function decoratePreviewLinks(
     anchor.dataset.threadleafOriginPath = sourceNotePath;
     if (anchor.dataset.threadleafLink === "external") {
       anchor.ariaLabel = `${anchor.textContent?.trim() || "External link"}, external link`;
-      anchor.title = "External link opening is disabled in this beta.";
+      anchor.title = "External link opening is disabled by the current security policy.";
       continue;
     }
     const identity = previewLinkIdentity(anchor);
@@ -3105,11 +3105,11 @@ function unresolvedLinkMessage(status: string | undefined): string {
 
 async function activatePreviewLink(anchor: HTMLAnchorElement): Promise<void> {
   if (anchor.dataset.threadleafRawLink === "true") {
-    showToast("Raw HTML links are not active in this beta.");
+    showToast("Raw HTML links are not active under the current security policy.");
     return;
   }
   if (anchor.dataset.threadleafLink === "external") {
-    showToast("External link opening is disabled in this beta.");
+    showToast("External link opening is disabled by the current security policy.");
     return;
   }
   if (!loadedNote) {
@@ -3137,7 +3137,7 @@ async function activatePreviewLink(anchor: HTMLAnchorElement): Promise<void> {
 
 async function activateLivePreviewLink(identity: LivePreviewLink): Promise<void> {
   if (identity.external) {
-    showToast("External link opening is disabled in this beta.");
+    showToast("External link opening is disabled by the current security policy.");
     return;
   }
   if (!loadedNote) {

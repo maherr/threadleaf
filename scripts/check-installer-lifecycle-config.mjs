@@ -210,9 +210,17 @@ assert(
   "Native lifecycle verifier lost its isolated marker/evidence contract.",
 );
 assert(
-  packagedAttachmentsScriptText.includes('"--disable-setuid-sandbox"') &&
-    !packagedAttachmentsScriptText.includes('"--no-sandbox"'),
-  "Packaged Linux attachment verification must select the user-namespace sandbox without disabling Chromium sandboxing.",
+  packagedAttachmentsScriptText.includes(
+    'process.env.CHROME_DEVEL_SANDBOX ? [] : ["--disable-setuid-sandbox"]',
+  ) && !packagedAttachmentsScriptText.includes('"--no-sandbox"'),
+  "Packaged Linux attachment verification must use the installed helper when available and never disable Chromium sandboxing.",
+);
+assert(
+  lifecycleScriptText.includes("const packageReadyTimeoutMs = 90_000") &&
+    lifecycleScriptText.includes('THREADLEAF_WORKSPACE_OPEN_DIAGNOSTICS: "1"') &&
+    lifecycleScriptText.includes("renderedStateTransitions") &&
+    lifecycleScriptText.includes("packageReadyTimeoutMs,"),
+  "Native lifecycle verification must keep a bounded 90-second readiness gate with rendered progress evidence.",
 );
 assert(
   lifecycleScriptText.includes("await fs.realpath(os.tmpdir())"),
@@ -284,6 +292,20 @@ const linuxCheck = stepWithExactRun(
   linuxSteps,
   "pnpm run release:linux",
   "Linux build and source check",
+);
+const linuxSandbox = stepWithExactRun(
+  linuxSteps,
+  "sudo install -o root -g root -m 4755 node_modules/electron/dist/chrome-sandbox /usr/local/sbin/threadleaf-chrome-sandbox",
+  "Linux packaged Chromium sandbox preparation",
+);
+assert(
+  linuxSteps.indexOf(linuxSandbox) < linuxSteps.indexOf(linuxCheck),
+  "Linux CI installs the packaged Chromium sandbox helper after running packaged checks.",
+);
+assert(
+  envValue(linuxCheck, "CHROME_DEVEL_SANDBOX", "Linux build and source check") ===
+    "/usr/local/sbin/threadleaf-chrome-sandbox",
+  "Linux packaged checks must use the prepared Chromium sandbox helper.",
 );
 assertFishBeforeCheck(linuxSteps, linuxCheck, "Linux CI");
 

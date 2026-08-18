@@ -3,11 +3,11 @@
 All notable changes to Threadleaf will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html) once public releases begin.
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.1.0-beta.8]
+## [0.1.0]
 
 ### Added
 
@@ -24,6 +24,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Promoted the verified Linux x86_64 daily-driver lane from prerelease status to the stable 0.1.0
+  release while keeping macOS and Windows packages unpublished until signing and notarization.
 - Made a fresh install arrive on the read-only welcome note with an explicit **Open folder** action
   and file-ownership guidance, while restored user vaults still return to their private workspace.
 - Put the recovery-backed **Create a note** action and its remappable shortcut directly in an empty
@@ -31,6 +33,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Made hidden compatibility-renderer style settlement independent of animation frames and timers,
+  so native package startup and environment replacement cannot stall behind a hidden surface.
+- Kept accent-insensitive search folding predictably linear on large NFC text while preserving
+  canonical equivalence, dotted-I behavior, emoji clusters, and mixed scripts.
+- Normalized native Windows version framing, queried Authenticode through hosted PowerShell, and
+  made forced lifecycle cleanup stop the Electron root before tracking descendants through a quiet
+  window, preventing recovery children from escaping into the next launch.
+- Kept Linux package verification inside Chromium's user-namespace sandbox when the unpacked
+  setuid helper is not root-owned.
 - Prevented a rapid second theme toggle from being advertised while the first appearance change is
   still persisting, so an accepted click is never silently dropped.
 - Kept Live Preview transclusion identity, source preview, and nested preview readable in a split

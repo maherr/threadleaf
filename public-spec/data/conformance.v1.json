@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "uri": "urn:threadleaf:spec:v1:conformance",
-  "threadleafVersion": "0.1.0-beta.8",
+  "threadleafVersion": "0.1.0",
   "terminology": {
     "normative": "A normative requirement uses MUST or MUST NOT and is eligible for conformance.",
     "informative": "An informative note explains scope or a gap and is not an acceptance claim.",
@@ -15,7 +15,7 @@
       "status": "verified",
       "label": "normative",
       "scope": "The checked-in corpus cases marked supported run through public kernel, application, and CLI surfaces.",
-      "threadleafVersion": "0.1.0-beta.8",
+      "threadleafVersion": "0.1.0",
       "evidence": [
         "fixtures/corpus/same-vault-v1/manifest.json",
         "fixtures/corpus/same-vault-v1/cases.json",
@@ -37,7 +37,7 @@
       "status": "verified",
       "label": "normative",
       "scope": "Native scenes, Markdown scene fences, opaque compressed payloads, attachments, and revision conflicts have explicit byte or semantic contracts.",
-      "threadleafVersion": "0.1.0-beta.8",
+      "threadleafVersion": "0.1.0",
       "evidence": [
         "fixtures/corpus/excalidraw-roundtrip-v1/manifest.json",
         "fixtures/corpus/excalidraw-roundtrip-v1/cases.json",
@@ -72,7 +72,7 @@
       "status": "verified",
       "label": "normative",
       "scope": "Only exact plugin and Threadleaf versions in the generated registry carry a measured level.",
-      "threadleafVersion": "0.1.0-beta.8",
+      "threadleafVersion": "0.1.0",
       "evidence": ["compatibility/plugin-evidence.v1.json", "compatibility/registry.v1.json"],
       "gates": [
         {
@@ -95,7 +95,7 @@
       "status": "verified",
       "label": "normative",
       "scope": "Contained theme and snippet discovery, bounded loading, CSS rejection, and watcher behavior.",
-      "threadleafVersion": "0.1.0-beta.8",
+      "threadleafVersion": "0.1.0",
       "evidence": [
         "docs/compatibility/themes.md",
         "src/shared/appearance.ts",
@@ -127,7 +127,7 @@
       "status": "verified",
       "label": "normative",
       "scope": "The current versioned native CLI command IDs, syntax aliases, exit codes, and output contracts are executable without Electron or network access.",
-      "threadleafVersion": "0.1.0-beta.8",
+      "threadleafVersion": "0.1.0",
       "evidence": [
         "src/cli/command-line.ts",
         "src/cli/schema.ts",
@@ -155,7 +155,7 @@
       "status": "verified",
       "label": "normative",
       "scope": "Migration preview is bounded and read-only; reviewed selections apply only private Threadleaf state through a journal with interruption recovery and rollback conflict checks.",
-      "threadleafVersion": "0.1.0-beta.8",
+      "threadleafVersion": "0.1.0",
       "evidence": ["docs/compatibility/migration.md", "src/main/obsidian-migration-transaction.ts"],
       "gates": [
         {
@@ -182,7 +182,7 @@
       "status": "verified",
       "label": "normative",
       "scope": "Live, Source, and Read modes share canonical Markdown bytes, bounded UTF-16 source mappings, reveal rules, and explicit source fallbacks.",
-      "threadleafVersion": "0.1.0-beta.8",
+      "threadleafVersion": "0.1.0",
       "evidence": [
         "docs/compatibility/live-preview.md",
         "src/renderer/live-preview.ts",
@@ -209,7 +209,7 @@
       "status": "verified",
       "label": "normative",
       "scope": "Canvas documents are parsed, rendered, edited, and saved through the recoverable vault boundary while preserving unrelated JSON structure and file bytes on no-op round trips.",
-      "threadleafVersion": "0.1.0-beta.8",
+      "threadleafVersion": "0.1.0",
       "evidence": [
         "src/application/json-canvas.ts",
         "src/shared/json-canvas.ts",
@@ -236,7 +236,7 @@
       "status": "verified",
       "label": "normative",
       "scope": "Per-vault workspace panes, pinned tabs, docks, plugin pop-outs, application settings, and key bindings persist outside the vault with revision and recovery checks.",
-      "threadleafVersion": "0.1.0-beta.8",
+      "threadleafVersion": "0.1.0",
       "evidence": [
         "docs/architecture.md",
         "src/shared/workspace-layout.ts",
@@ -267,7 +267,7 @@
       "status": "verified",
       "label": "normative",
       "scope": "Trusted desktop plugins can register bounded fenced-code and post-processing callbacks with deterministic ordering, context, failure, and child lifecycle behavior.",
-      "threadleafVersion": "0.1.0-beta.8",
+      "threadleafVersion": "0.1.0",
       "evidence": [
         "docs/compatibility/open-plugin-api.md",
         "src/runtime/obsidian-markdown-processors.ts"
@@ -289,7 +289,7 @@
       "status": "verified",
       "label": "normative",
       "scope": "Exact package bytes and manifests are checked before activation, including static authority evidence, bounded trusted activation, registration inventory, cleanup, timeout, and disposable-root diffs.",
-      "threadleafVersion": "0.1.0-beta.8",
+      "threadleafVersion": "0.1.0",
       "evidence": [
         "docs/compatibility/package-inspection.md",
         "src/main/plugin-package-inspection.ts"
@@ -315,7 +315,7 @@
       "status": "verified",
       "label": "normative",
       "scope": "Versioned manifests, exact bundle and authority digests, per-vault grants, typed capability ports, revocation, safe mode, deadlines, teardown, and cross-vault checks form the native foundation.",
-      "threadleafVersion": "0.1.0-beta.8",
+      "threadleafVersion": "0.1.0",
       "evidence": ["docs/compatibility/native-extensions.md", "src/native-extension/host.ts"],
       "gates": [
         {
@@ -335,7 +335,7 @@
       "status": "verified",
       "label": "normative",
       "scope": "Generated tables, schemas, local links, anchors, fixture hashes, exact versions, and offline assets are checked together.",
-      "threadleafVersion": "0.1.0-beta.8",
+      "threadleafVersion": "0.1.0",
       "evidence": ["public-spec/template.html", "public-spec/styles.css", "public-spec/site.js"],
       "gates": [
         {
@@ -377,25 +377,25 @@
     {
       "id": "obsidian-excalidraw-plugin",
       "version": "2.25.3",
-      "threadleafVersion": "0.1.0-beta.8",
+      "threadleafVersion": "0.1.0",
       "compatibilityLevel": 0
     },
     {
       "id": "obsidian-excalidraw-plugin",
       "version": "2.26.4",
-      "threadleafVersion": "0.1.0-beta.8",
+      "threadleafVersion": "0.1.0",
       "compatibilityLevel": 2
     },
     {
       "id": "obsidian-style-settings",
       "version": "1.0.9",
-      "threadleafVersion": "0.1.0-beta.8",
+      "threadleafVersion": "0.1.0",
       "compatibilityLevel": 3
     },
     {
       "id": "threadleaf-fixture",
       "version": "0.1.0",
-      "threadleafVersion": "0.1.0-beta.8",
+      "threadleafVersion": "0.1.0",
       "compatibilityLevel": 0
     }
   ]
