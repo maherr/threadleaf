@@ -33,6 +33,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Made startup plugin safe mode bypass compatibility-renderer construction entirely, so recovery
+  launches can restore the selected vault even when a platform cannot start the hidden plugin
+  surface.
 - Made hidden compatibility-renderer style settlement independent of animation frames and timers,
   so native package startup and environment replacement cannot stall behind a hidden surface.
 - Kept accent-insensitive search folding predictably linear on large NFC text while preserving

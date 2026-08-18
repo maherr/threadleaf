@@ -33,6 +33,7 @@ import { VaultPathPolicy } from "../kernel/path-policy";
 import { FixedStateRoot, type VaultReadPort } from "../kernel/ports";
 import { acquireStateLock } from "../private-state-lock";
 import { IsolatedPluginRuntime } from "../runtime/isolated-plugin-runtime";
+import { PluginHost } from "../runtime/plugin-host";
 import { isFatalPluginRuntimeError } from "../runtime/plugin-runtime-port";
 import { RecoveringPluginRuntime } from "../runtime/recovering-plugin-runtime";
 import {
@@ -1853,7 +1854,15 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
       }
     },
     workspaceSettingsForVault: (vaultId) => settingsController.getVaultWorkspaceSettings(vaultId),
-    pluginRuntimeFactory: async (vaultPath, _actions, vault) => {
+    pluginRuntimeFactory: async (vaultPath, actions, vault) => {
+      // Safe mode is a process recovery boundary. It must not depend on the hidden compatibility
+      // renderer that the user is explicitly bypassing to regain access to the vault.
+      if (pluginSafeMode()) {
+        if (!vault) {
+          throw new Error("Plugin safe mode requires the kernel vault port.");
+        }
+        return new PluginHost(vaultPath, vault, actions, undefined, vault);
+      }
       const pluginOperationTimeout = developmentPluginOperationTimeout();
       const canonicalVaultPath = await fs.realpath(vaultPath);
       const vaultIdentityPath =
