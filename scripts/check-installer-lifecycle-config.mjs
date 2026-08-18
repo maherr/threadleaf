@@ -224,6 +224,12 @@ assert(
     lifecycleScriptText.includes("metadata.files?.length === 1"),
   "Lifecycle package evidence must measure app bytes and verify the Windows ZIP/update split.",
 );
+assert(
+  lifecycleScriptText.includes("nonEmptyOutputLines") &&
+    lifecycleScriptText.includes('replaceAll("\\r\\n", "\\n")') &&
+    lifecycleScriptText.includes('.filter((line) => line !== "")'),
+  "Windows lifecycle version proof must normalize CRLF and ignore Electron's blank framing lines.",
+);
 
 const ciOn = record(workflowOn(ci), "CI triggers");
 assert(

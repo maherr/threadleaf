@@ -98,6 +98,13 @@ function commandName(command) {
   return path.basename(command).replace(/\.cmd$/u, "");
 }
 
+function nonEmptyOutputLines(value) {
+  return value
+    .replaceAll("\r\n", "\n")
+    .split("\n")
+    .filter((line) => line !== "");
+}
+
 async function run(command, args, options = {}) {
   const output = [];
   commandLog.push(`${commandName(command)} ${args.map((value) => sanitize(value)).join(" ")}`);
@@ -613,9 +620,10 @@ async function verifyWindowsZip(zipPath, version) {
     env: lifecycleEnvironment,
     timeout: 30_000,
   });
+  const versionLines = nonEmptyOutputLines(versionResult);
   assert(
-    versionResult === `${version}\n`,
-    `${version} Windows ZIP executable reports the wrong version.`,
+    versionLines.length === 1 && versionLines[0] === version,
+    `${version} Windows ZIP executable reports the wrong version: ${JSON.stringify(versionResult)}.`,
   );
   const update = parseYaml(
     await fs.readFile(path.join(expandedPath, "resources", "app-update.yml"), "utf8"),
