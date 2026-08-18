@@ -161,6 +161,12 @@ function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+function repositoryTextBytes(value) {
+  // The public digest names the LF-normalized Git text fixed by .gitattributes, independent of a
+  // caller's checkout policy. Binary corpus payloads retain their manifest-declared byte digests.
+  return Buffer.from(value.replace(/\r\n?/gu, "\n"));
+}
+
 function relativeSource(filePath) {
   return path.relative(rootPath, filePath).replaceAll(path.sep, "/");
 }
@@ -454,13 +460,13 @@ async function buildFixtureData(definitions) {
       schemaVersion: corpusManifest.schemaVersion,
       license: corpusCases.license,
       licensePath: relativeSource(definition.licensePath),
-      licenseSha256: sha256(Buffer.from(license)),
+      licenseSha256: sha256(repositoryTextBytes(license)),
       provenancePath: relativeSource(definition.provenancePath),
-      provenanceSha256: sha256(Buffer.from(provenance)),
+      provenanceSha256: sha256(repositoryTextBytes(provenance)),
       manifestPath: relativeSource(definition.manifestPath),
-      manifestSha256: sha256(Buffer.from(await fs.readFile(definition.manifestPath))),
+      manifestSha256: sha256(repositoryTextBytes(await readText(definition.manifestPath))),
       casesPath: relativeSource(definition.casesPath),
-      casesSha256: sha256(Buffer.from(await fs.readFile(definition.casesPath))),
+      casesSha256: sha256(repositoryTextBytes(await readText(definition.casesPath))),
       cases: corpusCases.cases.map((entry) => ({
         id: text(entry.id, "fixture case id"),
         category: text(entry.category, "fixture case category"),
@@ -483,7 +489,7 @@ async function buildFixtureData(definitions) {
       );
       fixture.observation = {
         path: relativeSource(definition.observationPath),
-        sha256: sha256(Buffer.from(await fs.readFile(definition.observationPath))),
+        sha256: sha256(repositoryTextBytes(await readText(definition.observationPath))),
         status: observationStatus,
         method: text(observation.method, "observation method"),
         source: text(observation.source, "observation source"),
