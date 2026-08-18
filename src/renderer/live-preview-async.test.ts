@@ -222,6 +222,7 @@ describe("Live Preview async ownership", () => {
       expect(requests).toEqual([{ path: "Old.md", vaultId: "vault-a" }]);
       const oldCard = host.querySelector<HTMLElement>(".tl-live-embed");
       expect(oldCard).not.toBeNull();
+      expect(oldCard?.querySelector(".tl-live-embed-label")?.textContent).toBe("same target");
 
       replaceOwnerWithEqualLinkTarget(view, current, change);
       await flushAsyncWork();

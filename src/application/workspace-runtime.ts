@@ -1278,6 +1278,19 @@ function recordNavigation(
   };
 }
 
+function initialDocumentPath(
+  documents: readonly { path: string }[],
+  selectionSource: VaultSelectionSource,
+): string | undefined {
+  if (selectionSource === "bundled") {
+    return (
+      documents.find(({ path }) => path.toLocaleLowerCase() === "welcome.md")?.path ??
+      documents[0]?.path
+    );
+  }
+  return documents[0]?.path;
+}
+
 export class WorkspaceRuntime {
   readonly actions: ActionRegistry;
   readonly kernel: VaultKernel;
@@ -1807,7 +1820,10 @@ export class WorkspaceRuntime {
       }
     } else {
       if (!deferredCensus) {
-        const firstPath = indexReactor.index.snapshot().documents[0]?.path;
+        const firstPath = initialDocumentPath(
+          indexReactor.index.snapshot().documents,
+          options.selectionSource ?? "direct",
+        );
         if (firstPath) {
           runtime.activatePath(firstPath, "primary", false);
         }
@@ -5612,7 +5628,10 @@ export class WorkspaceRuntime {
             this.#activateFirstNoteAfterCensus &&
             this.#panes.every((pane) => pane.openPaths.length === 0)
           ) {
-            const firstPath = this.indexReactor.index.snapshot().documents[0]?.path;
+            const firstPath = initialDocumentPath(
+              this.indexReactor.index.snapshot().documents,
+              this.selectionSource,
+            );
             if (firstPath && this.activatePath(firstPath, "primary", false)) {
               activatedFirstNote = true;
             }

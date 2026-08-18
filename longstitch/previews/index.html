@@ -453,6 +453,61 @@
         font-size: 0.76rem;
       }
 
+      .arrival-state {
+        display: grid;
+        justify-items: start;
+        margin-top: 18px;
+        padding: 18px;
+        border: 1px dashed var(--line-strong);
+        border-radius: var(--radius-s);
+        background: var(--surface-sunken);
+      }
+
+      .arrival-state > i {
+        margin-bottom: 9px;
+        color: var(--accent);
+        font-family: var(--font-monospace);
+        font-size: 1.4rem;
+        font-style: normal;
+      }
+
+      .arrival-state h4 {
+        margin: 0;
+        font-family: var(--font-text);
+        font-size: 1.25rem;
+        font-weight: 560;
+      }
+
+      .arrival-state p {
+        margin: 6px 0 14px;
+        color: var(--ink-soft);
+        font-size: 0.8rem;
+        line-height: 1.5;
+      }
+
+      .arrival-action {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 38px;
+        padding: 0 13px;
+        border-radius: var(--radius-s);
+        color: var(--surface-raised);
+        background: var(--accent-strong);
+        font-size: 0.76rem;
+        font-weight: 750;
+      }
+
+      :root[data-condition="lampside"] .arrival-action {
+        color: var(--canvas);
+        background: var(--accent);
+      }
+
+      .arrival-action kbd {
+        font-family: var(--font-monospace);
+        font-size: 0.62rem;
+      }
+
       .statusbar {
         position: relative;
         display: flex;
@@ -613,6 +668,12 @@
           <div class="type-row"><span class="machine-label">Reading</span><span class="type-reading">The leaf remembers.</span></div>
           <div class="type-row"><span class="machine-label">Interface</span><span class="type-interface">Open note and reveal its path</span></div>
           <div class="type-row"><span class="machine-label">Machine</span><span class="type-machine">Field Notes.md · SAVED</span></div>
+          <section class="arrival-state" aria-label="Empty leaf specimen">
+            <i aria-hidden="true">◇</i>
+            <h4>Select a note</h4>
+            <p>Existing leaves remain in the sewn navigator. Begin a new one through the same recovery-backed action.</p>
+            <span class="arrival-action">Create a note <kbd>Ctrl N</kbd></span>
+          </section>
         </article>
       </section>
 

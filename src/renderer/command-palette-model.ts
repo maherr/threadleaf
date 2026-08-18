@@ -71,6 +71,12 @@ export function firstEnabledPaletteIndex(commands: readonly PaletteCommandDescri
   return commands.findIndex((command) => command.enabled);
 }
 
+export function paletteCountLabel(commands: readonly PaletteCommandDescriptor[]): string {
+  const resultCount = commands.length;
+  const runnableCount = commands.filter((command) => command.enabled).length;
+  return `${resultCount} ${resultCount === 1 ? "result" : "results"} · ${runnableCount} runnable`;
+}
+
 export function movePaletteSelection(
   commands: readonly PaletteCommandDescriptor[],
   currentIndex: number,

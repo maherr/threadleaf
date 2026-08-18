@@ -1872,6 +1872,20 @@ h2 {
   line-height: 1.6;
 }
 
+.note-empty-create {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  width: auto;
+  min-height: 40px;
+  margin-top: 22px;
+  padding: 0 15px;
+}
+
+.note-empty-create kbd:empty {
+  display: none;
+}
+
 .note-view {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
@@ -2604,9 +2618,12 @@ a.tag:focus-visible {
 
 .tl-live-embed {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.42em;
+  width: min(100%, 680px);
   max-width: 100%;
+  box-sizing: border-box;
   padding: 0.18em 0.52em;
   border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--line));
   border-left: 4px solid var(--accent);
@@ -2615,14 +2632,26 @@ a.tag:focus-visible {
   background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
   font-family: var(--mono);
   font-size: 0.82em;
+  vertical-align: middle;
 }
 
 .tl-live-embed-mark {
+  flex: 0 0 auto;
   color: var(--accent-strong);
 }
 
-.tl-live-embed-preview {
+.tl-live-embed-label {
+  flex: 1 1 8ch;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tl-live-embed-preview {
+  flex: 1 1 100%;
+  min-width: 0;
+  margin-left: 1.4em;
   overflow: hidden;
   color: var(--ink-soft);
   text-overflow: ellipsis;
@@ -2631,7 +2660,9 @@ a.tag:focus-visible {
 
 .tl-live-embed-nested {
   display: block;
+  flex: 1 1 100%;
   min-width: 0;
+  margin-left: 1.4em;
   overflow: hidden;
   color: var(--ink-soft);
   font-size: 0.92em;

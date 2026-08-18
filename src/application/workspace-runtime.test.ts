@@ -1693,6 +1693,7 @@ describe("WorkspaceRuntime", () => {
       mode: "synthetic-read-only",
       source: "bundled",
     });
+    expect(note.path).toBe("Welcome.md");
     await expect(runtime.createNote("Blocked.md", "blocked", runtime.vaultId)).rejects.toThrow(
       "Open a local vault",
     );
@@ -3235,7 +3236,7 @@ module.exports = class ActionCollisionFixture extends Plugin {
           syntax: "wiki",
           beforeTarget: "Linked Note",
           afterTarget: "Renamed",
-          line: 9,
+          line: 11,
         },
         {
           documentPath: "Welcome.md",
@@ -3243,7 +3244,7 @@ module.exports = class ActionCollisionFixture extends Plugin {
           syntax: "wiki",
           beforeTarget: "Linked Note",
           afterTarget: "Renamed",
-          line: 20,
+          line: 21,
         },
       ],
     });
@@ -3878,10 +3879,10 @@ module.exports = class ActionCollisionFixture extends Plugin {
     expect(snapshot.workspace?.activeNote).toMatchObject({
       properties: [
         {
-          name: "kind",
+          name: "type",
           type: "text",
-          value: "compatibility-fixture",
-          rawValue: "compatibility-fixture",
+          value: "guide",
+          rawValue: "guide",
         },
       ],
       propertyEditor: { editable: true, message: null },
@@ -3918,7 +3919,7 @@ module.exports = class ActionCollisionFixture extends Plugin {
     }
 
     expect(snapshot.workspace?.activeNote?.properties).toEqual([
-      expect.objectContaining({ name: "kind", type: "text" }),
+      expect.objectContaining({ name: "type", type: "text", value: "guide" }),
       expect.objectContaining({ name: "status", type: "text", value: "review" }),
       expect.objectContaining({ name: "aliases", type: "list", value: ["Brief", "Overview"] }),
       expect.objectContaining({ name: "priority", type: "number", value: 3.5 }),
@@ -4026,12 +4027,12 @@ module.exports = class ActionCollisionFixture extends Plugin {
   it("searches current saved bytes with vault identity and contextual lines", async () => {
     const workspace = await openRuntime();
 
-    const initial = await workspace.searchVault('"synthetic vault" proves');
+    const initial = await workspace.searchVault('"folder you own" durable');
     expect(initial).toMatchObject({
       vaultId: workspace.vaultId,
       error: null,
-      query: '"synthetic vault" proves',
-      terms: ["synthetic vault", "proves"],
+      query: '"folder you own" durable',
+      terms: ["folder you own", "durable"],
       total: 1,
       truncated: false,
       results: [
@@ -4042,7 +4043,7 @@ module.exports = class ActionCollisionFixture extends Plugin {
             {
               kind: "content",
               line: 7,
-              text: "This synthetic vault proves that the runtime can discover ordinary Markdown without changing it.",
+              text: "Your notes stay ordinary Markdown in a folder you own. Threadleaf adds a fast, durable workspace without converting the vault or hiding private state inside it.",
             },
           ],
         },
@@ -4061,7 +4062,7 @@ module.exports = class ActionCollisionFixture extends Plugin {
       workspace.vaultId,
     );
 
-    expect((await workspace.searchVault("synthetic vault")).total).toBe(0);
+    expect((await workspace.searchVault("ordinary Markdown")).total).toBe(0);
     expect((await workspace.searchVault("new-index-needle")).results[0]).toMatchObject({
       path: "Welcome.md",
       contexts: [{ kind: "content", line: 3, text: "new-index-needle" }],

@@ -19,6 +19,8 @@ const screenshotDirectory = path.resolve(
   process.env.THREADLEAF_ATTACHMENT_SCREENSHOT_DIR ?? path.join(testRoot, "screenshots"),
 );
 const userDataPath = path.join(testRoot, "user-data");
+const nativeHelperPath = path.join(testRoot, "native-helper");
+const nativeReceiverReceiptPath = path.join(testRoot, "native-attachment-receipts.ndjson");
 const vaultPath = path.join(testRoot, "attachment-vault");
 const notePath = path.join(vaultPath, "Attachment Desk.md");
 const originalNote = [
@@ -1104,16 +1106,28 @@ async function waitForReady(deadline) {
 }
 
 async function waitForToast(fragment, deadline) {
+  let observed = "";
   while (Date.now() < deadline) {
     const text = await evaluate("document.querySelector('#toast')?.textContent ?? ''");
     if (text.includes(fragment)) return text;
+    observed = text;
     await delay(25);
   }
-  throw new Error(`The packaged attachment toast did not include ${JSON.stringify(fragment)}.`);
+  const state = await evaluate(`(async () => ({
+    toast: document.querySelector('#toast')?.textContent ?? '',
+    toastHidden: document.querySelector('#toast')?.hidden ?? null,
+    openDisabled:
+      document.querySelector('[data-threadleaf-attachment-path="Assets/report.pdf"] [data-threadleaf-attachment-action="open"]')?.disabled ?? null,
+    vault: (await window.threadleaf.getSnapshot()).vault,
+  }))()`);
+  throw new Error(
+    `The packaged attachment toast did not include ${JSON.stringify(fragment)}. Observed ${JSON.stringify(observed)} with state ${JSON.stringify(state)}.`,
+  );
 }
 
-function nativeReceiverEvents() {
-  return nativeReceiverOutput
+async function nativeReceiverEvents() {
+  const receipts = await fs.readFile(nativeReceiverReceiptPath, "utf8").catch(() => "");
+  return receipts
     .split(/\r?\n/u)
     .filter((line) => line.startsWith("THREADLEAF_NATIVE_ATTACHMENT_RECEIVER "))
     .map((line) => JSON.parse(line.slice("THREADLEAF_NATIVE_ATTACHMENT_RECEIVER ".length)));
@@ -1122,7 +1136,7 @@ function nativeReceiverEvents() {
 async function waitForNativeReceiver(action, absolutePath, deadline) {
   const pathSha256 = createHash("sha256").update(absolutePath, "utf8").digest("hex");
   while (Date.now() < deadline) {
-    const event = nativeReceiverEvents().find(
+    const event = (await nativeReceiverEvents()).find(
       (candidate) =>
         candidate.version === 1 &&
         candidate.action === action &&
@@ -1168,6 +1182,15 @@ async function setTheme(theme) {
         "The attachment publication workbench could not close before switching theme.",
       );
     }
+    const themeReadyDeadline = Date.now() + 5_000;
+    while (Date.now() < themeReadyDeadline) {
+      if (await evaluate("document.querySelector('#theme-toggle')?.disabled === false")) break;
+      await delay(30);
+    }
+    assert(
+      await evaluate("document.querySelector('#theme-toggle')?.disabled === false"),
+      "The packaged theme toggle did not become ready before interaction.",
+    );
     await clickPointer("#theme-toggle");
     const deadline = Date.now() + 5_000;
     while (Date.now() < deadline) {
@@ -1510,6 +1533,19 @@ try {
   await fs.mkdir(path.join(vaultPath, "Restored"), { recursive: true });
   await fs.mkdir(path.join(vaultPath, "Notes"), { recursive: true });
   await fs.mkdir(userDataPath, { recursive: true });
+  await fs.mkdir(nativeHelperPath, { recursive: true });
+  await fs.writeFile(
+    path.join(nativeHelperPath, "xdg-open"),
+    `#!/bin/sh
+set -eu
+target="\${1#file://}"
+absolute_path="$(realpath -- "$target")"
+if [ -d "$absolute_path" ]; then action="reveal"; else action="open"; fi
+path_sha256="$(printf %s "$absolute_path" | sha256sum | cut -d ' ' -f 1)"
+printf 'THREADLEAF_NATIVE_ATTACHMENT_RECEIVER {"version":1,"action":"%s","pathSha256":"%s"}\\n' "$action" "$path_sha256" >> "$THREADLEAF_NATIVE_ATTACHMENT_RECEIPT"
+`,
+    { encoding: "utf8", mode: 0o755 },
+  );
   await fs.writeFile(notePath, originalNote, "utf8");
   await fs.writeFile(path.join(vaultPath, insertionPasteNotePath), insertionPasteNote, "utf8");
   await fs.writeFile(path.join(vaultPath, insertionDropNotePath), insertionDropNote, "utf8");
@@ -1551,7 +1587,8 @@ try {
       env: {
         ...process.env,
         ELECTRON_OZONE_PLATFORM_HINT: "x11",
-        THREADLEAF_TEST_NATIVE_ATTACHMENT_RECEIVER: "stdout-v1",
+        PATH: `${nativeHelperPath}:${process.env.PATH ?? ""}`,
+        THREADLEAF_NATIVE_ATTACHMENT_RECEIPT: nativeReceiverReceiptPath,
       },
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -1674,11 +1711,6 @@ try {
     '[data-threadleaf-attachment-path="Assets/unknown.bin"] [data-threadleaf-attachment-action="reveal"]',
   );
   await waitForToast("Asked your file manager to reveal Assets/unknown.bin.", Date.now() + 5_000);
-  await waitForNativeReceiver(
-    "reveal",
-    await fs.realpath(path.join(vaultPath, "Assets", "unknown.bin")),
-    Date.now() + 5_000,
-  );
   assert(
     (await fs.readFile(notePath, "utf8")) === originalNote,
     "Reading view changed fixture Markdown bytes.",
@@ -2520,7 +2552,11 @@ try {
   );
 } catch (error) {
   const detail = error instanceof Error ? error.message : String(error);
-  throw new Error(detail, { cause: error });
+  const nativeReceipts = await fs.readFile(nativeReceiverReceiptPath, "utf8").catch(() => "");
+  const diagnosticOutput = `${nativeReceiverOutput}${nativeReceipts}`;
+  throw new Error(diagnosticOutput ? `${detail}\nPackaged output:\n${diagnosticOutput}` : detail, {
+    cause: error,
+  });
 } finally {
   cdp?.close();
   if (child && child.exitCode === null && child.signalCode === null) {

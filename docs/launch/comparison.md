@@ -10,7 +10,7 @@ about Obsidian describe widely known, stable facts about its product; Obsidian's
 public, so those statements are general knowledge rather than citations into a repository, and are
 kept intentionally general rather than pinned to specific numbers that could go stale.
 
-This is written against Threadleaf 0.1.0-beta.3, commit `e460e83695b7fc970de89edf6004c8dcb3d675d4`.
+This is maintained against Threadleaf 0.1.0-beta.7 and its 2026-08-18 Phase 3 acceptance state.
 Threadleaf is a young beta. Read this alongside the [project charter](../charter.md) and
 [roadmap](../roadmap.md), which are more current than any snapshot comparison can stay.
 
@@ -52,14 +52,15 @@ Threadleaf does not claim broad plugin compatibility as a single number. Its
 fail another." The [generated compatibility registry](../compatibility/registry.md) is produced
 from [`compatibility/plugin-evidence.v1.json`](../../compatibility/plugin-evidence.v1.json) by
 `pnpm compatibility:generate`, and `pnpm compatibility:check` verifies it has not drifted from that
-source. Today the registry lists three entries, each bound to an exact plugin version and an exact
+source. Today the registry lists four entries, each bound to an exact plugin version and an exact
 Threadleaf version, each with a bundle SHA-256 digest and named test files per workflow: Excalidraw
 2.25.3 at Level 0 with historical composed evidence pending a current receipt, Excalidraw 2.26.4 at
-Level 2 with direct sealed-construction evidence, and Threadleaf's own compatibility fixture at
-Level 0 pending its exact authority and current receipt gates. The registry is
-intentionally short right now; the discipline is that nothing enters it without a named, executable
-workflow behind it; see the contract's evidence-sources section, which excludes "third-party
-directories, feature tables, stars, and README claims" as compatibility evidence on their own.
+Level 2 with direct sealed-construction evidence, Style Settings 1.0.9 at Level 3 with direct
+integrated evidence, and Threadleaf's own compatibility fixture at Level 0 pending its exact
+authority gate. The registry is intentionally short right now; the discipline is that nothing
+enters it without a named, executable workflow behind it; see the contract's evidence-sources
+section, which excludes "third-party directories, feature tables, stars, and README claims" as
+compatibility evidence on their own.
 
 ### Reproducible builds
 
@@ -122,7 +123,7 @@ uploaded."
 
 Obsidian's community plugin ecosystem has been growing since 2020 and today covers thousands of
 workflows: task managers, spaced repetition, citation tools, calendars, database-style views, and
-more. Threadleaf's generated registry currently lists exactly two evidence-backed entries (see
+more. Threadleaf's generated registry currently lists exactly four evidence-backed entries (see
 [`docs/compatibility/registry.md`](../compatibility/registry.md)), by design: a plugin is added
 only after a named workflow passes against a real fixture, not merely because it is discovered in a
 vault. That discipline, not a lack of effort, is why the number is small today.

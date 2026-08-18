@@ -47,6 +47,7 @@ written title. Reintroducing a category-dependent pale tint fails the automated 
 - Focus remains a visible outline with at least 3:1 contrast against the adjacent component ground.
 
 Rendered verification also covers Pressroom and Lampside at desktop and narrow widths, task states,
-table headers, callouts, tags, font loading, overflow, and proportional text scaling. The production
-Electron gates remain `pnpm run test:live-preview` and `pnpm run test:tasks`; the design color gate is
-additionally part of `pnpm run check`.
+table headers, callouts, tags, font loading, overflow, proportional text scaling, the empty-pane
+creation action, and its visible remappable shortcut. The production Electron gates remain `pnpm
+run test:live-preview`, `pnpm run test:tasks`, and the 16-case `pnpm run visual:check`; the design
+color gate is additionally part of `pnpm run check`.

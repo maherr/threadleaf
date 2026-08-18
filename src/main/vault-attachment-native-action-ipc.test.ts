@@ -28,8 +28,10 @@ describe("native attachment action IPC", () => {
     expect(preloadSource).not.toContain("shell.showItemInFolder");
   });
 
-  it("maps the production adapter to Electron shell and gates the packaged receiver", () => {
+  it("maps the production adapter to resolving Electron shell paths and gates the packaged receiver", () => {
     expect(mainSource).toContain("shell.openPath(absolutePath)");
+    expect(mainSource).toContain('process.platform !== "linux"');
+    expect(mainSource).toContain("shell.openExternal(pathToFileURL(absolutePath).toString())");
     expect(mainSource).toContain("shell.showItemInFolder(absolutePath)");
     expect(mainSource).toMatch(
       /!app\.isPackaged\s*&&\s*process\.env\.THREADLEAF_TEST_NATIVE_ATTACHMENT_RECEIVER === "stdout-v1"\s*&&\s*process\.argv\.some/u,

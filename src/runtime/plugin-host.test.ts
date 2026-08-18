@@ -158,7 +158,7 @@ describe("PluginHost", () => {
     const welcome = host.vault.getFileByPath("Welcome.md");
 
     expect(host.app.metadataCache.getFileCache(welcome)?.frontmatter).toEqual({
-      kind: "compatibility-fixture",
+      type: "guide",
     });
     expect(host.app.metadataCache.getCachedFiles()).toEqual([
       "Boards/Overview.canvas",

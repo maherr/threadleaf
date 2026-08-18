@@ -1780,6 +1780,7 @@ class EmbedWidget extends WidgetType {
     mark.ariaHidden = "true";
     mark.textContent = "◇";
     const label = document.createElement("span");
+    label.className = "tl-live-embed-label";
     label.textContent = this.link.label;
     card.append(mark, label);
     const activate = (event: MouseEvent | KeyboardEvent): void => {

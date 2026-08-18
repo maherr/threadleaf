@@ -282,6 +282,24 @@ async function paneState(paneId) {
   })()`);
 }
 
+async function scrollPaneEditorToEnd(paneId) {
+  const scrolled = await evaluate(`(() => {
+    const root = document.querySelector(${JSON.stringify(`[data-pane-id="${paneId}"]`)});
+    const scroller = root?.querySelector('.cm-scroller');
+    if (!(scroller instanceof HTMLElement)) return false;
+    scroller.scrollTop = scroller.scrollHeight;
+    return true;
+  })()`);
+  assert(scrolled, `The ${paneId} editor could not reveal its recovered tail.`);
+}
+
+async function waitForThemeToggleReady() {
+  await waitFor(
+    () => evaluate("document.querySelector('#theme-toggle')?.disabled === false"),
+    "The theme toggle did not become available after persistence",
+  );
+}
+
 function paneTabPaths(snapshotValue, paneId) {
   return (
     snapshotValue.workspace?.panes
@@ -614,6 +632,7 @@ try {
     return true;
   })()`);
   await clickSelector("#settings-close");
+  await waitForThemeToggleReady();
   await clickSelector("#theme-toggle");
   await waitFor(
     () => evaluate("document.documentElement.dataset.theme === 'light'"),
@@ -650,6 +669,7 @@ try {
   await delay(50);
   await captureScreenshot("workspace-settings-light-compact");
   await clickSelector("#settings-close");
+  await waitForThemeToggleReady();
   await clickSelector("#theme-toggle");
   await waitFor(
     () => evaluate("document.documentElement.dataset.theme === 'dark'"),
@@ -844,6 +864,7 @@ try {
     return paneTabPaths(candidate, "primary").join("\n") === "Welcome.md" ? candidate : null;
   }, "The autosave history tab did not close before pane-layout checks");
 
+  await waitForThemeToggleReady();
   await clickSelector("#theme-toggle");
   await waitFor(
     () => evaluate("document.documentElement.dataset.theme === 'light'"),
@@ -869,6 +890,7 @@ try {
   );
   await captureScreenshot("workspace-quick-switcher-light-minimum");
   await pressKey("Escape", "Escape");
+  await waitForThemeToggleReady();
   await clickSelector("#theme-toggle");
   await waitFor(
     () => evaluate("document.documentElement.dataset.theme === 'dark'"),
@@ -994,19 +1016,54 @@ try {
   );
 
   phase = "canonical and crash-draft recovery";
-  await waitFor(
-    async () => {
-      primary = await paneState("primary");
-      secondary = await paneState("secondary");
-      return primary?.text.includes(primaryMarker) &&
-        secondary?.text.includes(secondaryMarker) &&
-        secondary.draftState === "saved"
-        ? { primary, secondary }
-        : null;
-    },
-    "The canonical primary edit and secondary crash draft were not restored",
-    15_000,
-  );
+  await scrollPaneEditorToEnd("primary");
+  await scrollPaneEditorToEnd("secondary");
+  await delay(100);
+  let recoveryObservation = null;
+  try {
+    await waitFor(
+      async () => {
+        primary = await paneState("primary");
+        secondary = await paneState("secondary");
+        recoveryObservation = {
+          primary: primary
+            ? {
+                path: primary.path,
+                hasMarker: primary.text.includes(primaryMarker),
+                draftState: primary.draftState,
+                editState: primary.editState,
+              }
+            : null,
+          secondary: secondary
+            ? {
+                path: secondary.path,
+                hasMarker: secondary.text.includes(secondaryMarker),
+                draftState: secondary.draftState,
+                editState: secondary.editState,
+              }
+            : null,
+        };
+        const secondaryRecoverySettled =
+          secondary?.draftState === "saved" ||
+          (secondary?.editState === "Saved" && (await readDraft(vaultId, "secondary")) === null);
+        return primary?.text.includes(primaryMarker) &&
+          secondary?.text.includes(secondaryMarker) &&
+          secondaryRecoverySettled
+          ? recoveryObservation
+          : null;
+      },
+      "The canonical primary edit and secondary crash draft were not restored",
+      15_000,
+    );
+  } catch (error) {
+    const drafts = {
+      primary: (await readDraft(vaultId, "primary")) !== null,
+      secondary: (await readDraft(vaultId, "secondary")) !== null,
+    };
+    throw new Error(`Recovery observation: ${JSON.stringify({ recoveryObservation, drafts })}`, {
+      cause: error,
+    });
+  }
   assert(
     (await paneState("secondary")).active,
     "Recovered focus is not visible on the secondary pane.",

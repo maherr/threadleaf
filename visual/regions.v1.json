@@ -85,7 +85,11 @@
       "regions": [{ "id": "recovery", "x": 0.13, "y": 0.1, "width": 0.74, "height": 0.8 }]
     },
     "empty-note-light": {
-      "requiredSelectors": ["#note-empty:not([hidden])", "#note-path"],
+      "requiredSelectors": [
+        "#note-empty:not([hidden])",
+        "#note-empty-create:not([hidden]):not(:disabled)",
+        "#note-path"
+      ],
       "regions": [{ "id": "empty", "x": 0.24, "y": 0.13, "width": 0.52, "height": 0.82 }]
     },
     "missing-link-dark": {

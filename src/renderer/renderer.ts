@@ -150,6 +150,7 @@ import {
   firstEnabledPaletteIndex,
   movePaletteSelection,
   type PaletteCommandDescriptor,
+  paletteCountLabel,
 } from "./command-palette-model";
 import { ContinuousAutosave } from "./continuous-autosave";
 import {
@@ -241,9 +242,11 @@ import {
 import { type TabDragState, tabInsertionIndex } from "./workspace-tab-dnd";
 
 const elements = {
+  vaultKicker: getElement("vault-kicker"),
   vaultName: getElement("vault-name"),
   vaultIdentity: getElement("vault-identity"),
   openVault: getButton("open-vault"),
+  openVaultLabel: getElement("open-vault-label"),
   vaultMode: getElement("vault-mode"),
   vaultSource: getElement("vault-source"),
   runtimeState: getElement("runtime-state"),
@@ -286,6 +289,8 @@ const elements = {
   closePane: getButton("close-pane"),
   notePath: getElement("note-path"),
   noteEmpty: getElement("note-empty"),
+  noteEmptyCreate: getButton("note-empty-create"),
+  noteEmptyCreateShortcut: getElement("note-empty-create-shortcut"),
   noteView: getElement("note-view"),
   canvasView: getElement("canvas-view"),
   noteTitle: getElement("note-title"),
@@ -613,6 +618,8 @@ const paneElementKeys = [
   "closePane",
   "notePath",
   "noteEmpty",
+  "noteEmptyCreate",
+  "noteEmptyCreateShortcut",
   "noteView",
   "canvasView",
   "noteTitle",
@@ -702,6 +709,8 @@ function paneElementsFor(
     closePane: button("close-pane"),
     notePath: element("note-path"),
     noteEmpty: element("note-empty"),
+    noteEmptyCreate: button("note-empty-create"),
+    noteEmptyCreateShortcut: element("note-empty-create-shortcut"),
     noteView: element("note-view"),
     canvasView: element("canvas-view"),
     noteTitle: element("note-title"),
@@ -2285,8 +2294,12 @@ function commandCatalog(): RendererCommand[] {
       category: "Appearance",
       keywords: ["color", "dark", "light"],
       shortcut: shortcutFor("appearance.toggle-theme"),
-      enabled: true,
-      disabledReason: null,
+      enabled: Boolean(currentSnapshot?.vault.id && !opening && !appearanceBusy),
+      disabledReason: opening
+        ? `Opening ${currentSnapshot?.startup?.targetName ?? "the vault"}.`
+        : appearanceBusy
+          ? "Threadleaf is saving the current appearance."
+          : "No vault is active.",
       run: toggleTheme,
     },
     {
@@ -2712,6 +2725,7 @@ function renderDocumentView(): void {
     const pendingHeading = elements.noteEmpty.querySelector("h2");
     const pendingDetail = elements.noteEmpty.querySelector("p");
     elements.noteEmpty.hidden = false;
+    elements.noteEmptyCreate.hidden = true;
     elements.noteEmpty.dataset.state = "settings-pending";
     elements.noteEmpty.setAttribute("role", "status");
     elements.noteEmpty.setAttribute("aria-live", "polite");
@@ -2763,6 +2777,7 @@ function renderDocumentView(): void {
     ? "threadleaf-plugin-settings"
     : (pluginViewType ?? (plugin ? (currentSnapshot?.pluginSurface?.viewType ?? null) : null));
   elements.noteEmpty.hidden = hasNote || hasCanvas || hasPluginFile || plugin;
+  elements.noteEmptyCreate.hidden = Boolean(activeUnavailable);
   elements.noteEditorShell.hidden = reading;
   elements.notePreview.hidden = !reading;
   elements.noteView.hidden = !hasNote || plugin;
@@ -4264,7 +4279,7 @@ async function activatePreviewAttachmentAction(actionButton: HTMLButtonElement):
       expectedRevision,
       expectedVaultId,
     });
-    if (loadedVaultId !== expectedVaultId || !actionButton.isConnected) return;
+    if (loadedVaultId !== expectedVaultId) return;
     if (response.status === "opened") {
       showToast(`Opened ${response.path}.`);
     } else if (response.status === "reveal-dispatched") {
@@ -4769,6 +4784,12 @@ function updateShortcutLabels(): void {
   elements.newNote.title = newNoteShortcut
     ? `Create a new note (${newNoteShortcut})`
     : "Create a new note";
+  for (const pane of paneElements.values()) {
+    pane.noteEmptyCreateShortcut.textContent = newNoteShortcut ?? "";
+    pane.noteEmptyCreate.title = newNoteShortcut
+      ? `Create a new note (${newNoteShortcut})`
+      : "Create a new note";
+  }
   const moveNoteShortcut = shortcutFor("workspace.move-note");
   elements.moveNote.title = moveNoteShortcut
     ? `Move or rename current note (${moveNoteShortcut})`
@@ -10264,6 +10285,7 @@ function selectPaletteIndex(index: number, scrollIntoView: boolean): void {
 }
 
 function renderPaletteResults(): void {
+  elements.themeToggle.disabled = !currentSnapshot?.vault.id || vaultOpening() || appearanceBusy;
   if (!elements.commandPalette.open) {
     return;
   }
@@ -10324,8 +10346,7 @@ function renderPaletteResults(): void {
     empty.textContent = "No command matches this search.";
     elements.paletteResults.append(empty);
   }
-  const enabledCount = paletteMatches.filter((command) => command.enabled).length;
-  elements.paletteCount.textContent = `${enabledCount} available · ${paletteMatches.length} shown`;
+  elements.paletteCount.textContent = paletteCountLabel(paletteMatches);
   selectPaletteIndex(paletteSelection, false);
 }
 
@@ -10834,6 +10855,13 @@ function render(snapshot: RuntimeSnapshot): void {
   const opening = startup?.phase === "opening";
   const workspace = opening ? undefined : snapshot.workspace;
   const plugin = opening ? null : snapshot.plugin;
+  const bundledDemo = !opening && snapshot.vault.source === "bundled";
+  elements.vaultKicker.textContent = bundledDemo ? "Read-only demo" : "Active vault";
+  elements.openVaultLabel.textContent = bundledDemo ? "Open folder" : "Open";
+  elements.openVault.setAttribute(
+    "aria-label",
+    bundledDemo ? "Open your Markdown folder" : "Open another vault",
+  );
   elements.vaultName.textContent = opening ? startup.targetName : snapshot.vault.name;
   elements.vaultIdentity.title = opening ? startup.targetPath : snapshot.vault.path;
   elements.vaultMode.title = opening ? startup.targetPath : snapshot.vault.path;
@@ -12978,6 +13006,7 @@ function renderUnavailableNotice(entry: WorkspaceUnavailableEntry | null | undef
   if (detail) {
     detail.textContent = text.detail;
   }
+  elements.noteEmptyCreate.hidden = Boolean(entry);
 }
 
 function createTagAnchor(value: string, className = "tag"): HTMLAnchorElement | null {
@@ -13701,6 +13730,7 @@ function renderEditControls(): void {
   const paneCount = currentSnapshot?.workspace?.panes.length ?? 1;
   const splitBlocked = busy;
   elements.newNote.disabled = opening || readOnly || busy;
+  elements.noteEmptyCreate.disabled = opening || readOnly || busy || !currentSnapshot?.vault.id;
   elements.exportNote.disabled =
     opening || busy || publishExportBusy || !loadedNote || !loadedVaultId;
   elements.exportNote.title = "Export current note as standalone HTML";
@@ -14639,6 +14669,12 @@ elements.newNote.addEventListener(
   "click",
   () => void executeRendererCommand("workspace.create-note"),
 );
+for (const [paneId, pane] of paneElements) {
+  pane.noteEmptyCreate.addEventListener("click", () => {
+    activateWorkspacePaneLocally(paneId);
+    void executeRendererCommand("workspace.create-note");
+  });
+}
 elements.propertyAdd.addEventListener("click", () => {
   void executeRendererCommand("workspace.manage-properties");
 });

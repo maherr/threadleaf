@@ -2,9 +2,11 @@
 
 > Your vault, on an open runtime.
 
-Threadleaf is an early-stage, fully open, local-first knowledge workspace. Its central goal is to
-open existing Markdown vaults without conversion and provide meaningful compatibility with the
-community plugins people already depend on.
+Threadleaf is a fully open, local-first knowledge workspace. It opens existing Markdown vaults
+without conversion and provides measured compatibility with the community plugins people already
+depend on. Within its declared desktop and local-first lane, it is built to be the stronger choice
+when file ownership, interruption-safe writes, offline operation, reproducible builds, and
+inspectable compatibility matter more than mobile, hosted sync, or ecosystem breadth.
 
 Threadleaf is not affiliated with or endorsed by Obsidian.
 
@@ -13,7 +15,10 @@ Pressroom and Lampside themes grounded in the structure of a hand-bound working 
 
 ## Status
 
-Threadleaf 0.1.0-beta.7 is ready for maintainer-led daily-drive testing. Its Phase 0 architecture
+Threadleaf 0.1.0-beta.7 passes the current Phase 3 acceptance gate for maintainer-led Linux desktop
+daily-drive testing. This is a scoped product claim, not universal feature parity with Obsidian;
+the exact advantages and acknowledged gaps are kept in the
+[checked comparison](docs/launch/comparison.md). Its Phase 0 architecture
 proof loads an unchanged CommonJS fixture
 plugin, provides it with an independently implemented `obsidian` compatibility module, registers a
 command, and exercises that command through a dedicated Electron compatibility renderer. The
@@ -26,7 +31,9 @@ renames against filesystem fixtures. A sequenced live watcher and rebuildable me
 converge across internal writes, external edits, renames, conflicts, event gaps, and backend
 fallbacks. Multi-file operations durably retain every proposal and resume safely after interruption.
 
-Phase 2 is in progress. The production runtime now composes that kernel, watcher, index, one shared
+Phase 2's daily-drive exit gate is complete. Remaining breadth stays explicit in the roadmap and
+does not block the current desktop beta. The production runtime composes the kernel, watcher,
+index, one shared
 action registry, and the compatibility host. The Electron workspace can open an arbitrary local
 Markdown folder, restore the last successful selection, edit through CodeMirror, inspect headings,
 tags, links, and backlinks, search saved Markdown with contextual line matches, and reflect external

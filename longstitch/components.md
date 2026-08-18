@@ -77,3 +77,27 @@ Forbidden default: pale category tints, color-only identity, or a generic card s
 Tabs, metadata fields, dialogs, menus, status rows, and commands inherit the same type roles, paper
 or walnut layers, restrained radii, and blue interaction channel. Loading preserves the final
 footprint. No support control introduces another metaphor.
+
+Command results state the whole result count before the runnable subset. Disabled commands remain
+visible with a reason, so capability and current availability are not conflated. A control whose
+durable setting is still being saved becomes visibly unavailable until the save completes; a
+second click is never accepted and silently discarded.
+
+## Empty leaf and arrival states
+
+An empty editor pane centers one answer: select an existing note or create a new one. The creation
+action sits beside that answer and shows its current remappable shortcut. It calls the same shared
+action as the navigator, native menu, and command palette. If the pane represents a missing or
+otherwise unavailable document, the creation action is withheld so recovery evidence is not
+mistaken for a blank workspace.
+
+A fresh install opens the read-only welcome leaf, labels the current vault as a demo, and turns the
+adjacent vault action into the explicit next step, **Open folder**. The welcome leaf explains that
+the user's Markdown remains ordinary files before it demonstrates links, backlinks, outline, and
+transclusion. Returning users keep their own restored workspace instead of seeing onboarding again.
+
+Required states: no open note, writable vault, read-only vault, vault opening, missing note,
+restoring private editing mode, keyboard focus, and a second empty split pane.
+
+Forbidden default: explanatory empty-state prose with the primary action stranded in distant
+chrome, or a button that bypasses the shared recovery-backed creation service.

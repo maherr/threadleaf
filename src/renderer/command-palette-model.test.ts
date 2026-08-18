@@ -4,6 +4,7 @@ import {
   firstEnabledPaletteIndex,
   movePaletteSelection,
   type PaletteCommandDescriptor,
+  paletteCountLabel,
 } from "./command-palette-model";
 
 function command(
@@ -82,5 +83,16 @@ describe("command palette model", () => {
 
     expect(firstEnabledPaletteIndex(choices)).toBe(-1);
     expect(movePaletteSelection(choices, -1, 1)).toBe(-1);
+  });
+
+  it("labels total matches before the runnable subset", () => {
+    expect(
+      paletteCountLabel([
+        command("enabled", "Enabled"),
+        command("disabled", "Disabled", { enabled: false }),
+      ]),
+    ).toBe("2 results · 1 runnable");
+    expect(paletteCountLabel([command("only", "Only")])).toBe("1 result · 1 runnable");
+    expect(paletteCountLabel([])).toBe("0 results · 0 runnable");
   });
 });

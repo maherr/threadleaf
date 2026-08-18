@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { release as osRelease } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   app,
   BrowserWindow,
@@ -944,7 +945,15 @@ function createVaultAttachmentShellPort(): VaultAttachmentShellPort {
     };
   }
   return {
-    openPath: (absolutePath) => shell.openPath(absolutePath),
+    openPath: async (absolutePath) => {
+      if (process.platform !== "linux") return shell.openPath(absolutePath);
+      try {
+        await shell.openExternal(pathToFileURL(absolutePath).toString());
+        return "";
+      } catch (error) {
+        return error instanceof Error ? error.message : "Failed to open path";
+      }
+    },
     showItemInFolder: (absolutePath) => shell.showItemInFolder(absolutePath),
   };
 }

@@ -647,6 +647,13 @@ async function capture(name) {
 async function setTheme(theme) {
   const current = await evaluate("document.documentElement.dataset.theme");
   if (current !== theme) {
+    await waitFor(
+      async () =>
+        (await evaluate("document.querySelector('#theme-toggle')?.disabled === false"))
+          ? true
+          : null,
+      "Theme control did not become interactive",
+    );
     await evaluate("document.querySelector('#theme-toggle')?.click(); true");
     await waitFor(
       async () => (await evaluate("document.documentElement.dataset.theme")) === theme,
@@ -1182,6 +1189,13 @@ async function runVisualCases(matrix, regionManifest) {
       captures,
       structural,
     );
+    await evaluate("document.querySelector('#note-empty-create')?.click()");
+    await waitFor(
+      async () =>
+        (await evaluate("document.querySelector('#new-note-dialog')?.open === true")) ? true : null,
+      "Empty-state create action did not open the new-note dialog",
+    );
+    await pressKey("Escape", "Escape");
 
     await openNote("03 Missing Target.md");
     await setTheme("dark");

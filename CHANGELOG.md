@@ -16,6 +16,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   renderer replacement, and application restart. The registry records this as Level 3 supporting
   evidence; no Level 4 receipt or production issuer key was added.
 
+### Changed
+
+- Made a fresh install arrive on the read-only welcome note with an explicit **Open folder** action
+  and file-ownership guidance, while restored user vaults still return to their private workspace.
+- Put the recovery-backed **Create a note** action and its remappable shortcut directly in an empty
+  writable pane, and made command-palette counts distinguish all results from runnable commands.
+
+### Fixed
+
+- Prevented a rapid second theme toggle from being advertised while the first appearance change is
+  still persisting, so an accepted click is never silently dropped.
+- Kept Live Preview transclusion identity, source preview, and nested preview readable in a split
+  pane instead of collapsing the source label into one-character columns.
+- Kept native attachment Open responsive on Linux despite Electron 43's unresolved `openPath`
+  promise, without exposing a packaged test receiver or weakening attachment containment checks.
+
 ## [0.1.0-beta.7]
 
 ### Added

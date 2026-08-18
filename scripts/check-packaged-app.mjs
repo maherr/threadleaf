@@ -509,6 +509,10 @@ try {
     "Packaged workspace is not an external bundled resource.",
   );
   assert(
+    state.snapshot.workspace.activeNote?.path === "Welcome.md",
+    "Fresh packaged app did not arrive on its welcome note.",
+  );
+  assert(
     JSON.stringify(paths) === JSON.stringify(["Linked Note.md", "Welcome.md"]),
     `Packaged fixture inventory was unexpected: ${JSON.stringify(paths)}`,
   );
@@ -520,6 +524,9 @@ try {
     fs.access(path.join(path.dirname(state.snapshot.vault.path), "LICENSE.threadleaf.txt")),
   ]);
   const controls = await evaluate(`(() => ({
+    vaultKicker: document.querySelector('#vault-kicker')?.textContent ?? '',
+    openVaultLabel: document.querySelector('#open-vault-label')?.textContent ?? '',
+    openVaultAriaLabel: document.querySelector('#open-vault')?.getAttribute('aria-label') ?? '',
     source: document.querySelector('#vault-source')?.textContent ?? '',
     editState: document.querySelector('#edit-state')?.textContent ?? '',
     editorEditable: document.querySelector('#note-editor .cm-content')?.getAttribute('contenteditable'),
@@ -529,6 +536,12 @@ try {
     manualSavePresent: document.querySelector('#save-note') !== null,
     packageSearchDisabled: document.querySelector('#plugin-index-search')?.disabled,
   }))()`);
+  assert(controls.vaultKicker === "Read-only demo", "Bundled header hides demo mode.");
+  assert(controls.openVaultLabel === "Open folder", "Bundled arrival lacks a clear next step.");
+  assert(
+    controls.openVaultAriaLabel === "Open your Markdown folder",
+    "Bundled arrival action lost its accessible purpose.",
+  );
   assert(controls.source === "Bundled read-only demo", "Bundled mode lacks a visible label.");
   assert(controls.editState === "Read only", "Editor status does not say Read only.");
   assert(controls.editorEditable === "false", "Bundled editor is still content-editable.");

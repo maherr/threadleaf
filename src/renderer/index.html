@@ -24,14 +24,14 @@
           <div class="vault-identity" id="vault-identity" aria-live="polite">
             <span class="status-shape" id="status-shape" aria-hidden="true"></span>
             <span>
-              <small>Active vault</small>
+              <small id="vault-kicker">Active vault</small>
               <strong id="vault-name">Connecting</strong>
             </span>
             <span class="state-word" id="runtime-state">Starting</span>
           </div>
           <button class="vault-open" id="open-vault" type="button" aria-label="Open another vault">
             <span aria-hidden="true">＋</span>
-            <span>Open</span>
+            <span id="open-vault-label">Open</span>
           </button>
         </div>
 
@@ -250,6 +250,10 @@
             <span aria-hidden="true">◇</span>
             <h2>Select a note</h2>
             <p>The filesystem remains authoritative. This surface reads through the safe vault kernel.</p>
+            <button class="primary-button note-empty-create" id="note-empty-create" type="button">
+              <span>Create a note</span>
+              <kbd id="note-empty-create-shortcut"></kbd>
+            </button>
           </div>
 
           <article
@@ -2202,6 +2206,7 @@
       id="attachment-restore-file"
       type="file"
       tabindex="-1"
+      aria-label="Choose a file to restore this attachment"
       aria-hidden="true"
     />
 

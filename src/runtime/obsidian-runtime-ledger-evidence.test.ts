@@ -2237,8 +2237,8 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
             rootIsRoot: true,
           },
           metadata: {
-            cacheFrontmatter: { kind: "compatibility-fixture" },
-            cacheByPathFrontmatter: { kind: "compatibility-fixture" },
+            cacheFrontmatter: { type: "guide" },
+            cacheByPathFrontmatter: { type: "guide" },
             destinationPath: "Linked Note.md",
             linktext: "Linked Note",
             resolvedCount: 2,
@@ -2635,8 +2635,8 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
               state: { file: "Welcome.md" },
             },
             viewData:
-              "---\nkind: compatibility-fixture\n---\n\n# Welcome to Threadleaf\n\nThis synthetic vault proves that the runtime can discover ordinary Markdown without changing it.\n\nContinue to [[Linked Note]].\n\n## Quick start\n\nOpen any local folder, write in Source, then switch to Reading. Your Markdown remains the authority.\n\n## Compatibility in motion\n\nThe section below is transcluded from another ordinary note. Its nested section comes back here,\nwithout converting either file.\n\n![[Linked Note#Project brief]]\n",
-            data: "---\nkind: compatibility-fixture\n---\n\n# Welcome to Threadleaf\n\nThis synthetic vault proves that the runtime can discover ordinary Markdown without changing it.\n\nContinue to [[Linked Note]].\n\n## Quick start\n\nOpen any local folder, write in Source, then switch to Reading. Your Markdown remains the authority.\n\n## Compatibility in motion\n\nThe section below is transcluded from another ordinary note. Its nested section comes back here,\nwithout converting either file.\n\n![[Linked Note#Project brief]]\n",
+              "---\ntype: guide\n---\n\n# Welcome to Threadleaf\n\nYour notes stay ordinary Markdown in a folder you own. Threadleaf adds a fast, durable workspace without converting the vault or hiding private state inside it.\n\n> **Make it yours:** Choose **Open folder** in the top bar and select any Markdown folder. This demo is read-only, so you can explore before Threadleaf writes anything.\n\nFollow [[Linked Note]] to see links, backlinks, the outline, and transclusion working together.\n\n## Quick start\n\nOpen any local folder, write in Source, then switch to Read. Your files remain the authority at every step.\n\n## Compatibility in motion\n\nThe section below is transcluded from another ordinary note. Its nested context returns here without converting either file.\n\n![[Linked Note#Project brief]]\n",
+            data: "---\ntype: guide\n---\n\n# Welcome to Threadleaf\n\nYour notes stay ordinary Markdown in a folder you own. Threadleaf adds a fast, durable workspace without converting the vault or hiding private state inside it.\n\n> **Make it yours:** Choose **Open folder** in the top bar and select any Markdown folder. This demo is read-only, so you can explore before Threadleaf writes anything.\n\nFollow [[Linked Note]] to see links, backlinks, the outline, and transclusion working together.\n\n## Quick start\n\nOpen any local folder, write in Source, then switch to Read. Your files remain the authority at every step.\n\n## Compatibility in motion\n\nThe section below is transcluded from another ordinary note. Its nested context returns here without converting either file.\n\n![[Linked Note#Project brief]]\n",
             saveCall: { path: "Welcome.md", dataMatches: true },
             requestSaveIsFunction: true,
             viewDataAfterSet: "temporary",

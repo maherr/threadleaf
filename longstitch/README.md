@@ -9,7 +9,7 @@
 **Runtime authority:** `tokens.css`  
 **Reference implementation:** `../src/renderer/styles.css`  
 **Adoption:** bespoke, not an adoption target; 1 owning app  
-**Last verified:** 2026-08-15, live Electron in both themes at desktop and narrow widths
+**Last verified:** 2026-08-18, 16-state live Electron matrix plus both-theme package preview
 
 ## Identity and referent
 
@@ -17,6 +17,11 @@ Longstitch is Threadleaf's bespoke design language: a working knowledge desk bui
 logic of a hand-bound book. Thread shows hierarchy, paper layers show depth, brass marks durable
 identity, and machine text stays visibly separate from prose. Action state remains blue and never
 depends on the decorative brass or red brand cloth.
+
+The arrival question is: **which leaf am I working on, and how do I begin without surrendering file
+truth?** The open note answers with title and path; an empty pane answers with a direct, shortcut-
+labeled creation action instead of a dead end. A fresh install arrives on a read-only welcome leaf
+with **Open folder** beside the clearly labeled demo identity.
 
 ## Signature
 
