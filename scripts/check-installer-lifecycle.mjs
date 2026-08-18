@@ -286,7 +286,24 @@ function descendantPids(rows, roots) {
   return [...descendants];
 }
 
-async function cleanupMarkedProcesses() {
+async function markedProcessTree() {
+  const rows = await processRows();
+  const knownRoots = [...launchedProcesses]
+    .filter((child) => child.exitCode === null && child.signalCode === null)
+    .map((child) => child.pid)
+    .filter(Boolean);
+  const markerRoots = rows
+    .filter(
+      (row) => row.command.includes(processMarkerArgument) || row.command.includes(processMarker),
+    )
+    .map((row) => row.pid);
+  return {
+    markerObserved: markerRoots.length > 0,
+    pids: descendantPids(rows, [...new Set([...knownRoots, ...markerRoots])]),
+  };
+}
+
+async function cleanupMarkedProcesses(seedPids = []) {
   const knownRoots = () =>
     [...launchedProcesses]
       .filter((child) => child.exitCode === null && child.signalCode === null)
@@ -294,8 +311,11 @@ async function cleanupMarkedProcesses() {
       .filter(Boolean);
   let markerObserved = false;
   const killed = new Set();
-  for (const signal of ["SIGTERM", "SIGKILL"]) {
+  const trackedPids = new Set(seedPids);
+  let quietSamples = 0;
+  for (let attempt = 0; attempt < 30 && quietSamples < 3; attempt += 1) {
     const rows = await processRows();
+    const livePids = new Set(rows.map((row) => row.pid));
     const markerRoots = rows
       .filter(
         (row) => row.command.includes(processMarkerArgument) || row.command.includes(processMarker),
@@ -303,10 +323,16 @@ async function cleanupMarkedProcesses() {
       .map((row) => row.pid);
     markerObserved ||= markerRoots.length > 0;
     launchMarkerObserved ||= markerObserved;
-    const pids = descendantPids(rows, [...new Set([...knownRoots(), ...markerRoots])]);
+    for (const pid of knownRoots()) trackedPids.add(pid);
+    for (const pid of markerRoots) trackedPids.add(pid);
+    const pids = descendantPids(rows, [...trackedPids]).filter((pid) => livePids.has(pid));
+    for (const pid of pids) trackedPids.add(pid);
     if (pids.length === 0) {
-      return { markerObserved, killed: [...killed] };
+      quietSamples += 1;
+      await delay(100);
+      continue;
     }
+    quietSamples = 0;
     for (const pid of pids.sort((left, right) => right - left)) {
       if (pid === process.pid) {
         continue;
@@ -317,20 +343,43 @@ async function cleanupMarkedProcesses() {
         );
       } else {
         try {
-          process.kill(pid, signal);
+          process.kill(pid, "SIGKILL");
         } catch {
           // The process exited between the process table read and the signal.
         }
       }
       killed.add(pid);
     }
-    await delay(signal === "SIGTERM" ? 250 : 100);
+    await delay(100);
   }
   const remaining = (await processRows()).filter(
-    (row) => row.command.includes(processMarkerArgument) || row.command.includes(processMarker),
+    (row) =>
+      trackedPids.has(row.pid) ||
+      row.command.includes(processMarkerArgument) ||
+      row.command.includes(processMarker),
   );
   assert(remaining.length === 0, `Lifecycle launch marker left ${remaining.length} process(es).`);
   return { markerObserved, killed: [...killed] };
+}
+
+async function forceStopPackageRoot(probe) {
+  const tracked = await markedProcessTree();
+  assert(tracked.markerObserved, "Forced lifecycle cleanup did not observe its launch marker.");
+  try {
+    probe.child.kill("SIGKILL");
+  } catch {
+    // The root exited after the process snapshot.
+  }
+  const result = await Promise.race([
+    probe.exited,
+    delay(5_000).then(() => ({ code: null, signal: "timeout" })),
+  ]);
+  if (result.code === null && result.signal === "timeout" && platform === "win32") {
+    await run("taskkill", ["/PID", String(probe.child.pid), "/F"], { timeout: 30_000 }).catch(
+      () => undefined,
+    );
+  }
+  return tracked.pids;
 }
 
 async function observeLaunchMarker() {
@@ -916,19 +965,14 @@ async function stopPackage(probe, force = false) {
       // A renderer that is already closing does not need another close request.
     }
   }
-  if (force) {
-    const wasRunning = probe.child.exitCode === null && probe.child.signalCode === null;
-    const cleanup = await cleanupMarkedProcesses();
-    assert(
-      !wasRunning || cleanup.markerObserved,
-      "Forced lifecycle cleanup did not observe its launch marker.",
-    );
-  }
+  const forcedTree = force ? await forceStopPackageRoot(probe) : [];
   probe.cdp.close();
-  try {
-    probe.child.kill(force ? "SIGKILL" : "SIGTERM");
-  } catch {
-    // The process already exited.
+  if (!force) {
+    try {
+      probe.child.kill("SIGTERM");
+    } catch {
+      // The process already exited.
+    }
   }
   const result = await Promise.race([
     probe.exited,
@@ -941,7 +985,7 @@ async function stopPackage(probe, force = false) {
       // The process already exited.
     }
   }
-  await cleanupMarkedProcesses();
+  await cleanupMarkedProcesses(forcedTree);
   launchedProcesses.delete(probe.child);
   if (activeProbe === probe) {
     activeProbe = null;

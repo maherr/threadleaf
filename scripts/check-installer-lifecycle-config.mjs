@@ -9,6 +9,11 @@ const builderPath = path.join(rootPath, "electron-builder.yml");
 const ciPath = path.join(rootPath, ".github", "workflows", "ci.yml");
 const releasePath = path.join(rootPath, ".github", "workflows", "release.yml");
 const lifecycleScriptPath = path.join(rootPath, "scripts", "check-installer-lifecycle.mjs");
+const packagedAttachmentsScriptPath = path.join(
+  rootPath,
+  "scripts",
+  "check-packaged-attachments.mjs",
+);
 const msvcAction = "ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756";
 
 function assert(condition, message) {
@@ -125,15 +130,23 @@ function workflowOn(document) {
   return document.on ?? document[true];
 }
 
-const [fixtureText, packageText, builderText, ciText, releaseText, lifecycleScriptText] =
-  await Promise.all([
-    fs.readFile(fixturePath, "utf8"),
-    fs.readFile(packagePath, "utf8"),
-    fs.readFile(builderPath, "utf8"),
-    fs.readFile(ciPath, "utf8"),
-    fs.readFile(releasePath, "utf8"),
-    fs.readFile(lifecycleScriptPath, "utf8"),
-  ]);
+const [
+  fixtureText,
+  packageText,
+  builderText,
+  ciText,
+  releaseText,
+  lifecycleScriptText,
+  packagedAttachmentsScriptText,
+] = await Promise.all([
+  fs.readFile(fixturePath, "utf8"),
+  fs.readFile(packagePath, "utf8"),
+  fs.readFile(builderPath, "utf8"),
+  fs.readFile(ciPath, "utf8"),
+  fs.readFile(releasePath, "utf8"),
+  fs.readFile(lifecycleScriptPath, "utf8"),
+  fs.readFile(packagedAttachmentsScriptPath, "utf8"),
+]);
 const fixture = record(JSON.parse(fixtureText), "installer lifecycle fixture");
 const packageData = record(JSON.parse(packageText), "package.json");
 const builder = record(parse(builderText), "electron-builder.yml");
@@ -183,13 +196,23 @@ assert(
 assert(
   lifecycleScriptText.includes("processMarkerArgument") &&
     lifecycleScriptText.includes("observeLaunchMarker") &&
-    lifecycleScriptText.includes("cleanupMarkedProcesses"),
-  "Native lifecycle verifier must clean marked descendant processes.",
+    lifecycleScriptText.includes("markedProcessTree") &&
+    lifecycleScriptText.includes("forceStopPackageRoot") &&
+    lifecycleScriptText.includes('probe.child.kill("SIGKILL")') &&
+    lifecycleScriptText.includes("trackedPids") &&
+    lifecycleScriptText.includes("quietSamples") &&
+    lifecycleScriptText.includes("cleanupMarkedProcesses(forcedTree)"),
+  "Native lifecycle verifier must stop its marked root before cleaning tracked descendants through a quiet window.",
 );
 assert(
   lifecycleScriptText.includes("THREADLEAF_LIFECYCLE_RUN") &&
     lifecycleScriptText.includes("THREADLEAF_LIFECYCLE_ARTIFACT_DIR"),
   "Native lifecycle verifier lost its isolated marker/evidence contract.",
+);
+assert(
+  packagedAttachmentsScriptText.includes('"--disable-setuid-sandbox"') &&
+    !packagedAttachmentsScriptText.includes('"--no-sandbox"'),
+  "Packaged Linux attachment verification must select the user-namespace sandbox without disabling Chromium sandboxing.",
 );
 assert(
   lifecycleScriptText.includes("await fs.realpath(os.tmpdir())"),
