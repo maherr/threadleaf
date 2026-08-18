@@ -6,6 +6,7 @@ import {
   app,
   BrowserWindow,
   dialog,
+  type IpcMainInvokeEvent,
   ipcMain,
   Menu,
   type OpenDialogOptions,
@@ -190,6 +191,10 @@ import {
 } from "./support-bundle";
 import { ThemePackageManager } from "./theme-package-manager";
 import { TrustedWorkspacePluginRuntime } from "./trusted-workspace-plugin-runtime";
+import {
+  trustedWorkspaceProbeArgument,
+  trustedWorkspaceProbeEnabled,
+} from "./trusted-workspace-probe";
 import { loadVaultAppearance } from "./vault-appearance-loader";
 import { VaultAppearanceWatcher } from "./vault-appearance-watcher";
 import {
@@ -895,6 +900,18 @@ function isMainRendererSender(webContents: WebContents): boolean {
   );
 }
 
+function handleMainRendererIpc<Arguments extends unknown[], Result>(
+  channel: string,
+  listener: (event: IpcMainInvokeEvent, ...args: Arguments) => Result,
+): void {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!isMainRendererSender(event.sender)) {
+      throw new Error("Threadleaf IPC requires the active main renderer.");
+    }
+    return listener(event, ...(args as Arguments));
+  });
+}
+
 function isTrustedWorkspaceRendererSender(webContents: WebContents): boolean {
   return mainWindowTrustedWorkspace && isMainRendererSender(webContents);
 }
@@ -905,6 +922,7 @@ function isPluginRuntimeSender(webContents: WebContents): boolean {
 
 function createVaultAttachmentShellPort(): VaultAttachmentShellPort {
   const diagnosticReceiver =
+    !app.isPackaged &&
     process.env.THREADLEAF_TEST_NATIVE_ATTACHMENT_RECEIVER === "stdout-v1" &&
     process.argv.some((argument) => argument.startsWith("--remote-debugging-port="));
   if (diagnosticReceiver) {
@@ -2026,22 +2044,22 @@ async function createAppUpdateController(): Promise<AppUpdateController> {
 }
 
 function registerIpcHandlers(): void {
-  ipcMain.handle(ipcChannels.exportSupportBundle, (event) => {
+  handleMainRendererIpc(ipcChannels.exportSupportBundle, (event) => {
     if (!isMainRendererSender(event.sender)) {
       throw new Error("Support bundle export requires the active Threadleaf window.");
     }
     return exportSupportBundle();
   });
-  ipcMain.handle(ipcChannels.publishNote, (event, value: unknown) => {
+  handleMainRendererIpc(ipcChannels.publishNote, (event, value: unknown) => {
     if (!isMainRendererSender(event.sender)) {
       throw new Error("Published-note export requires the active Threadleaf window.");
     }
     return exportPublishedNote(value);
   });
-  ipcMain.handle(ipcChannels.appUpdate, () => appUpdateController.getSnapshot());
-  ipcMain.handle(ipcChannels.checkForAppUpdate, () => appUpdateController.checkForUpdates());
-  ipcMain.handle(ipcChannels.downloadAppUpdate, () => appUpdateController.downloadUpdate());
-  ipcMain.handle(ipcChannels.installAppUpdate, () => appUpdateController.installUpdate());
+  handleMainRendererIpc(ipcChannels.appUpdate, () => appUpdateController.getSnapshot());
+  handleMainRendererIpc(ipcChannels.checkForAppUpdate, () => appUpdateController.checkForUpdates());
+  handleMainRendererIpc(ipcChannels.downloadAppUpdate, () => appUpdateController.downloadUpdate());
+  handleMainRendererIpc(ipcChannels.installAppUpdate, () => appUpdateController.installUpdate());
   ipcMain.handle(pluginRendererChannels.vaultCreate, async (event, value: unknown) => {
     if (!isPluginRuntimeSender(event.sender)) {
       throw new Error("Plugin vault creates require the active compatibility runtime.");
@@ -2161,7 +2179,7 @@ function registerIpcHandlers(): void {
       workspaceController.vaultId,
     );
   });
-  ipcMain.handle(ipcChannels.snapshot, async () => {
+  handleMainRendererIpc(ipcChannels.snapshot, async () => {
     if (initialWorkspaceRecoveryPending && initialWorkspaceActivation) {
       await initialWorkspaceActivation;
     }
@@ -2201,7 +2219,7 @@ function registerIpcHandlers(): void {
       );
     }
   });
-  ipcMain.handle(ipcChannels.workspaceLayout, async (event, expectedVaultId: unknown) => {
+  handleMainRendererIpc(ipcChannels.workspaceLayout, async (event, expectedVaultId: unknown) => {
     if (!isMainRendererSender(event.sender)) {
       throw new Error("Workspace layout loading requires the active Threadleaf window.");
     }
@@ -2213,7 +2231,7 @@ function registerIpcHandlers(): void {
     }
     return workspaceLayoutController.snapshot();
   });
-  ipcMain.handle(ipcChannels.workspaceFilePage, (event, request: unknown) => {
+  handleMainRendererIpc(ipcChannels.workspaceFilePage, (event, request: unknown) => {
     if (!isMainRendererSender(event.sender)) {
       throw new Error("Workspace file pages require the active Threadleaf window.");
     }
@@ -2224,7 +2242,7 @@ function registerIpcHandlers(): void {
       request as Parameters<WorkspaceController["getWorkspaceFilePage"]>[0],
     );
   });
-  ipcMain.handle(ipcChannels.workspaceTreePage, (event, request: unknown) => {
+  handleMainRendererIpc(ipcChannels.workspaceTreePage, (event, request: unknown) => {
     if (!isMainRendererSender(event.sender)) {
       throw new Error("Workspace tree pages require the active Threadleaf window.");
     }
@@ -2235,7 +2253,7 @@ function registerIpcHandlers(): void {
       request as Parameters<WorkspaceController["getWorkspaceTreePage"]>[0],
     );
   });
-  ipcMain.handle(ipcChannels.workspaceTreePath, (event, request: unknown) => {
+  handleMainRendererIpc(ipcChannels.workspaceTreePath, (event, request: unknown) => {
     if (!isMainRendererSender(event.sender)) {
       throw new Error("Workspace tree paths require the active Threadleaf window.");
     }
@@ -2246,7 +2264,7 @@ function registerIpcHandlers(): void {
       request as Parameters<WorkspaceController["getWorkspaceTreePath"]>[0],
     );
   });
-  ipcMain.handle(ipcChannels.workspaceTagCatalog, (event, request: unknown) => {
+  handleMainRendererIpc(ipcChannels.workspaceTagCatalog, (event, request: unknown) => {
     if (!isMainRendererSender(event.sender)) {
       throw new Error("Workspace tags require the active Threadleaf window.");
     }
@@ -2257,7 +2275,7 @@ function registerIpcHandlers(): void {
       request as Parameters<WorkspaceController["getWorkspaceTagCatalog"]>[0],
     );
   });
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.setWorkspaceDockCollapsed,
     (event, dockId: unknown, collapsed: unknown, expectedVaultId: unknown) => {
       if (!isMainRendererSender(event.sender)) {
@@ -2277,7 +2295,7 @@ function registerIpcHandlers(): void {
         .then((snapshot) => snapshot);
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.setWorkspaceNavigatorExpandedPaths,
     (event, paths: unknown, expectedVaultId: unknown) => {
       if (!isMainRendererSender(event.sender)) {
@@ -2295,14 +2313,14 @@ function registerIpcHandlers(): void {
         .then((snapshot) => snapshot);
     },
   );
-  ipcMain.handle(ipcChannels.popOutPluginView, (event, expectedVaultId: unknown) => {
+  handleMainRendererIpc(ipcChannels.popOutPluginView, (event, expectedVaultId: unknown) => {
     assertMainRendererPluginIpcSender(isMainRendererSender(event.sender), "Plugin pop-outs");
     if (typeof expectedVaultId !== "string") {
       throw new Error("Popping out a plugin view requires a vault identity.");
     }
     return popOutPluginView(expectedVaultId);
   });
-  ipcMain.handle(ipcChannels.reattachPluginView, (event, expectedVaultId: unknown) => {
+  handleMainRendererIpc(ipcChannels.reattachPluginView, (event, expectedVaultId: unknown) => {
     assertMainRendererPluginIpcSender(
       isMainRendererSender(event.sender),
       "Plugin pop-out reattachment",
@@ -2333,32 +2351,32 @@ function registerIpcHandlers(): void {
       console.error("Rejected malformed renderer autosave acknowledgement:", error);
     }
   });
-  ipcMain.handle(ipcChannels.settings, async () => {
+  handleMainRendererIpc(ipcChannels.settings, async () => {
     const delay = developmentSettingsDelay();
     if (delay !== undefined) {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
     return settingsController.getSnapshot();
   });
-  ipcMain.handle(ipcChannels.accessibilityPreferences, () =>
+  handleMainRendererIpc(ipcChannels.accessibilityPreferences, () =>
     accessibilityPreferencesController.getSnapshot(),
   );
-  ipcMain.handle(ipcChannels.setAccessibilityPreferences, async (_event, value: unknown) => {
+  handleMainRendererIpc(ipcChannels.setAccessibilityPreferences, async (_event, value: unknown) => {
     const preferences = parseAccessibilityPreferences(value);
     return serializePrivateMutation(() =>
       accessibilityPreferencesController.setPreferences(preferences),
     );
   });
-  ipcMain.handle(ipcChannels.resetAccessibilityPreferences, async () => {
+  handleMainRendererIpc(ipcChannels.resetAccessibilityPreferences, async () => {
     return serializePrivateMutation(() => accessibilityPreferencesController.reset());
   });
-  ipcMain.handle(ipcChannels.appearance, (_event, expectedVaultId: unknown) => {
+  handleMainRendererIpc(ipcChannels.appearance, (_event, expectedVaultId: unknown) => {
     if (typeof expectedVaultId !== "string") {
       throw new Error("Appearance loading requires a string vault identity.");
     }
     return currentAppearance(expectedVaultId);
   });
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.setVaultAppearance,
     async (_event, expectedVaultId: unknown, appearanceValue: unknown) => {
       if (typeof expectedVaultId !== "string") {
@@ -2377,13 +2395,13 @@ function registerIpcHandlers(): void {
       });
     },
   );
-  ipcMain.handle(ipcChannels.appearancePackages, (_event, expectedVaultId: unknown) => {
+  handleMainRendererIpc(ipcChannels.appearancePackages, (_event, expectedVaultId: unknown) => {
     if (typeof expectedVaultId !== "string") {
       throw new Error("Appearance package inventory requires a string vault identity.");
     }
     return serializePluginOperation(() => currentAppearancePackages(expectedVaultId));
   });
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.previewAppearancePackage,
     (_event, expectedVaultId: unknown, requestValue: unknown) => {
       if (typeof expectedVaultId !== "string") {
@@ -2407,7 +2425,7 @@ function registerIpcHandlers(): void {
       });
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.previewLocalAppearancePackage,
     (_event, expectedVaultId: unknown, kindValue: unknown) => {
       if (
@@ -2457,7 +2475,7 @@ function registerIpcHandlers(): void {
       });
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.applyAppearancePackage,
     (
       _event,
@@ -2502,7 +2520,7 @@ function registerIpcHandlers(): void {
       });
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.cancelAppearancePackageReview,
     (_event, expectedVaultId: unknown, reviewId: unknown) => {
       if (typeof expectedVaultId !== "string" || typeof reviewId !== "string") {
@@ -2513,7 +2531,7 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(ipcChannels.plugins, (event, expectedVaultId: unknown) => {
+  handleMainRendererIpc(ipcChannels.plugins, (event, expectedVaultId: unknown) => {
     assertMainRendererPluginIpcSender(isMainRendererSender(event.sender), "Plugin catalog loading");
     if (typeof expectedVaultId !== "string") {
       throw new Error("Plugin catalog loading requires a string vault identity.");
@@ -2523,7 +2541,7 @@ function registerIpcHandlers(): void {
       "package-inventory-invalid",
     );
   });
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.searchPluginPackages,
     (event, expectedVaultId: unknown, query: unknown) => {
       assertMainRendererPluginIpcSender(
@@ -2546,7 +2564,7 @@ function registerIpcHandlers(): void {
       }, "registry-index-invalid");
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.previewPluginPackage,
     (event, expectedVaultId: unknown, requestValue: unknown) => {
       assertMainRendererPluginIpcSender(
@@ -2578,7 +2596,7 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.applyPluginPackage,
     (event, expectedVaultId: unknown, reviewId: unknown): Promise<PluginPackageApplyResponse> => {
       assertMainRendererPluginIpcSender(isMainRendererSender(event.sender), "Plugin package apply");
@@ -2615,7 +2633,7 @@ function registerIpcHandlers(): void {
       }, "package-operation-failed");
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.cancelPluginPackageReview,
     (event, expectedVaultId: unknown, reviewId: unknown) => {
       assertMainRendererPluginIpcSender(
@@ -2631,7 +2649,7 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.setCompatibilityMode,
     (event, expectedVaultId: unknown, mode: unknown) => {
       assertMainRendererPluginIpcSender(
@@ -2657,7 +2675,7 @@ function registerIpcHandlers(): void {
       }, "package-operation-failed");
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.setCompatibilityProfile,
     (event, expectedVaultId: unknown, profile: unknown) => {
       assertMainRendererPluginIpcSender(
@@ -2685,7 +2703,7 @@ function registerIpcHandlers(): void {
       }, "package-operation-failed");
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.setPluginCapabilityGrant,
     (
       event,
@@ -2774,7 +2792,7 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.setPluginEnabled,
     (event, expectedVaultId: unknown, pluginIdValue: unknown, enabled: unknown) => {
       assertMainRendererPluginIpcSender(isMainRendererSender(event.sender), "Plugin enablement");
@@ -2842,7 +2860,7 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(ipcChannels.reloadPlugins, (event, expectedVaultId: unknown) => {
+  handleMainRendererIpc(ipcChannels.reloadPlugins, (event, expectedVaultId: unknown) => {
     assertMainRendererPluginIpcSender(isMainRendererSender(event.sender), "Plugin catalog reload");
     if (typeof expectedVaultId !== "string") {
       throw new Error("Plugin reload requires a string vault identity.");
@@ -2852,7 +2870,7 @@ function registerIpcHandlers(): void {
       "package-operation-failed",
     );
   });
-  ipcMain.handle(ipcChannels.migrationPreview, (event, expectedVaultId: unknown) => {
+  handleMainRendererIpc(ipcChannels.migrationPreview, (event, expectedVaultId: unknown) => {
     if (!isMainRendererSender(event.sender)) {
       throw new Error("Migration preview requires the active Threadleaf window.");
     }
@@ -2861,7 +2879,7 @@ function registerIpcHandlers(): void {
     }
     return serializePluginOperation(() => currentMigrationPreview(expectedVaultId));
   });
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.migrationApply,
     (event, expectedVaultId: unknown, requestValue: unknown) => {
       if (!isMainRendererSender(event.sender)) {
@@ -2945,7 +2963,7 @@ function registerIpcHandlers(): void {
       });
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.migrationRollback,
     (event, expectedVaultId: unknown, transactionId: unknown) => {
       if (!isMainRendererSender(event.sender)) {
@@ -2984,13 +3002,13 @@ function registerIpcHandlers(): void {
       });
     },
   );
-  ipcMain.handle(ipcChannels.searchVault, (_event, query: unknown) => {
+  handleMainRendererIpc(ipcChannels.searchVault, (_event, query: unknown) => {
     if (typeof query !== "string") {
       throw new Error("Vault search requires a string query.");
     }
     return workspaceController.searchVault(query);
   });
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.vaultGraph,
     (_event, requestValue: unknown, expectedVaultId: unknown) => {
       if (typeof expectedVaultId !== "string") {
@@ -3002,13 +3020,13 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(ipcChannels.vaultTrash, (_event, expectedVaultId: unknown) => {
+  handleMainRendererIpc(ipcChannels.vaultTrash, (_event, expectedVaultId: unknown) => {
     if (typeof expectedVaultId !== "string") {
       throw new Error("Vault trash inspection requires a string vault identity.");
     }
     return workspaceController.getVaultTrash(expectedVaultId);
   });
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.loadVaultImage,
     (_event, sourceNotePath: unknown, target: unknown, expectedVaultId: unknown) => {
       if (
@@ -3021,7 +3039,7 @@ function registerIpcHandlers(): void {
       return workspaceController.loadVaultImage(sourceNotePath, target, expectedVaultId);
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.loadVaultAttachment,
     (_event, sourceNotePath: unknown, target: unknown, expectedVaultId: unknown) => {
       if (
@@ -3034,7 +3052,7 @@ function registerIpcHandlers(): void {
       return workspaceController.loadVaultAttachment(sourceNotePath, target, expectedVaultId);
     },
   );
-  ipcMain.handle(ipcChannels.vaultAttachmentNativeAction, (event, request: unknown) => {
+  handleMainRendererIpc(ipcChannels.vaultAttachmentNativeAction, (event, request: unknown) => {
     if (!isMainRendererSender(event.sender)) {
       throw new Error("Native attachment actions are available only to the owned main renderer.");
     }
@@ -3069,7 +3087,7 @@ function registerIpcHandlers(): void {
       vaultAttachmentShell,
     );
   });
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.loadVaultFilePreview,
     (event, filePath: unknown, expectedVaultId: unknown, expectedInventoryGeneration: unknown) => {
       if (!isMainRendererSender(event.sender)) {
@@ -3089,7 +3107,7 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.loadVaultNoteEmbed,
     (
       _event,
@@ -3116,7 +3134,7 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.renderPluginMarkdownProjection,
     (
       event,
@@ -3153,13 +3171,16 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(ipcChannels.loadCanvas, (_event, filePath: unknown, expectedVaultId: unknown) => {
-    if (typeof filePath !== "string" || typeof expectedVaultId !== "string") {
-      throw new Error("Load canvas requires string path and vault values.");
-    }
-    return workspaceController.loadCanvas(filePath, expectedVaultId);
-  });
-  ipcMain.handle(
+  handleMainRendererIpc(
+    ipcChannels.loadCanvas,
+    (_event, filePath: unknown, expectedVaultId: unknown) => {
+      if (typeof filePath !== "string" || typeof expectedVaultId !== "string") {
+        throw new Error("Load canvas requires string path and vault values.");
+      }
+      return workspaceController.loadCanvas(filePath, expectedVaultId);
+    },
+  );
+  handleMainRendererIpc(
     ipcChannels.loadCanvasAttachment,
     (_event, sourceCanvasPath: unknown, target: unknown, expectedVaultId: unknown) => {
       if (
@@ -3172,20 +3193,23 @@ function registerIpcHandlers(): void {
       return workspaceController.loadCanvasAttachment(sourceCanvasPath, target, expectedVaultId);
     },
   );
-  ipcMain.handle(ipcChannels.setKeyBinding, (_event, targetId: unknown, binding: unknown) => {
-    if (
-      typeof targetId !== "string" ||
-      !isShortcutTargetId(targetId) ||
-      (binding !== null && typeof binding !== "string")
-    ) {
-      throw new Error("Set key binding requires a known target and a string or null binding.");
-    }
-    return serializePrivateMutation(() => settingsController.setKeyBinding(targetId, binding));
-  });
-  ipcMain.handle(ipcChannels.resetKeyBindings, () =>
+  handleMainRendererIpc(
+    ipcChannels.setKeyBinding,
+    (_event, targetId: unknown, binding: unknown) => {
+      if (
+        typeof targetId !== "string" ||
+        !isShortcutTargetId(targetId) ||
+        (binding !== null && typeof binding !== "string")
+      ) {
+        throw new Error("Set key binding requires a known target and a string or null binding.");
+      }
+      return serializePrivateMutation(() => settingsController.setKeyBinding(targetId, binding));
+    },
+  );
+  handleMainRendererIpc(ipcChannels.resetKeyBindings, () =>
     serializePrivateMutation(() => settingsController.resetKeyBindings()),
   );
-  ipcMain.handle(ipcChannels.noteWorkflows, async (_event, expectedVaultId: unknown) => {
+  handleMainRendererIpc(ipcChannels.noteWorkflows, async (_event, expectedVaultId: unknown) => {
     if (typeof expectedVaultId !== "string") {
       throw new Error("Note workflow loading requires a string vault identity.");
     }
@@ -3201,7 +3225,7 @@ function registerIpcHandlers(): void {
       ? ({ status: "ready", vaultId: expectedVaultId, settings, templates } as const)
       : ({ status: "stale-vault", vaultId: workspaceController.vaultId } as const);
   });
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.setNoteWorkflows,
     async (_event, expectedVaultId: unknown, settingsValue: unknown) => {
       if (typeof expectedVaultId !== "string") {
@@ -3232,7 +3256,7 @@ function registerIpcHandlers(): void {
       });
     },
   );
-  ipcMain.handle(ipcChannels.workspaceSettings, async (_event, expectedVaultId: unknown) => {
+  handleMainRendererIpc(ipcChannels.workspaceSettings, async (_event, expectedVaultId: unknown) => {
     if (typeof expectedVaultId !== "string") {
       throw new Error("Workspace preference loading requires a string vault identity.");
     }
@@ -3252,7 +3276,7 @@ function registerIpcHandlers(): void {
       settings: workspaceController.getWorkspaceSettings(),
     };
   });
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.setWorkspaceSettings,
     async (_event, expectedVaultId: unknown, settingsValue: unknown) => {
       if (typeof expectedVaultId !== "string") {
@@ -3280,7 +3304,7 @@ function registerIpcHandlers(): void {
       });
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.setWorkspaceMode,
     async (_event, expectedVaultId: unknown, modeValue: unknown) => {
       if (typeof expectedVaultId !== "string") {
@@ -3303,29 +3327,32 @@ function registerIpcHandlers(): void {
       });
     },
   );
-  ipcMain.handle(ipcChannels.resetWorkspaceSettings, async (_event, expectedVaultId: unknown) => {
-    if (typeof expectedVaultId !== "string") {
-      throw new Error("Workspace preference reset requires a string vault identity.");
-    }
-    return serializePrivateMutation(async () => {
-      if (workspaceController.vaultId !== expectedVaultId) {
-        return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+  handleMainRendererIpc(
+    ipcChannels.resetWorkspaceSettings,
+    async (_event, expectedVaultId: unknown) => {
+      if (typeof expectedVaultId !== "string") {
+        throw new Error("Workspace preference reset requires a string vault identity.");
       }
-      const appSettings = await settingsController.resetVaultWorkspaceSettings(expectedVaultId);
-      if (workspaceController.vaultId !== expectedVaultId) {
-        return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
-      }
-      const settings = createDefaultVaultWorkspaceSettings();
-      workspaceController.setWorkspaceSettings(settings, expectedVaultId);
-      return {
-        status: "updated" as const,
-        vaultId: expectedVaultId,
-        settings,
-        appSettings,
-      };
-    });
-  });
-  ipcMain.handle(ipcChannels.openDailyNote, (_event, expectedVaultId: unknown) => {
+      return serializePrivateMutation(async () => {
+        if (workspaceController.vaultId !== expectedVaultId) {
+          return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+        }
+        const appSettings = await settingsController.resetVaultWorkspaceSettings(expectedVaultId);
+        if (workspaceController.vaultId !== expectedVaultId) {
+          return { status: "stale-vault", vaultId: workspaceController.vaultId } as const;
+        }
+        const settings = createDefaultVaultWorkspaceSettings();
+        workspaceController.setWorkspaceSettings(settings, expectedVaultId);
+        return {
+          status: "updated" as const,
+          vaultId: expectedVaultId,
+          settings,
+          appSettings,
+        };
+      });
+    },
+  );
+  handleMainRendererIpc(ipcChannels.openDailyNote, (_event, expectedVaultId: unknown) => {
     if (typeof expectedVaultId !== "string") {
       throw new Error("Opening today's daily note requires a string vault identity.");
     }
@@ -3334,7 +3361,7 @@ function registerIpcHandlers(): void {
       expectedVaultId,
     );
   });
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.renderNoteTemplate,
     (_event, templatePath: unknown, targetPath: unknown, expectedVaultId: unknown) => {
       if (
@@ -3361,7 +3388,7 @@ function registerIpcHandlers(): void {
         }));
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.formatNoteWorkflowValue,
     (_event, value: unknown, expectedVaultId: unknown) => {
       if ((value !== "date" && value !== "time") || typeof expectedVaultId !== "string") {
@@ -3381,7 +3408,7 @@ function registerIpcHandlers(): void {
       };
     },
   );
-  ipcMain.handle(ipcChannels.chooseVault, async () => {
+  handleMainRendererIpc(ipcChannels.chooseVault, async () => {
     const developmentOverride = readDevelopmentPickerOverride(app.isPackaged, process.env);
     if (developmentOverride?.status === "cancelled") {
       return {
@@ -3443,7 +3470,7 @@ function registerIpcHandlers(): void {
       } as const;
     }
   });
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.openNote,
     (_event, filePath: unknown, paneId: unknown, activate: unknown) => {
       if (
@@ -3456,7 +3483,7 @@ function registerIpcHandlers(): void {
       return workspaceController.openNote(filePath, paneId, activate);
     },
   );
-  ipcMain.handle(ipcChannels.goBack, (_event, expectedVaultId: unknown, paneId: unknown) => {
+  handleMainRendererIpc(ipcChannels.goBack, (_event, expectedVaultId: unknown, paneId: unknown) => {
     if (
       typeof expectedVaultId !== "string" ||
       !(paneId === undefined || paneId === "primary" || paneId === "secondary")
@@ -3465,16 +3492,19 @@ function registerIpcHandlers(): void {
     }
     return workspaceController.goBack(expectedVaultId, paneId);
   });
-  ipcMain.handle(ipcChannels.goForward, (_event, expectedVaultId: unknown, paneId: unknown) => {
-    if (
-      typeof expectedVaultId !== "string" ||
-      !(paneId === undefined || paneId === "primary" || paneId === "secondary")
-    ) {
-      throw new Error("Going forward requires a vault identity and optional pane ID.");
-    }
-    return workspaceController.goForward(expectedVaultId, paneId);
-  });
-  ipcMain.handle(
+  handleMainRendererIpc(
+    ipcChannels.goForward,
+    (_event, expectedVaultId: unknown, paneId: unknown) => {
+      if (
+        typeof expectedVaultId !== "string" ||
+        !(paneId === undefined || paneId === "primary" || paneId === "secondary")
+      ) {
+        throw new Error("Going forward requires a vault identity and optional pane ID.");
+      }
+      return workspaceController.goForward(expectedVaultId, paneId);
+    },
+  );
+  handleMainRendererIpc(
     ipcChannels.closeNote,
     (_event, filePath: unknown, expectedVaultId: unknown, paneId: unknown) => {
       if (
@@ -3487,7 +3517,7 @@ function registerIpcHandlers(): void {
       return workspaceController.closeNote(filePath, expectedVaultId, paneId);
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.toggleTabPin,
     (_event, filePath: unknown, paneId: unknown, expectedVaultId: unknown) => {
       if (
@@ -3500,7 +3530,7 @@ function registerIpcHandlers(): void {
       return workspaceController.toggleTabPin(filePath, paneId, expectedVaultId);
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.splitWorkspace,
     (_event, direction: unknown, expectedVaultId: unknown) => {
       if (
@@ -3512,7 +3542,7 @@ function registerIpcHandlers(): void {
       return workspaceController.splitWorkspace(direction, expectedVaultId);
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.focusWorkspacePane,
     (_event, paneId: unknown, expectedVaultId: unknown) => {
       if ((paneId !== "primary" && paneId !== "secondary") || typeof expectedVaultId !== "string") {
@@ -3521,7 +3551,7 @@ function registerIpcHandlers(): void {
       return workspaceController.focusWorkspacePane(paneId, expectedVaultId);
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.closeWorkspacePane,
     (_event, paneId: unknown, expectedVaultId: unknown) => {
       if ((paneId !== "primary" && paneId !== "secondary") || typeof expectedVaultId !== "string") {
@@ -3530,7 +3560,7 @@ function registerIpcHandlers(): void {
       return workspaceController.closeWorkspacePane(paneId, expectedVaultId);
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.moveNoteToWorkspacePane,
     (
       _event,
@@ -3555,7 +3585,7 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.reorderWorkspaceTab,
     (
       _event,
@@ -3583,7 +3613,7 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.moveNote,
     async (
       _event,
@@ -3629,7 +3659,7 @@ function registerIpcHandlers(): void {
       return response;
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.moveAttachment,
     (
       _event,
@@ -3662,7 +3692,7 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.relinkAttachment,
     (
       event,
@@ -3704,7 +3734,7 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.restoreAttachment,
     (
       event,
@@ -3750,7 +3780,7 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.insertAttachment,
     (
       event,
@@ -3804,7 +3834,7 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.insertAttachmentBatch,
     (
       event,
@@ -3887,7 +3917,7 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.deleteNote,
     (_event, filePath: unknown, expectedRevision: unknown, expectedVaultId: unknown) => {
       if (
@@ -3900,7 +3930,7 @@ function registerIpcHandlers(): void {
       return workspaceController.deleteNote(filePath, expectedRevision, expectedVaultId);
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.restoreNote,
     (_event, filePath: unknown, expectedRevision: unknown, expectedVaultId: unknown) => {
       if (
@@ -3913,7 +3943,7 @@ function registerIpcHandlers(): void {
       return workspaceController.restoreNote(filePath, expectedRevision, expectedVaultId);
     },
   );
-  ipcMain.handle(ipcChannels.noteBookmarks, async (_event, expectedVaultId: unknown) => {
+  handleMainRendererIpc(ipcChannels.noteBookmarks, async (_event, expectedVaultId: unknown) => {
     if (typeof expectedVaultId !== "string") {
       throw new Error("Bookmark loading requires a string vault identity.");
     }
@@ -3925,7 +3955,7 @@ function registerIpcHandlers(): void {
       ? { status: "ready", vaultId: expectedVaultId, paths: bookmarks.paths }
       : ({ status: "stale-vault", vaultId: workspaceController.vaultId } as const);
   });
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.setNoteBookmark,
     async (_event, filePath: unknown, bookmarked: unknown, expectedVaultId: unknown) => {
       if (
@@ -3946,7 +3976,7 @@ function registerIpcHandlers(): void {
         : ({ status: "stale-vault", vaultId: workspaceController.vaultId } as const);
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.createNote,
     (_event, filePath: unknown, content: unknown, expectedVaultId: unknown) => {
       if (
@@ -3959,7 +3989,7 @@ function registerIpcHandlers(): void {
       return workspaceController.createNote(filePath, content, expectedVaultId);
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.createWorkspaceFolder,
     (event, folderPath: unknown, expectedVaultId: unknown) => {
       if (!isMainRendererSender(event.sender)) {
@@ -3971,7 +4001,7 @@ function registerIpcHandlers(): void {
       return workspaceController.createWorkspaceFolder(folderPath, expectedVaultId);
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.saveNote,
     (
       _event,
@@ -3999,7 +4029,7 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.saveCanvas,
     (
       _event,
@@ -4019,7 +4049,7 @@ function registerIpcHandlers(): void {
       return workspaceController.saveCanvas(filePath, content, expectedRevision, expectedVaultId);
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.setNoteProperty,
     (
       _event,
@@ -4053,7 +4083,7 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.removeNoteProperty,
     (
       _event,
@@ -4078,7 +4108,7 @@ function registerIpcHandlers(): void {
       );
     },
   );
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.getEditorDraft,
     async (_event, expectedVaultId: unknown, paneId: unknown) => {
       if (
@@ -4095,7 +4125,7 @@ function registerIpcHandlers(): void {
       return draft ? ({ status: "ready", draft } as const) : ({ status: "empty" } as const);
     },
   );
-  ipcMain.handle(ipcChannels.saveEditorDraft, async (_event, value: unknown) => {
+  handleMainRendererIpc(ipcChannels.saveEditorDraft, async (_event, value: unknown) => {
     if (
       typeof value !== "object" ||
       value === null ||
@@ -4111,7 +4141,7 @@ function registerIpcHandlers(): void {
     const draft = await editorDraftStore.save(parseEditorDraft(value, vaultId));
     return { status: "saved", draft } as const;
   });
-  ipcMain.handle(
+  handleMainRendererIpc(
     ipcChannels.clearEditorDraft,
     async (_event, expectedVaultId: unknown, draftId: unknown, paneId: unknown) => {
       if (
@@ -4133,24 +4163,27 @@ function registerIpcHandlers(): void {
       } as const;
     },
   );
-  ipcMain.handle(ipcChannels.runCommand, (event, commandId: unknown, editorContext: unknown) => {
-    assertMainRendererPluginIpcSender(
-      isMainRendererSender(event.sender),
-      "Plugin command execution",
-    );
-    if (typeof commandId !== "string" || commandId.length === 0) {
-      throw new Error("Run command requires a string identifier.");
-    }
-    return serializePluginCatalogOperation(
-      () =>
-        workspaceController.runPluginCommand(
-          commandId,
-          editorContext === undefined ? undefined : parsePluginEditorContext(editorContext),
-        ),
-      "runtime-command-failed",
-    );
-  });
-  ipcMain.handle(ipcChannels.waitForPluginMutations, (event, optionsValue: unknown) => {
+  handleMainRendererIpc(
+    ipcChannels.runCommand,
+    (event, commandId: unknown, editorContext: unknown) => {
+      assertMainRendererPluginIpcSender(
+        isMainRendererSender(event.sender),
+        "Plugin command execution",
+      );
+      if (typeof commandId !== "string" || commandId.length === 0) {
+        throw new Error("Run command requires a string identifier.");
+      }
+      return serializePluginCatalogOperation(
+        () =>
+          workspaceController.runPluginCommand(
+            commandId,
+            editorContext === undefined ? undefined : parsePluginEditorContext(editorContext),
+          ),
+        "runtime-command-failed",
+      );
+    },
+  );
+  handleMainRendererIpc(ipcChannels.waitForPluginMutations, (event, optionsValue: unknown) => {
     assertMainRendererPluginIpcSender(
       isMainRendererSender(event.sender),
       "Waiting for plugin mutations",
@@ -4158,7 +4191,7 @@ function registerIpcHandlers(): void {
     const options = parsePluginMutationWaitOptions(optionsValue);
     return serializePluginOperation(() => workspaceController.waitForPluginMutations(options));
   });
-  ipcMain.handle(ipcChannels.reloadPlugin, (event, pluginId: unknown) => {
+  handleMainRendererIpc(ipcChannels.reloadPlugin, (event, pluginId: unknown) => {
     assertMainRendererPluginIpcSender(isMainRendererSender(event.sender), "Plugin reload");
     if (pluginId !== undefined && typeof pluginId !== "string") {
       throw new Error("Plugin reload requires an optional string identifier.");
@@ -4172,7 +4205,7 @@ function registerIpcHandlers(): void {
       typeof pluginId === "string" ? { pluginId } : {},
     );
   });
-  ipcMain.handle(ipcChannels.unloadPlugin, (event, pluginId: unknown) => {
+  handleMainRendererIpc(ipcChannels.unloadPlugin, (event, pluginId: unknown) => {
     assertMainRendererPluginIpcSender(isMainRendererSender(event.sender), "Plugin unload");
     if (pluginId !== undefined && typeof pluginId !== "string") {
       throw new Error("Plugin unload requires an optional string identifier.");
@@ -4183,7 +4216,7 @@ function registerIpcHandlers(): void {
       typeof pluginId === "string" ? { pluginId } : {},
     );
   });
-  ipcMain.handle(ipcChannels.markPluginLayoutReady, (event) => {
+  handleMainRendererIpc(ipcChannels.markPluginLayoutReady, (event) => {
     assertMainRendererPluginIpcSender(
       isMainRendererSender(event.sender),
       "Plugin layout readiness",
@@ -4193,7 +4226,7 @@ function registerIpcHandlers(): void {
       "runtime-load-failed",
     );
   });
-  ipcMain.handle(ipcChannels.openPluginSettings, (event, pluginId: unknown) => {
+  handleMainRendererIpc(ipcChannels.openPluginSettings, (event, pluginId: unknown) => {
     assertMainRendererPluginIpcSender(
       isMainRendererSender(event.sender),
       "Opening plugin settings",
@@ -4207,28 +4240,34 @@ function registerIpcHandlers(): void {
       { pluginId },
     );
   });
-  ipcMain.handle(ipcChannels.openPluginView, (event, viewType: unknown, filePath: unknown) => {
-    assertMainRendererPluginIpcSender(isMainRendererSender(event.sender), "Opening a plugin view");
-    if (
-      typeof viewType !== "string" ||
-      viewType.length === 0 ||
-      !(filePath === undefined || (typeof filePath === "string" && filePath.length > 0))
-    ) {
-      throw new Error("Opening a plugin view requires a view type and optional file path.");
-    }
-    return serializePluginCatalogOperation(
-      () => workspaceController.openPluginView(viewType, filePath),
-      "runtime-view-failed",
-    );
-  });
-  ipcMain.handle(ipcChannels.closePluginView, (event) => {
+  handleMainRendererIpc(
+    ipcChannels.openPluginView,
+    (event, viewType: unknown, filePath: unknown) => {
+      assertMainRendererPluginIpcSender(
+        isMainRendererSender(event.sender),
+        "Opening a plugin view",
+      );
+      if (
+        typeof viewType !== "string" ||
+        viewType.length === 0 ||
+        !(filePath === undefined || (typeof filePath === "string" && filePath.length > 0))
+      ) {
+        throw new Error("Opening a plugin view requires a view type and optional file path.");
+      }
+      return serializePluginCatalogOperation(
+        () => workspaceController.openPluginView(viewType, filePath),
+        "runtime-view-failed",
+      );
+    },
+  );
+  handleMainRendererIpc(ipcChannels.closePluginView, (event) => {
     assertMainRendererPluginIpcSender(isMainRendererSender(event.sender), "Closing a plugin view");
     return serializePluginCatalogOperation(
       () => closeCompatibilityPluginView(),
       "runtime-unload-failed",
     );
   });
-  ipcMain.handle(ipcChannels.setPluginSurfaceBounds, (event, value: unknown) => {
+  handleMainRendererIpc(ipcChannels.setPluginSurfaceBounds, (event, value: unknown) => {
     assertMainRendererPluginIpcSender(
       isMainRendererSender(event.sender),
       "Plugin surface bounds updates",
@@ -4253,7 +4292,7 @@ function registerIpcHandlers(): void {
     };
     updatePluginViewBounds();
   });
-  ipcMain.handle(ipcChannels.setPluginSurfaceVisible, (event, visible: unknown) => {
+  handleMainRendererIpc(ipcChannels.setPluginSurfaceVisible, (event, visible: unknown) => {
     assertMainRendererPluginIpcSender(
       isMainRendererSender(event.sender),
       "Plugin surface visibility updates",
@@ -4263,7 +4302,7 @@ function registerIpcHandlers(): void {
     }
     setPluginSurfacePresentationVisible(visible);
   });
-  ipcMain.handle(ipcChannels.setPluginSurfaceTheme, async (event, theme: unknown) => {
+  handleMainRendererIpc(ipcChannels.setPluginSurfaceTheme, async (event, theme: unknown) => {
     assertMainRendererPluginIpcSender(
       isMainRendererSender(event.sender),
       "Plugin surface theme updates",
@@ -4273,52 +4312,55 @@ function registerIpcHandlers(): void {
     }
     await applyPluginSurfaceTheme(theme);
   });
-  ipcMain.handle(ipcChannels.setPluginSurfaceAccessibility, async (event, value: unknown) => {
-    assertMainRendererPluginIpcSender(
-      isMainRendererSender(event.sender),
-      "Plugin surface accessibility updates",
-    );
-    if (!value || typeof value !== "object") {
-      throw new Error("Plugin surface accessibility state must be an object.");
-    }
-    const state = value as Record<string, unknown>;
-    if (
-      typeof state.highContrast !== "boolean" ||
-      typeof state.reducedMotion !== "boolean" ||
-      typeof state.reducedTransparency !== "boolean" ||
-      typeof state.accent !== "string" ||
-      typeof state.uiFontScale !== "number" ||
-      typeof state.textFontScale !== "number" ||
-      typeof state.editorFontSize !== "number" ||
-      typeof state.editorLineHeight !== "number"
-    ) {
-      throw new Error("Plugin surface accessibility state is malformed.");
-    }
-    if (
-      !accessibilityAccentChoices.includes(
-        state.accent as (typeof accessibilityAccentChoices)[number],
-      )
-    ) {
-      throw new Error("Plugin surface accessibility accent is unsupported.");
-    }
-    if (
-      state.uiFontScale < 0.8 ||
-      state.uiFontScale > 1.6 ||
-      state.textFontScale < 0.8 ||
-      state.textFontScale > 1.8 ||
-      state.editorFontSize < 11 ||
-      state.editorFontSize > 32 ||
-      state.editorLineHeight < 1.2 ||
-      state.editorLineHeight > 2.4 ||
-      !Number.isFinite(state.uiFontScale) ||
-      !Number.isFinite(state.textFontScale) ||
-      !Number.isFinite(state.editorFontSize) ||
-      !Number.isFinite(state.editorLineHeight)
-    ) {
-      throw new Error("Plugin surface accessibility numeric values are out of range.");
-    }
-    await applyPluginSurfaceAccessibility(value as EffectiveAccessibilityPreferences);
-  });
+  handleMainRendererIpc(
+    ipcChannels.setPluginSurfaceAccessibility,
+    async (event, value: unknown) => {
+      assertMainRendererPluginIpcSender(
+        isMainRendererSender(event.sender),
+        "Plugin surface accessibility updates",
+      );
+      if (!value || typeof value !== "object") {
+        throw new Error("Plugin surface accessibility state must be an object.");
+      }
+      const state = value as Record<string, unknown>;
+      if (
+        typeof state.highContrast !== "boolean" ||
+        typeof state.reducedMotion !== "boolean" ||
+        typeof state.reducedTransparency !== "boolean" ||
+        typeof state.accent !== "string" ||
+        typeof state.uiFontScale !== "number" ||
+        typeof state.textFontScale !== "number" ||
+        typeof state.editorFontSize !== "number" ||
+        typeof state.editorLineHeight !== "number"
+      ) {
+        throw new Error("Plugin surface accessibility state is malformed.");
+      }
+      if (
+        !accessibilityAccentChoices.includes(
+          state.accent as (typeof accessibilityAccentChoices)[number],
+        )
+      ) {
+        throw new Error("Plugin surface accessibility accent is unsupported.");
+      }
+      if (
+        state.uiFontScale < 0.8 ||
+        state.uiFontScale > 1.6 ||
+        state.textFontScale < 0.8 ||
+        state.textFontScale > 1.8 ||
+        state.editorFontSize < 11 ||
+        state.editorFontSize > 32 ||
+        state.editorLineHeight < 1.2 ||
+        state.editorLineHeight > 2.4 ||
+        !Number.isFinite(state.uiFontScale) ||
+        !Number.isFinite(state.textFontScale) ||
+        !Number.isFinite(state.editorFontSize) ||
+        !Number.isFinite(state.editorLineHeight)
+      ) {
+        throw new Error("Plugin surface accessibility numeric values are out of range.");
+      }
+      await applyPluginSurfaceAccessibility(value as EffectiveAccessibilityPreferences);
+    },
+  );
   workspaceController.onSnapshot((snapshot) => {
     if (initialWorkspaceRecoveryPending) {
       return;
@@ -4365,7 +4407,16 @@ async function createWindow(trustedWorkspace = false): Promise<void> {
       contextIsolation: true,
       nodeIntegration: trustedWorkspace,
       sandbox: !trustedWorkspace,
-      ...(trustedWorkspace ? { additionalArguments: ["--threadleaf-trusted-workspace"] } : {}),
+      ...(trustedWorkspace
+        ? {
+            additionalArguments: [
+              "--threadleaf-trusted-workspace",
+              ...(trustedWorkspaceProbeEnabled(app.isPackaged, process.env)
+                ? [trustedWorkspaceProbeArgument]
+                : []),
+            ],
+          }
+        : {}),
     },
   });
   mainWindow = window;

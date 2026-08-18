@@ -36,6 +36,7 @@ interface IpcRendererLike {
 interface TrustedRuntimeBridge {
   hostBundle: string;
   ipcRenderer: IpcRendererLike;
+  workspaceTestProbeEnabled: boolean;
   nodeIsBuiltin(request: string): boolean;
   nodeRequire(request: string): unknown;
   nodeResolve(request: string, options?: { paths?: string[] }): string;
@@ -132,32 +133,57 @@ const trustedRuntime = (
 ).__threadleafTrustedRuntime;
 const ipcRenderer = trustedRuntime?.ipcRenderer;
 
-function installTrustedWorkspaceProbe(): void {
-  if (!ipcRenderer) {
-    return;
+function installTrustedWorkspaceProbe(): () => void {
+  if (!ipcRenderer || trustedRuntime?.workspaceTestProbeEnabled !== true) {
+    return () => undefined;
   }
-  Object.defineProperty(window, "__threadleafTrustedHostModules", {
-    configurable: true,
-    enumerable: false,
-    value: trustedHostModules,
-    writable: false,
-  });
-  Object.defineProperty(window, "__threadleafTrustedWorkspaceTest", {
-    configurable: true,
-    enumerable: false,
-    value: {
+  const values = {
+    __threadleafTrustedHostModules: trustedHostModules,
+    __threadleafTrustedWorkspaceTest: {
       rendererIdentity: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     },
-    writable: false,
-  });
-  Object.defineProperty(window, "__threadleafTrustedWorkspaceDispatch", {
-    configurable: true,
-    enumerable: false,
-    value: (paneId: "primary" | "secondary", content: string): void => {
+    __threadleafTrustedWorkspaceDispatch: (paneId: "primary" | "secondary", content: string) => {
       editorDispatcher?.(paneId, content);
     },
-    writable: false,
+  } as const;
+  const descriptors = Object.keys(values).map((name) => ({
+    descriptor: Object.getOwnPropertyDescriptor(window, name),
+    name,
+    value: values[name as keyof typeof values],
+  }));
+  if (descriptors.some(({ descriptor }) => descriptor && !descriptor.configurable)) {
+    return () => undefined;
+  }
+  const installedDescriptors = descriptors.map(({ name, value }) => {
+    const descriptor = {
+      configurable: true,
+      enumerable: false,
+      value,
+      writable: false,
+    } as const;
+    Object.defineProperty(window, name, descriptor);
+    return { descriptor, name };
   });
+  return () => {
+    for (const { descriptor: installed, name } of installedDescriptors) {
+      const current = Object.getOwnPropertyDescriptor(window, name);
+      if (
+        !current ||
+        current.value !== installed.value ||
+        current.configurable !== installed.configurable ||
+        current.enumerable !== installed.enumerable ||
+        current.writable !== installed.writable
+      ) {
+        continue;
+      }
+      const previous = descriptors.find((entry) => entry.name === name)?.descriptor;
+      if (previous) {
+        Object.defineProperty(window, name, previous);
+      } else {
+        Reflect.deleteProperty(window, name);
+      }
+    }
+  };
 }
 
 function createModuleResolver(
@@ -200,6 +226,7 @@ function createModuleResolver(
 class TrustedPluginRendererService {
   private host: PluginHostLike | null = null;
   private restoreCompatibilityGlobals: (() => void) | null = null;
+  private restoreTrustedWorkspaceProbe: (() => void) | null = null;
   private restoreTrustedNodeGlobals: (() => void) | null = null;
 
   async handle(request: PluginRendererRequest): Promise<unknown> {
@@ -229,7 +256,7 @@ class TrustedPluginRendererService {
           writer: this.createVaultWriter(),
         }) as PluginHostLike;
         this.restoreCompatibilityGlobals = this.installCompatibilityGlobals(this.host);
-        installTrustedWorkspaceProbe();
+        this.restoreTrustedWorkspaceProbe = installTrustedWorkspaceProbe();
         return this.host.getSnapshot();
       }
       case "get-snapshot":
@@ -279,7 +306,7 @@ class TrustedPluginRendererService {
   }
 
   private evaluateHostFactory(): TrustedPluginHostFactory {
-    if (!trustedRuntime) {
+    if (!trustedRuntime || !nodeRequire) {
       throw new Error("Trusted workspace host bundle is unavailable.");
     }
     const moduleRecord: { exports: unknown } = { exports: {} };
@@ -289,7 +316,11 @@ class TrustedPluginRendererService {
       "require",
       `${trustedRuntime.hostBundle}\n//# sourceURL=threadleaf-trusted-plugin-host.cjs`,
     );
-    compiled(moduleRecord, moduleRecord.exports, nodeRequire);
+    compiled(
+      moduleRecord,
+      moduleRecord.exports,
+      createModuleResolver(nodeRequire, trustedHostModules),
+    );
     return moduleRecord.exports as TrustedPluginHostFactory;
   }
 
@@ -301,6 +332,8 @@ class TrustedPluginRendererService {
     } finally {
       this.restoreCompatibilityGlobals?.();
       this.restoreCompatibilityGlobals = null;
+      this.restoreTrustedWorkspaceProbe?.();
+      this.restoreTrustedWorkspaceProbe = null;
       this.restoreTrustedNodeGlobals?.();
       this.restoreTrustedNodeGlobals = null;
     }

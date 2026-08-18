@@ -88,6 +88,7 @@ import type {
 import type { WorkspaceDockId, WorkspaceLayoutSnapshot } from "../shared/workspace-layout";
 import type { WorkspaceOpenTransferAcknowledgement } from "../shared/workspace-open-diagnostics";
 import type { VaultWorkspaceMode, VaultWorkspaceSettings } from "../shared/workspace-settings";
+import { trustedWorkspaceProbeArgument } from "./trusted-workspace-probe";
 
 function acknowledgeWorkspaceOpenReceipt(snapshot: RuntimeSnapshot): RuntimeSnapshot {
   const receipt = snapshot.workspaceOpenDiagnostics;
@@ -758,6 +759,7 @@ const bridge: ThreadleafBridge = {
 
 if (process.argv.includes("--threadleaf-trusted-workspace")) {
   try {
+    const workspaceTestProbeEnabled = process.argv.includes(trustedWorkspaceProbeArgument);
     const { readFileSync } = require("node:fs") as typeof import("node:fs");
     const { join } = require("node:path") as typeof import("node:path");
     const createTrustedCryptoFacade = () => {
@@ -792,6 +794,7 @@ if (process.argv.includes("--threadleaf-trusted-workspace")) {
       return require(request);
     };
     contextBridge.exposeInMainWorld("__threadleafTrustedRuntime", {
+      workspaceTestProbeEnabled,
       hostBundle: readFileSync(join(__dirname, "trusted-plugin-host.cjs"), "utf8"),
       ipcRenderer: {
         invoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args),

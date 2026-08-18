@@ -1513,9 +1513,20 @@ const sourceHighlight = HighlightStyle.define([
 ]);
 const editorAccess = new Compartment();
 const editorPresentation = new Compartment();
-const editorCompatibility = new Compartment();
+const editorCompatibilityByPane = new Map<WorkspacePaneId, Compartment>([
+  ["primary", new Compartment()],
+  ["secondary", new Compartment()],
+]);
 let editorReadOnly = false;
 let trustedEditorExtensions: Extension = [];
+
+function editorCompatibilityForPane(paneId: WorkspacePaneId): Compartment {
+  const compartment = editorCompatibilityByPane.get(paneId);
+  if (!compartment) {
+    throw new Error(`Missing trusted editor compatibility compartment: ${paneId}`);
+  }
+  return compartment;
+}
 
 function livePreviewOptions(paneId: WorkspacePaneId): LivePreviewOptions {
   const sourceNotePath = (): string | null => {
@@ -1642,7 +1653,7 @@ function editorExtensions(paneId: WorkspacePaneId) {
       EditorView.editable.of(!editorReadOnly),
     ]),
     editorPresentation.of(editorPresentationExtension(paneId)),
-    editorCompatibility.of(trustedEditorExtensions),
+    editorCompatibilityForPane(paneId).of(trustedEditorExtensions),
     syntaxHighlighting(sourceHighlight),
     EditorView.contentAttributes.of({
       "aria-label": "Markdown editor",
@@ -1744,7 +1755,7 @@ setTrustedEditorExtensionSink((extensions) => {
       continue;
     }
     editorView.dispatch({
-      effects: editorCompatibility.reconfigure(extensions as Extension),
+      effects: editorCompatibilityForPane(paneId).reconfigure(extensions as Extension),
     });
   }
 });

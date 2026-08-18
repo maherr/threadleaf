@@ -32,7 +32,7 @@ describe("native attachment action IPC", () => {
     expect(mainSource).toContain("shell.openPath(absolutePath)");
     expect(mainSource).toContain("shell.showItemInFolder(absolutePath)");
     expect(mainSource).toMatch(
-      /THREADLEAF_TEST_NATIVE_ATTACHMENT_RECEIVER === "stdout-v1"\s*&&\s*process\.argv\.some/u,
+      /!app\.isPackaged\s*&&\s*process\.env\.THREADLEAF_TEST_NATIVE_ATTACHMENT_RECEIVER === "stdout-v1"\s*&&\s*process\.argv\.some/u,
     );
     expect(mainSource).toContain('createHash("sha256").update(absolutePath, "utf8")');
   });

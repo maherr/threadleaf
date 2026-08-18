@@ -9,6 +9,21 @@ import { ItemView, MarkdownView, WorkspaceLeaf } from "./obsidian-ui-compat";
 import { CompatibilityIntegrationRegistry, Workspace } from "./obsidian-workspace-compat";
 
 describe("Obsidian compatibility workspace lifecycle", () => {
+  it("orders editor extensions by active plugin and then registration sequence", () => {
+    const compatibility = new CompatibilityIntegrationRegistry();
+    const firstA = { id: "first-a" };
+    const firstB = { id: "first-b" };
+    const second = { id: "second" };
+    compatibility.registerEditorExtension("first", firstA);
+    compatibility.registerEditorExtension("second", second);
+    compatibility.registerEditorExtension("first", firstB);
+
+    compatibility.setEditorExtensionOwnerOrder(["first", "second"]);
+    expect(compatibility.getEditorExtensions()).toEqual([firstA, firstB, second]);
+    compatibility.setEditorExtensionOwnerOrder(["second", "first"]);
+    expect(compatibility.getEditorExtensions()).toEqual([second, firstA, firstB]);
+  });
+
   it("dispatches startup callbacks and immediately runs callbacks registered after readiness", async () => {
     const workspace = new Workspace();
     const events: string[] = [];

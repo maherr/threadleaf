@@ -2,17 +2,17 @@
   "$schema": "./reviewed-authority-profile.v1.schema.json",
   "schemaVersion": 1,
   "profileId": "threadleaf-trusted-state-fixture-0.1.0",
-  "profileRevision": 1,
+  "profileRevision": 2,
   "packageIdentity": {
     "pluginId": "threadleaf-trusted-state-fixture",
     "manifestVersion": "0.1.0",
     "distributionTag": "0.1.0",
     "manifestSha256": "6cddabcd0e357820b065eec3f105e0691fa069d90271d534ae67af9005ce8f12",
-    "mainSha256": "cabe901388ab9af85c5e37eba210db334cc9c34cccfecaeeaacb2b75cf9a1493",
+    "mainSha256": "62f5750ac4fb6903ab49f7c77196a67d43ddd218c568679e1db0c28c72c2f621",
     "stylesSha256": null,
-    "packageTreeSha256": "0fa7cb4f0c95c2832c60346430e2b34061582e44c30ef0fda237e3762d16b4c1"
+    "packageTreeSha256": "20891faa5f9891ae222c22eb9f40642cc6d287abe45f49ad36102245292e6e5d"
   },
-  "packageIdentityDigest": "90929f532620d2748d3d4cac977a8dbd8c42161c4aa891ae2c52f9c1ced14d55",
+  "packageIdentityDigest": "d1be7469f5df449a6ecf9d4ba35d11e369014cac5a79343fe66ed5d0aaec6583",
   "expectedStaticCapabilities": ["editor-extension"],
   "requiredAuthorities": [
     "network",
@@ -24,5 +24,5 @@
   ],
   "executionProfile": "trusted-node-renderer",
   "allowedPlatforms": ["linux", "darwin", "win32"],
-  "authorityDigest": "2cc1150cf7c68615fa60a082d119d0f13ac250880e34a67baf9f54959b9ec2d1"
+  "authorityDigest": "9b45d7f300f8e80e38b752758087f8b9a28d99b3b07534461a6093349d293a46"
 }

@@ -1,5 +1,19 @@
 import { defineConfig } from "tsup";
 
+const trustedWorkspaceRealmModules = [
+  "@codemirror/autocomplete",
+  "@codemirror/collab",
+  "@codemirror/commands",
+  "@codemirror/language",
+  "@codemirror/lint",
+  "@codemirror/search",
+  "@codemirror/state",
+  "@codemirror/view",
+  "@lezer/common",
+  "@lezer/highlight",
+  "@lezer/lr",
+];
+
 const shared = {
   outDir: "dist/main",
   format: "cjs" as const,
@@ -29,11 +43,11 @@ export default defineConfig([
   {
     ...shared,
     entry: { "trusted-plugin-host": "src/main/trusted-plugin-host.ts" },
-    // The host bundle is evaluated in the trusted page realm. Bundle userland dependencies so
-    // class instances and rule registries are constructed in that realm instead of crossing the
-    // isolated preload bridge as proxied objects. Node built-ins stay external and use the
-    // narrow trusted bridge.
-    noExternal: [/^(?!node:|electron$).+/u],
+    // The host bundle is evaluated in the trusted page realm. Most userland dependencies are
+    // bundled into that realm, while CodeMirror and Lezer stay external so every import resolves
+    // through the renderer-owned identity table. Node built-ins use the narrow trusted bridge.
+    external: [...shared.external, ...trustedWorkspaceRealmModules],
+    noExternal: [/^(?!node:|electron$|@codemirror(?:\/|$)|@lezer(?:\/|$)).+/u],
     clean: false,
   },
 ]);

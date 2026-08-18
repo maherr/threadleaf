@@ -352,8 +352,20 @@ async function copyFixtureVaults() {
   await fs.writeFile(path.join(secondVaultPath, "Second Vault.md"), "# Second vault\n", "utf8");
 }
 
-async function launchApplication(expectedTopology) {
+async function launchApplication(expectedTopology, { enableProbe = false } = {}) {
   port = await availablePort();
+  const environment = {
+    ...process.env,
+    ELECTRON_OZONE_PLATFORM_HINT: "x11",
+    THREADLEAF_VAULT_PATH: vaultPath,
+    THREADLEAF_TEST_PICKER_PATH: pickerLink,
+    THREADLEAF_TRUSTED_WORKSPACE_RUN: processMarker,
+    THREADLEAF_WORKSPACE_SETTINGS_DELAY_MS: "10000",
+    ...(enableProbe ? { THREADLEAF_TRUSTED_WORKSPACE_TEST: "1" } : {}),
+  };
+  if (!enableProbe) {
+    delete environment.THREADLEAF_TRUSTED_WORKSPACE_TEST;
+  }
   child = spawn(
     "xvfb-run",
     [
@@ -370,15 +382,7 @@ async function launchApplication(expectedTopology) {
     ],
     {
       cwd: appRoot,
-      env: {
-        ...process.env,
-        ELECTRON_OZONE_PLATFORM_HINT: "x11",
-        THREADLEAF_VAULT_PATH: vaultPath,
-        THREADLEAF_TEST_PICKER_PATH: pickerLink,
-        THREADLEAF_TRUSTED_WORKSPACE_RUN: processMarker,
-        THREADLEAF_TRUSTED_WORKSPACE_TEST: "1",
-        THREADLEAF_WORKSPACE_SETTINGS_DELAY_MS: "10000",
-      },
+      env: environment,
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -582,8 +586,30 @@ async function editorSurfaceCounts() {
   }))()`);
 }
 
-async function assertTrustedRealm(vaultId) {
+async function assertTrustedRealm(vaultId, probeEnabled = true) {
   phase = "trusted shared realm and CodeMirror identity";
+  if (!probeEnabled) {
+    const current = await snapshot();
+    assert(
+      current.plugins?.every((plugin) => plugin.state === "loaded"),
+      `Ungated trusted plugin state was not fully loaded: ${JSON.stringify(current.plugins)}`,
+    );
+    assert(
+      current.commands?.some((command) => command.id === "inspection-safe:inspection-safe-command"),
+      "The ungated trusted command plugin did not register.",
+    );
+    const probeGlobals = await evaluate(`(() => ({
+      hostModules: Boolean(window.__threadleafTrustedHostModules),
+      identity: Boolean(window.__threadleafTrustedWorkspaceTest),
+      dispatch: Boolean(window.__threadleafTrustedWorkspaceDispatch),
+    }))()`);
+    assert(
+      !probeGlobals.hostModules && !probeGlobals.identity && !probeGlobals.dispatch,
+      `The ungated trusted renderer exposed the test probe: ${JSON.stringify(probeGlobals)}`,
+    );
+    assert(vaultId === current.vault.id, "Trusted realm assertion used a stale vault identity.");
+    return;
+  }
   const gate = await waitFor(
     async () => evaluate("window.__threadleafTrustedGate ?? null"),
     "Trusted plugins did not execute in the main renderer realm",
@@ -602,12 +628,23 @@ async function assertTrustedRealm(vaultId) {
     stateNamespaceIsHostTable: gate.state?.realm?.namespaceIsHostTable,
     stateEditorStateIsHostTable: gate.state?.realm?.editorStateIsHostTable,
     stateFieldIsHostTable: gate.state?.realm?.stateFieldIsHostTable,
+    stateFacetIsHostTable: gate.state?.realm?.facetIsHostTable,
+    stateCompartmentIsHostTable: gate.state?.realm?.compartmentIsHostTable,
     viewNamespaceIsHostTable: gate.view?.realm?.namespaceIsHostTable,
     viewEditorViewIsHostTable: gate.view?.realm?.editorViewIsHostTable,
     viewPluginIsHostTable: gate.view?.realm?.viewPluginIsHostTable,
   })) {
     assert(value === true, `CodeMirror identity proof failed: ${name}.`);
   }
+  const probeGlobals = await evaluate(`(() => ({
+    hostModules: Boolean(window.__threadleafTrustedHostModules),
+    identity: Boolean(window.__threadleafTrustedWorkspaceTest),
+    dispatch: Boolean(window.__threadleafTrustedWorkspaceDispatch),
+  }))()`);
+  assert(
+    probeGlobals.hostModules && probeGlobals.identity && probeGlobals.dispatch,
+    `The explicitly gated trusted renderer did not expose the complete test probe: ${JSON.stringify(probeGlobals)}`,
+  );
   const tableProbe = await evaluate(`(() => {
     const table = window.__threadleafTrustedHostModules;
     const state = table?.["@codemirror/state"];
@@ -987,8 +1024,16 @@ async function main() {
   await writeVaultSettings("trusted-workspace", hashes, firstVaultId, secondVaultId);
   await fs.symlink(secondVaultPath, pickerLink);
 
-  phase = "trusted launch";
+  phase = "ungated trusted launch";
   await launchApplication("trusted-workspace");
+  const ungatedInitial = await waitForReady(vaultPath);
+  await grantPlugins(ungatedInitial.vault.id, hashes);
+  await waitForReady(vaultPath, Object.keys(hashes));
+  await assertTrustedRealm(ungatedInitial.vault.id, false);
+  await closeApplication();
+
+  phase = "gated trusted launch";
+  await launchApplication("trusted-workspace", { enableProbe: true });
   const initial = await waitForReady(vaultPath);
   await grantPlugins(initial.vault.id, hashes);
   await waitForReady(vaultPath, Object.keys(hashes));

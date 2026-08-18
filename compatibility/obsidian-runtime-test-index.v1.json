@@ -274,13 +274,13 @@
     {
       "id": "obsidian-runtime.workspace-leaf-open.v1",
       "path": "src/runtime/obsidian-workspace-compat.test.ts",
-      "line": 289,
+      "line": 304,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.workspace-link-context-menu.v1",
       "path": "src/runtime/obsidian-workspace-compat.test.ts",
-      "line": 231,
+      "line": 246,
       "status": "positive"
     },
     {

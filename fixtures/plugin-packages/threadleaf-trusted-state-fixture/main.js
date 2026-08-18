@@ -1,5 +1,5 @@
 const { Plugin } = require("obsidian");
-const { EditorState, StateField } = require("@codemirror/state");
+const { Compartment, EditorState, Facet, StateField } = require("@codemirror/state");
 const { EditorView } = require("@codemirror/view");
 
 function evidence() {
@@ -14,6 +14,8 @@ function evidence() {
   };
   return root.state;
 }
+
+const stateFacet = Facet.define();
 
 const stateField = StateField.define({
   create() {
@@ -34,6 +36,7 @@ const stateField = StateField.define({
 const stateEditorAttributes = EditorView.editorAttributes.of({
   class: "threadleaf-trusted-state-fixture",
 });
+const stateCompartment = new Compartment();
 
 module.exports = class ThreadleafTrustedStateFixture extends Plugin {
   async onload() {
@@ -47,6 +50,8 @@ module.exports = class ThreadleafTrustedStateFixture extends Plugin {
       namespaceIsHostTable: hostState === require("@codemirror/state"),
       editorStateIsHostTable: hostState?.EditorState === EditorState,
       stateFieldIsHostTable: hostState?.StateField === StateField,
+      facetIsHostTable: hostState?.Facet === Facet,
+      compartmentIsHostTable: hostState?.Compartment === Compartment,
     };
     document.documentElement.dataset.threadleafTrustedStateFixture = "loaded";
     this.register(() => {
@@ -58,7 +63,11 @@ module.exports = class ThreadleafTrustedStateFixture extends Plugin {
       globalThis.__threadleafTrustedGate.pendingLoadStarted = true;
       await new Promise(() => {});
     }
-    this.registerEditorExtension([stateField, stateEditorAttributes]);
+    this.registerEditorExtension([
+      stateField,
+      stateEditorAttributes,
+      stateCompartment.of(stateFacet.of("threadleaf-trusted-state-fixture")),
+    ]);
   }
 
   onunload() {
