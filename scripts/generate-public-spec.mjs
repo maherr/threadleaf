@@ -1896,6 +1896,21 @@ function dataForModel(model) {
   ]);
 }
 
+function textDifference(actual, expected) {
+  const limit = Math.min(actual.length, expected.length);
+  let offset = 0;
+  while (offset < limit && actual[offset] === expected[offset]) {
+    offset += 1;
+  }
+  return [
+    `first difference at UTF-16 offset ${offset}`,
+    `actual=${JSON.stringify(actual.slice(offset, offset + 120))}`,
+    `expected=${JSON.stringify(expected.slice(offset, offset + 120))}`,
+    `actualSha256=${sha256(Buffer.from(actual))}`,
+    `expectedSha256=${sha256(Buffer.from(expected))}`,
+  ].join("; ");
+}
+
 function formatJson(fileName, value) {
   const binary = createRequire(import.meta.url).resolve("@biomejs/biome/bin/biome");
   const raw = `${JSON.stringify(value, null, 2)}\n`;
@@ -1920,7 +1935,10 @@ async function writeOrCheck(filePath, expected) {
     } catch (error) {
       fail(`${relative} is missing: ${error instanceof Error ? error.message : String(error)}`);
     }
-    assert(actual === expected, `${relative} is stale; run pnpm public-spec:build`);
+    assert(
+      actual === expected,
+      `${relative} is stale (${textDifference(actual, expected)}); run pnpm public-spec:build`,
+    );
   } else {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, expected, "utf8");
