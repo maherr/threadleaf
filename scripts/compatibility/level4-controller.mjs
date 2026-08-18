@@ -461,6 +461,21 @@ function mapFailureState(value) {
   return "failed";
 }
 
+async function syncDirectoryHandle(handle) {
+  try {
+    await handle.sync();
+  } catch (error) {
+    if (
+      process.platform !== "win32" ||
+      !(error instanceof Error) ||
+      !("code" in error) ||
+      (error.code !== "EISDIR" && error.code !== "EPERM" && error.code !== "EINVAL")
+    ) {
+      throw error;
+    }
+  }
+}
+
 async function writeNoReplace(
   filePath,
   bytes,
@@ -515,7 +530,7 @@ async function writeNoReplace(
       if (directoryOpen) await directoryOpen();
       directoryHandle = await fs.open(directoryPath, "r");
       if (directorySync) await directorySync();
-      await directoryHandle.sync();
+      await syncDirectoryHandle(directoryHandle);
     } finally {
       await directoryHandle?.close();
     }
@@ -524,7 +539,7 @@ async function writeNoReplace(
     let finalDirectoryHandle;
     try {
       finalDirectoryHandle = await fs.open(directoryPath, "r");
-      await finalDirectoryHandle.sync();
+      await syncDirectoryHandle(finalDirectoryHandle);
     } finally {
       await finalDirectoryHandle?.close();
     }

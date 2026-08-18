@@ -2,8 +2,8 @@
   "manifestId": "threadleaf-level4-controller-main",
   "manifestVersion": 1,
   "controllerVersion": "level4-controller-v2-phase0",
-  "controllerExecutableSha256": "fd076103d26cf31826d6f0075a81b9a45a2cbe14da3e5fb7f8e973e52abb7c34",
-  "executableClosureSha256": "6b5285798a16fd3d115ceeb45abf8519baea7667fee18e03ed0167eb91dcc2b8",
+  "controllerExecutableSha256": "6b347d6ab618099d84c614b6f0142bf818fe075799887e3f980d8af4cac17939",
+  "executableClosureSha256": "db767ba232d9dbbf2ec721b3f401865ea8d566b07bb62448a75d3ac86d3e39fa",
   "executableClosure": {
     "schemaVersion": 1,
     "roots": [
@@ -23,8 +23,8 @@
       },
       {
         "path": "scripts/compatibility/level4-controller.mjs",
-        "bytes": 27864,
-        "sha256": "fd076103d26cf31826d6f0075a81b9a45a2cbe14da3e5fb7f8e973e52abb7c34"
+        "bytes": 28225,
+        "sha256": "6b347d6ab618099d84c614b6f0142bf818fe075799887e3f980d8af4cac17939"
       },
       {
         "path": "scripts/compatibility/level4-verifier.mjs",
