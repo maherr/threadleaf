@@ -15,7 +15,13 @@ const evidencePath = path.resolve(
   process.env.THREADLEAF_LIFECYCLE_ARTIFACT_DIR ??
     path.join(os.tmpdir(), "threadleaf-lifecycle-evidence"),
 );
-const scratchPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-installer-lifecycle-"));
+// Both macOS (/var -> /private/var) and Windows (long names -> 8.3 aliases) may expose the
+// platform temp directory through more than one lexical spelling. The packaged app correctly
+// reports the canonical vault path, so seed every lifecycle path from that same identity.
+const canonicalTemporaryDirectory = await fs.realpath(os.tmpdir());
+const scratchPath = await fs.mkdtemp(
+  path.join(canonicalTemporaryDirectory, "threadleaf-installer-lifecycle-"),
+);
 const baselineReleasePath = path.join(scratchPath, "baseline-release");
 const installPath = path.join(scratchPath, "installed");
 const vaultPath = path.join(scratchPath, "vault");

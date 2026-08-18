@@ -184,6 +184,10 @@ assert(
   "Native lifecycle verifier lost its isolated marker/evidence contract.",
 );
 assert(
+  lifecycleScriptText.includes("await fs.realpath(os.tmpdir())"),
+  "Native lifecycle verifier must seed package state from a canonical temp identity.",
+);
+assert(
   lifecycleScriptText.includes("async function detachMacDmg") &&
     lifecycleScriptText.includes('["detach", mountPath, "-force", "-quiet"]'),
   "macOS lifecycle verifier must retry and force-detach its DMG.",
