@@ -515,6 +515,11 @@ async function runAttachmentRenameCase(
   const kernel = await openKernel(vaultRoot, stateRoot);
   const attachment = await kernel.readBinary(fromPath, 1024 * 1024);
   assert(attachment.status === "ready", "attachment could not be read before rename");
+  const originalDrawing = await kernel.readText("Drawings/Unicode Scene.excalidraw.md");
+  assert(
+    parseExcalidrawMarkdown(originalDrawing.content).attachmentReferences.length === 1,
+    "attachment reference was not discovered before rename",
+  );
   const plan = await planBinaryAttachmentMove(
     kernel,
     fromPath,
@@ -544,9 +549,8 @@ async function runAttachmentRenameCase(
     await assertPathMissing(path.join(vaultRoot, toPath));
     const unchangedDrawing = await kernel.readText("Drawings/Unicode Scene.excalidraw.md");
     assert(
-      parseExcalidrawMarkdown(unchangedDrawing.content).attachmentReferences[0] ===
-        "../Assets/Ébauche/diagram.svg",
-      "failed publication rewrote the supplied Excalidraw wiki target",
+      unchangedDrawing.content === originalDrawing.content,
+      "failed publication changed the supplied Excalidraw Markdown bytes",
     );
     return "platform-unsupported";
   }
