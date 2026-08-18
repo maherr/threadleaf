@@ -1124,7 +1124,7 @@ describe("WorkspaceController", () => {
     expect(picked.vault).toMatchObject({ path: path.resolve("/picked/vault"), source: "picked" });
     expect(outcome).toEqual({ status: "superseded", snapshot: null });
     expect(controller.vaultPath).toBe(path.resolve("/picked/vault"));
-    expect(store.saved).toEqual(["/picked/vault"]);
+    expect(store.saved).toEqual([path.resolve("/picked/vault")]);
     const restoredRuntime = runtimes.find(
       (runtime) => runtime.vaultPath === path.resolve("/restored/vault"),
     );
@@ -1264,7 +1264,7 @@ describe("WorkspaceController", () => {
       source: "picked",
       warning: null,
     });
-    expect(store.saved).toEqual(["/picked/vault"]);
+    expect(store.saved).toEqual([path.resolve("/picked/vault")]);
     expect(harness.optionsSeen[0]?.workspaceStateStore).toBe(workspaceStateStore);
     expect(harness.optionsSeen[1]?.workspaceStateStore).toBe(workspaceStateStore);
     expect(harness.optionsSeen[0]?.pluginModuleResolver).toBe(pluginModuleResolver);
@@ -1272,11 +1272,11 @@ describe("WorkspaceController", () => {
     expect(harness.optionsSeen[0]?.pluginRuntimeFactory).toBe(pluginRuntimeFactory);
     expect(harness.optionsSeen[1]?.pluginRuntimeFactory).toBe(pluginRuntimeFactory);
     expect(previous?.closed).toBe(true);
-    expect(observed).toEqual(["/picked/vault"]);
+    expect(observed).toEqual([path.resolve("/picked/vault")]);
     harness.runtimes[1]?.emit();
-    expect(observed).toEqual(["/picked/vault", "/picked/vault"]);
+    expect(observed).toEqual([path.resolve("/picked/vault"), path.resolve("/picked/vault")]);
     previous?.emit();
-    expect(observed).toEqual(["/picked/vault", "/picked/vault"]);
+    expect(observed).toEqual([path.resolve("/picked/vault"), path.resolve("/picked/vault")]);
     await controller.close();
   });
 

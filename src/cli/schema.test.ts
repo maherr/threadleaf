@@ -1624,7 +1624,12 @@ describe("CLI schema and generated completion", () => {
         }
       }
     } finally {
-      await fs.rm(temporaryRoot, { recursive: true, force: true });
+      await fs.rm(temporaryRoot, {
+        recursive: true,
+        force: true,
+        maxRetries: process.platform === "win32" ? 5 : 0,
+        retryDelay: 100,
+      });
     }
     // This invokes every generated Bash and Fish candidate against the real
     // parser. Under the concurrent repository gate it has measured just under
@@ -1875,7 +1880,7 @@ describe("CLI schema and generated completion", () => {
         });
         expect(result.status, result.stderr).toBe(0);
         expect(result.stderr).toBe("");
-        expect(result.stdout.split("\n")).toContain("vault");
+        expect(result.stdout.split(/\r?\n/u)).toContain("vault");
         expect(result.stdout).not.toContain("/vault café/space");
       }
     } finally {

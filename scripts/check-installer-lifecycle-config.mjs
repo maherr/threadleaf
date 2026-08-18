@@ -165,6 +165,10 @@ assert(
 assert(builder.appId === "org.threadleaf.Threadleaf", "Electron application identity changed.");
 assert(builder.productName === "Threadleaf", "Electron product name changed.");
 assert(
+  packageData.productName === builder.productName,
+  "Packaged metadata must establish the product name before Electron resolves userData.",
+);
+assert(
   builder.nsis?.deleteAppDataOnUninstall === false,
   "Windows uninstall contract must preserve app data.",
 );
