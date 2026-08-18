@@ -673,6 +673,12 @@ try {
     screenshots.push(await captureUpdateSettings("dark", "-compact"));
   }
 
+  const packagedOutput = output.join("");
+  assert(
+    !packagedOutput.includes("rejected environment sequence"),
+    `Packaged compatibility environment updates were rejected:\n${packagedOutput}`,
+  );
+
   await evaluate("setTimeout(() => window.close(), 0); true");
   const exit = await Promise.race([
     exited,

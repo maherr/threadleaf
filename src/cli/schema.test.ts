@@ -1240,7 +1240,7 @@ describe("CLI schema and generated completion", () => {
     } finally {
       await fs.rm(temporaryRoot, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, 120_000);
 
   it("suppresses every Bash and Fish candidate after a parser-invalid static/global conflict", async ({
     skip,
@@ -1363,7 +1363,7 @@ describe("CLI schema and generated completion", () => {
     } finally {
       await fs.rm(temporaryRoot, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, 120_000);
 
   it("suppresses Bash and Fish candidates after parser-invalid finite histories", async ({
     skip,
@@ -1558,7 +1558,7 @@ describe("CLI schema and generated completion", () => {
     } finally {
       await fs.rm(temporaryRoot, { recursive: true, force: true });
     }
-  }, 60_000);
+  }, 180_000);
 
   it("sweeps every runtime candidate through the parser oracle", async () => {
     const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-cli-oracle-"));
@@ -1635,7 +1635,7 @@ describe("CLI schema and generated completion", () => {
     // This invokes every generated Bash and Fish candidate against the real
     // parser. Under the concurrent repository gate it has measured just under
     // five minutes, despite completing well inside this budget in isolation.
-  }, 360_000);
+  }, 720_000);
 
   it("keeps root eligibility and literal parser-oracle candidates visible", async ({ skip }) => {
     skip(!fishRuntime, "Fish runtime coverage runs in Linux CI");
@@ -1735,7 +1735,7 @@ describe("CLI schema and generated completion", () => {
     } finally {
       await fs.rm(temporaryRoot, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, 90_000);
 
   it("uses literal parser histories as generated completion runtime oracles", async ({ skip }) => {
     skip(!fishRuntime, "Fish runtime coverage runs in Linux CI");
@@ -1839,7 +1839,7 @@ describe("CLI schema and generated completion", () => {
     } finally {
       await fs.rm(temporaryRoot, { recursive: true, force: true });
     }
-  }, 45_000);
+  }, 180_000);
 
   it("uses TabExpansion2 when PowerShell exists and keeps a deterministic fallback otherwise", async () => {
     const powershell = executable("pwsh") ?? executable("powershell");

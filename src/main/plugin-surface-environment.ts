@@ -37,7 +37,7 @@ function assertAcknowledgement(
   const applied = acknowledgement(snapshot);
   if (applied?.status !== "applied") {
     throw new Error(
-      `Compatibility renderer ${targetId} did not acknowledge environment sequence ${environment.sequence}.`,
+      `Compatibility renderer ${targetId} did not acknowledge environment sequence ${environment.sequence}. Observed: ${JSON.stringify(applied)}.`,
     );
   }
   if (
@@ -46,7 +46,7 @@ function assertAcknowledgement(
     applied.sequence !== environment.sequence
   ) {
     throw new Error(
-      `Compatibility renderer ${targetId} did not acknowledge environment sequence ${environment.sequence}.`,
+      `Compatibility renderer ${targetId} did not acknowledge environment sequence ${environment.sequence}. Observed: ${JSON.stringify(applied)}.`,
     );
   }
 }
