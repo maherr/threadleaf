@@ -29,6 +29,7 @@ const fixtureName = "threadleaf-style-settings-live.css";
 const fixtureSnippetId = `obsidian-snippet:${encodeURIComponent(fixtureName)}`;
 const fixtureClassId = "threadleaf-live-marker";
 const fixtureVariableId = "threadleaf-live-width";
+const legacyIconIds = ["reset", "install", "right-triangle"];
 const fixtureCss = `/* @settings
 name: Threadleaf live appearance fixture
 id: threadleaf-live-fixture
@@ -896,6 +897,45 @@ async function styleState(connection = styleCdp) {
         text: style.textContent ?? '',
         isSource: style.id.startsWith('threadleaf-compat-'),
       }));
+      const legacyIcons = Object.fromEntries(${JSON.stringify(legacyIconIds)}.map((iconId) => {
+        const entries = [...document.querySelectorAll('[data-icon]')]
+          .filter((element) => element.getAttribute('data-icon') === iconId)
+          .map((element) => {
+            const svg = element instanceof SVGSVGElement ? element : element.querySelector('svg');
+            const rect = svg?.getBoundingClientRect();
+            const style = svg ? getComputedStyle(svg) : null;
+            const visible = Boolean(
+              svg &&
+                rect &&
+                rect.width > 0 &&
+                rect.height > 0 &&
+                style?.display !== 'none' &&
+                style?.visibility !== 'hidden' &&
+                style?.opacity !== '0',
+            );
+            const hasGeometry = Boolean(
+              svg?.querySelector('path, line, polyline, polygon, circle, rect, ellipse'),
+            );
+            return {
+              tagName: element.tagName,
+              svgTagName: svg?.tagName ?? null,
+              childCount: svg?.children.length ?? 0,
+              hasGeometry,
+              visible,
+            };
+          });
+        return [
+          iconId,
+          {
+            count: entries.length,
+            visibleCount: entries.filter(({ visible }) => visible).length,
+            nonemptyVisibleCount: entries.filter(
+              ({ childCount, hasGeometry, visible }) => visible && childCount > 0 && hasGeometry,
+            ).length,
+            entries,
+          },
+        ];
+      }));
       return {
         href: location.href,
         theme: document.documentElement.dataset.theme ?? null,
@@ -915,6 +955,7 @@ async function styleState(connection = styleCdp) {
           text: sheet.ownerNode?.textContent ?? '',
         })),
         sources,
+        legacyIcons,
         activeWindow: globalThis.activeWindow === window,
         activeWindowDescriptor: (() => {
           const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'activeWindow');
@@ -930,6 +971,20 @@ async function styleState(connection = styleCdp) {
       };
     })()`,
   );
+}
+
+function assertLegacyIconContent(state, label) {
+  for (const iconId of legacyIconIds) {
+    const result = state.legacyIcons?.[iconId];
+    assert(
+      result?.visibleCount > 0,
+      `${label} did not expose a visible ${iconId} icon: ${JSON.stringify(result)}`,
+    );
+    assert(
+      result.nonemptyVisibleCount === result.visibleCount,
+      `${label} exposed blank ${iconId} icon content: ${JSON.stringify(result)}`,
+    );
+  }
 }
 
 async function recordSequence(label, expectedMinimum = 1) {
@@ -984,7 +1039,9 @@ async function openStyleSettingsSurface() {
   );
   await waitFor(styleCdp, "document.readyState === 'complete'", "Style Settings renderer document");
   await assertPluginOrigin(styleCdp);
-  return styleState();
+  const state = await styleState();
+  assertLegacyIconContent(state, "Style Settings surface");
+  return state;
 }
 
 async function enablePackageFromCatalog() {

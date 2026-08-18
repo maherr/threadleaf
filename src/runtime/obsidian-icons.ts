@@ -2,6 +2,12 @@ import { type IconNode, icons as lucideIcons } from "lucide";
 
 const iconNodes = lucideIcons as unknown as Record<string, IconNode>;
 
+const legacyIconAliases: Record<string, string> = {
+  install: "Download",
+  reset: "RotateCcw",
+  "right-triangle": "TriangleRight",
+};
+
 function iconKey(iconId: string): string {
   const normalized = iconId.replace(/^lucide-/, "");
   const camelCase = normalized.replace(/(^|[\s_-]+)(\w)/g, (_match, _prefix, letter: string) =>
@@ -45,7 +51,7 @@ export function createCompatibleIcon(
     return svg;
   }
 
-  const iconNode = iconNodes[iconKey(iconId)];
+  const iconNode = iconNodes[legacyIconAliases[iconId] ?? iconKey(iconId)];
   if (!iconNode) {
     return null;
   }

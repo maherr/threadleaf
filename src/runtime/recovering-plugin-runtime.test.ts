@@ -75,6 +75,8 @@ class FakePluginRuntime implements PluginRuntimePort {
   fatalLoadOperation = "load-plugin";
   fatalCommandId: string | null = null;
   ordinaryLoadError: Error | null = null;
+  environmentAcknowledgementOverrides: Partial<NonNullable<RuntimeSnapshot["pluginEnvironment"]>> =
+    {};
   readonly constructionPaths: string[] = [];
   readonly environmentSequences: number[] = [];
   readonly trace: string[] = [];
@@ -113,6 +115,7 @@ class FakePluginRuntime implements PluginRuntimePort {
         vaultGeneration: environment.vaultGeneration,
         sequence: environment.sequence,
         cssChangeTriggered: false,
+        ...this.environmentAcknowledgementOverrides,
       },
     };
   }
@@ -161,6 +164,26 @@ class FakePluginRuntime implements PluginRuntimePort {
 }
 
 describe("RecoveringPluginRuntime", () => {
+  const environment: PluginRendererEnvironment = {
+    vaultId: "e".repeat(64),
+    vaultGeneration: 9,
+    sequence: 4,
+    theme: "dark",
+    appearanceCss: ".appearance {}",
+    pluginCss: ".plugin {}",
+    accessibilityCss: ":root {}",
+    accessibility: {
+      highContrast: false,
+      accent: "blue",
+      uiFontScale: 1,
+      textFontScale: 1,
+      editorFontSize: 15,
+      editorLineHeight: 1.6,
+      reducedMotion: false,
+      reducedTransparency: false,
+    },
+  };
+
   it("restores the last acknowledged environment before replaying plugins", async () => {
     const first = new FakePluginRuntime();
     first.fatalLoadId = "bad";
@@ -169,25 +192,6 @@ describe("RecoveringPluginRuntime", () => {
     const runtime = await RecoveringPluginRuntime.open({
       create: async () => runtimes.shift() ?? replacement,
     });
-    const environment: PluginRendererEnvironment = {
-      vaultId: "e".repeat(64),
-      vaultGeneration: 9,
-      sequence: 4,
-      theme: "dark",
-      appearanceCss: ".appearance {}",
-      pluginCss: ".plugin {}",
-      accessibilityCss: ":root {}",
-      accessibility: {
-        highContrast: false,
-        accent: "blue",
-        uiFontScale: 1,
-        textFontScale: 1,
-        editorFontSize: 15,
-        editorLineHeight: 1.6,
-        reducedMotion: false,
-        reducedTransparency: false,
-      },
-    };
     await runtime.applyEnvironment(environment);
     await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/good"));
     await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/bad"));
@@ -196,6 +200,61 @@ describe("RecoveringPluginRuntime", () => {
     expect(replacement.trace[0]).toBe("environment:4");
     expect(replacement.trace.slice(1)).toEqual(["load:good"]);
     await runtime.close();
+  });
+
+  it.each([
+    ["vaultId", { vaultId: "wrong-vault" }],
+    ["vaultGeneration", { vaultGeneration: 10 }],
+  ])(
+    "does not cache an acknowledgement with a mismatched %s for later recovery",
+    async (_field, override) => {
+      const first = new FakePluginRuntime();
+      first.environmentAcknowledgementOverrides = override;
+      const replacement = new FakePluginRuntime();
+      const runtimes = [first, replacement];
+      const runtime = await RecoveringPluginRuntime.open({
+        create: async () => runtimes.shift() ?? replacement,
+      });
+
+      await expect(runtime.applyEnvironment(environment)).rejects.toThrow("environment identity");
+      await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/good"));
+      first.fatalLoadId = "bad";
+
+      const recovered = await runtime.loadPlugin(
+        constructionRequest("/vault/.obsidian/plugins/bad"),
+      );
+
+      expect(replacement.environmentSequences).toEqual([]);
+      expect(recovered.plugins).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: "good", state: "loaded" })]),
+      );
+      await runtime.close();
+    },
+  );
+
+  it.each([
+    ["vaultId", { vaultId: "wrong-vault" }],
+    ["vaultGeneration", { vaultGeneration: 10 }],
+  ])("fails closed when a replacement acknowledges the wrong %s", async (_field, override) => {
+    const first = new FakePluginRuntime();
+    const replacement = new FakePluginRuntime();
+    replacement.environmentAcknowledgementOverrides = override;
+    first.fatalLoadId = "bad";
+    const runtimes = [first, replacement];
+    const runtime = await RecoveringPluginRuntime.open({
+      create: async () => runtimes.shift() ?? replacement,
+    });
+
+    await runtime.applyEnvironment(environment);
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/good"));
+
+    await expect(
+      runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/bad")),
+    ).rejects.toThrow("recovery failed");
+    expect(first.close).toHaveBeenCalledOnce();
+    expect(replacement.close).toHaveBeenCalledOnce();
+    expect(replacement.constructionPaths).toEqual([]);
+    await expect(runtime.getSnapshot()).rejects.toThrow("Plugin compatibility runtime is closed");
   });
 
   it("replaces a wedged renderer and keeps failed plugins available for explicit reload", async () => {

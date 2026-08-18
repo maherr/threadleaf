@@ -74,6 +74,21 @@ function diagnosticCodeForOperation(operation: string): PluginDiagnosticCode {
   return "runtime-load-failed";
 }
 
+function assertEnvironmentAcknowledgement(
+  snapshot: RuntimeSnapshot,
+  environment: PluginRendererEnvironment,
+): void {
+  const acknowledgement = snapshot.pluginEnvironment;
+  if (
+    acknowledgement?.status !== "applied" ||
+    acknowledgement.vaultId !== environment.vaultId ||
+    acknowledgement.vaultGeneration !== environment.vaultGeneration ||
+    acknowledgement.sequence !== environment.sequence
+  ) {
+    throw new Error("The plugin renderer did not acknowledge the requested environment identity.");
+  }
+}
+
 export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntimePort>
   implements PluginRuntimePort
 {
@@ -128,12 +143,8 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
         return runtime.applyEnvironment(environment);
       },
       (snapshot) => {
-        if (
-          snapshot.pluginEnvironment?.status === "applied" &&
-          snapshot.pluginEnvironment.sequence === environment.sequence
-        ) {
-          this.environment = structuredClone(environment);
-        }
+        assertEnvironmentAcknowledgement(snapshot, environment);
+        this.environment = structuredClone(environment);
       },
     );
   }
@@ -377,12 +388,7 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
           throw new Error("The replacement plugin runtime cannot restore its environment.");
         }
         const environmentSnapshot = await replacement.applyEnvironment(this.environment);
-        if (
-          environmentSnapshot.pluginEnvironment?.status !== "applied" ||
-          environmentSnapshot.pluginEnvironment.sequence !== this.environment.sequence
-        ) {
-          throw new Error("The replacement plugin runtime did not acknowledge its environment.");
-        }
+        assertEnvironmentAcknowledgement(environmentSnapshot, this.environment);
       }
       await this.options.onRuntimeChange?.(replacement);
     } catch (recoveryError) {
