@@ -1,7 +1,7 @@
 # Contributing
 
-Threadleaf is in its architecture-proof phase. Contributions should strengthen the current phase
-rather than expand the feature list.
+Threadleaf is a public daily-drive beta. Contributions should close a documented product,
+compatibility, accessibility, performance, or reliability gap rather than add unmeasured breadth.
 
 Before contributing:
 
@@ -10,6 +10,8 @@ Before contributing:
 3. Keep user vaults out of tests and examples. Use synthetic data only.
 4. Run `pnpm check`.
 5. Describe observable behavior and limitations in the change.
+6. Include screenshots from the real Electron application for visible changes and update the
+   committed visual baseline only after inspecting the changed pixels.
 
 Compatibility work may rely on public documentation, permissively licensed API definitions, open
 formats, and open-source plugin code. Do not submit proprietary application code, copied assets, or

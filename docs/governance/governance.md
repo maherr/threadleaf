@@ -20,8 +20,8 @@ them and states what is not written elsewhere.
 ## Decision making
 
 Threadleaf does not yet have a formal decision-making body, a vote, or a written amendment process,
-because it has one identified maintainer and no public repository yet. Two things constrain that
-maintainer's discretion in the meantime:
+because it has one identified maintainer. Two things constrain that maintainer's discretion in the
+meantime:
 
 - [`docs/charter.md`](../charter.md) states the project's mission, invariants, and non-goals.
   Product and architecture decisions are expected to be consistent with it; a decision that
@@ -30,9 +30,9 @@ maintainer's discretion in the meantime:
 - [`AGENTS.md`](../../AGENTS.md) states repository-wide invariants that apply to every change,
   independent of who proposes it; see Contribution acceptance criteria below.
 
-This page will describe a broader decision process, for example a second maintainer, a review
-requirement, or a documented escalation path, once one actually exists. Until then, stating that one
-exists would be inaccurate.
+Issues and pull requests in the canonical public repository are the review record. This page will
+describe a broader decision process, for example a second maintainer or a documented escalation
+path, once one actually exists. Until then, stating that one exists would be inaccurate.
 
 ## Contribution acceptance criteria
 

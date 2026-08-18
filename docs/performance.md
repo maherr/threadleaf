@@ -227,7 +227,7 @@ corpus-independent by design; it is dominated by Electron startup, not vault siz
 snapshot payload fell from 28,347,616 bytes to 38,658 bytes (733x), with `payloadObjects` falling
 from 200,023 to 281.
 
-The census completed in about 79.8 seconds on that corpus (200K uniform ~94-byte notes — a
+The census completed in about 79.8 seconds on that corpus (200K uniform ~94-byte notes, a
 parse-light shape; the 897 MB acceptance corpus takes several times longer). There is deliberately no baseline-census
 comparison: the base did not expose `waitForCensusCompletion`, so the apparent 0.028 ms delta was
 not a census measurement. Likewise, the 1.84-second projection span covers a complete O(200K)

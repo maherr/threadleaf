@@ -52,7 +52,7 @@ function assertUnique(values, label) {
 
 function walkStrings(value, label = "report") {
   if (typeof value === "string") {
-    assert(!/[–—]/u.test(value), `${label} contains a public en/em dash`);
+    assert(!/[\u2013\u2014]/u.test(value), `${label} contains a public en/em dash`);
     assert(!value.includes("\u0000"), `${label} contains a NUL`);
     return;
   }

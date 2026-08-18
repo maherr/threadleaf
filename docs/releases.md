@@ -1,6 +1,6 @@
 # Release engineering
 
-Threadleaf 0.1.0-beta.7 is a maintainer-led daily-drive beta. Native contributor lanes create
+Threadleaf 0.1.0-beta.8 is a maintainer-led daily-drive beta. Native contributor lanes create
 unsigned Linux x64, macOS ARM64 and x64, and Windows x64 artifacts. These remain contributor builds,
 not signed public releases. A separate manual workflow fails closed unless Windows signing and
 Apple Developer ID plus notarization credentials are present. Nothing publishes automatically.
@@ -124,7 +124,8 @@ SHA-512 digests, inspects Authenticode state, and writes SHA-256 checksums. Wind
 built only on native Windows x64 hosts; Linux cross-build claims are rejected. The hosted lifecycle
 gate uses the real NSIS installer, a disposable user-data root and vault, a forced process
 interruption, a distinct candidate and baseline build, rollback, uninstall, and residue checks. Its
-first hosted run remains pending because this repository has no public remote.
+hosted result is recorded by the public native CI workflow; local Linux proof does not claim that
+result before the corresponding Actions job completes.
 
 ## Hosted native CI
 
@@ -241,7 +242,7 @@ changes.
 On Fedora, the built RPM can be exercised through the same contract after installation:
 
 ```sh
-sudo dnf install ./release/Threadleaf-0.1.0-beta.7-linux-x86_64.rpm
+sudo dnf install ./release/Threadleaf-0.1.0-beta.8-linux-x86_64.rpm
 THREADLEAF_PACKAGED_EXECUTABLE=/opt/Threadleaf/threadleaf \
   THREADLEAF_PACKAGED_SCREENSHOT_DIR=/tmp/threadleaf-installed-visual \
   xvfb-run -a node scripts/check-packaged-app.mjs

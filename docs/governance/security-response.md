@@ -4,28 +4,11 @@ This document is the detailed version of [`SECURITY.md`](../../SECURITY.md). If 
 disagree, treat that as a bug in this document and fix it, since `SECURITY.md` is what GitHub
 surfaces automatically to a reporter.
 
-## Current state: no live reporting channel
-
-Threadleaf has no public repository yet; [`docs/releases.md`](../releases.md) notes in several
-places that the hosted release lanes have no public remote to run against. GitHub's private
-vulnerability reporting, Security Advisories, requires a public repository to enable, so there is no
-live intake channel today. Stating otherwise would be exactly the kind of promise this document is
-supposed to avoid.
-
-Until a channel exists: do not publish an exploit, a proof of concept against real vault data, or
-private vault content in an issue, discussion, test fixture, or pull request (`SECURITY.md`). If you
-find a serious issue before the reporting channel exists, holding it privately is the only available
-option; there is nowhere in this repository to send it yet.
-
-This section is intentionally temporary. Publishing this repository is expected to include enabling
-GitHub's private vulnerability reporting and updating or removing this section in that same change,
-not as a followup task left for later.
-
-## Channel, once the repository is public
+## Private reporting channel
 
 Report a vulnerability through GitHub's private Security Advisory flow on the canonical repository
-(`https://github.com/maherr/threadleaf`, per [`package.json`](../../package.json)), not through a
-public issue, discussion, or pull request. That flow keeps the report private between the reporter
+([open a private report](https://github.com/maherr/threadleaf/security/advisories/new)), not through
+a public issue, discussion, or pull request. That flow keeps the report private between the reporter
 and the maintainers with advisory access until a fix is ready.
 
 Do not include real vault content, note text, or personally identifying data in a report. A minimal

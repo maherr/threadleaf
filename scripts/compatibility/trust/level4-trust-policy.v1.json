@@ -49,7 +49,7 @@
     "allowedReceiptSchemaVersions": [2],
     "currentHarness": {
       "version": "level4-harness-v1-phase0",
-      "treeSha256": "15dbba183b0285ee212a8f9d39f5733b73bdc04786618b4c84d023ef07c5d52b"
+      "treeSha256": "676a49387d73f7a361ade41388a23293a11512cb1acdf44dee42ceb7bbdf9cb1"
     }
   },
   "issuerKeys": []

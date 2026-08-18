@@ -7,7 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.0-beta.8]
+
 ### Added
+
+- Published the canonical open-source repository, first public Linux download path, verified
+  application screenshot, private vulnerability-reporting channel, and exact version-bound release
+  documentation.
 
 - Added the exact reviewed Style Settings 1.0.9 appearance bridge and
   `style-settings.snippet-control-live-reload.v1` Linux workflow. The unchanged package can

@@ -5,10 +5,8 @@ or fork, would actually need to keep the project going if the current maintainer
 
 ## Who cuts a release today
 
-Threadleaf has one identified maintainer and no public repository yet:
-[`docs/releases.md`](../releases.md) notes in several places that the hosted release lanes have no
-public remote to run against. Release authority is therefore a mechanical fact rather than a role
-with a charter: it is whoever holds push and tag rights on the eventual canonical repository
+Threadleaf has one identified maintainer. Release authority is a mechanical fact rather than a role
+with a charter: it is whoever holds push and tag rights on the canonical public repository
 (`https://github.com/maherr/threadleaf`, per [`package.json`](../../package.json)) and the repository
 secrets that [`.github/workflows/release.yml`](../releases.md#signed-release-candidate) requires
 (`MAC_CSC_LINK` and `MAC_CSC_KEY_PASSWORD`, `APPLE_API_KEY_BASE64`/`APPLE_API_KEY_ID`/`APPLE_API_ISSUER`,
@@ -23,10 +21,6 @@ macOS and Windows package commands ([`docs/releases.md`](../releases.md)) run fr
 with no repository secrets, so anyone with the source and the right native toolchain can already
 build and verify a Threadleaf package without asking the maintainer for anything. Only the signed,
 published lane requires the credentials above.
-
-The "no public repository yet" premise above, and in Mirror expectations below, is intentionally
-temporary. Publishing this repository canonically is expected to include updating both sections in
-that same change, not as a followup task left for later.
 
 ## If the current maintainer disappears
 
@@ -72,8 +66,8 @@ without a hosted secret.
 
 ## Mirror expectations
 
-There is no independent mirror today, because there is no public remote yet for anything to mirror.
-Stating that a mirror already exists would be false.
+GitHub is the canonical public repository. There is no independent mirror today; stating that a
+mirror already exists would be false.
 
 Before Threadleaf is presented as safe to recommend without maintainer caveats
 ([the roadmap's Phase 6 exit gate](../roadmap.md#phase-6-ecosystem-and-public-launch)), the intent is

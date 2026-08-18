@@ -74,7 +74,7 @@ describe("Obsidian metadata, link, and YAML compatibility", () => {
 
   it("aggregates hierarchical tags, strips a final slash, and consolidates case", async () => {
     // Public API shape: https://github.com/obsidianmd/obsidian-api/blob/master/obsidian.d.ts
-    // Real-parser fixtures: host-verified against Obsidian 1.13.7 — a terminal
+    // Real-parser fixtures: host-verified against Obsidian 1.13.7. A terminal
     // slash is stripped then participates in hierarchy counting, and numeric-only
     // ancestors are never synthesized (#2024/notes is kept, #2024 is not).
     const { vault } = await createTemporaryVault({

@@ -2,6 +2,8 @@
 
 > Your vault, on an open runtime.
 
+[![Native package CI](https://github.com/maherr/threadleaf/actions/workflows/ci.yml/badge.svg)](https://github.com/maherr/threadleaf/actions/workflows/ci.yml)
+
 Threadleaf is a fully open, local-first knowledge workspace. It opens existing Markdown vaults
 without conversion and provides measured compatibility with the community plugins people already
 depend on. Within its declared desktop and local-first lane, it is built to be the stronger choice
@@ -13,9 +15,34 @@ Threadleaf is not affiliated with or endorsed by Obsidian.
 The desktop interface uses the bespoke [Longstitch design language](longstitch/README.md), with
 Pressroom and Lampside themes grounded in the structure of a hand-bound working book.
 
+![Threadleaf Live Preview in the Lampside dark appearance](visual/baselines/workspace-live-dark.png)
+
+The screenshot is a committed visual-regression baseline captured from the real Electron
+application. It is checked for pixel drift rather than maintained as a separate marketing mockup.
+
+## Download
+
+Threadleaf `0.1.0-beta.8` is available for Linux x86_64 from the
+[GitHub release](https://github.com/maherr/threadleaf/releases/tag/v0.1.0-beta.8):
+
+- **AppImage:** portable, no installation required. Verify the checksum, make it executable, and
+  launch it.
+- **RPM:** installs the desktop entry and application under `/opt/Threadleaf` on Fedora-compatible
+  systems.
+- **Reproducible archive:** the normalized unpacked application, complete file manifest, and
+  checksum for independent build comparison.
+
+These first public Linux artifacts are unsigned beta builds. Their exact checksums and verification
+evidence are published beside them. Keep an ordinary external backup while field testing. macOS
+and Windows packages remain contributor artifacts until their public native lifecycle and signing
+gates pass.
+
+See the [beta.8 release notes](docs/release-notes/0.1.0-beta.8.md) for verification commands,
+supported workflows, and known boundaries.
+
 ## Status
 
-Threadleaf 0.1.0-beta.7 passes the current Phase 3 acceptance gate for maintainer-led Linux desktop
+Threadleaf 0.1.0-beta.8 passes the current Phase 3 acceptance gate for maintainer-led Linux desktop
 daily-drive testing. This is a scoped product claim, not universal feature parity with Obsidian;
 the exact advantages and acknowledged gaps are kept in the
 [checked comparison](docs/launch/comparison.md). Its Phase 0 architecture

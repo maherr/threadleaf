@@ -3,9 +3,10 @@
 Threadleaf is an early-stage beta. Keep an ordinary external backup of any vault you use with it, and
 do not rely on it as your only copy of important notes yet.
 
-When the public repository enables private vulnerability reporting, report security issues through
-that channel instead of a public issue. Until then, do not publish an exploit or private vault data
-in an issue, discussion, test fixture, or pull request. See
+Report security issues through GitHub's private vulnerability reporting for
+[`maherr/threadleaf`](https://github.com/maherr/threadleaf/security/advisories/new), not through a
+public issue. Do not publish an exploit or private vault data in an issue, discussion, test fixture,
+or pull request. See
 [`docs/governance/security-response.md`](docs/governance/security-response.md) for the full reporting
 channel, response targets, and disclosure policy.
 
