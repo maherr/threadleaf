@@ -161,6 +161,31 @@ function foldGrapheme(grapheme: string): string {
 }
 
 /**
+ * NFC text only needs grapheme segmentation when a Latin or inherited
+ * diacritic remains as its own code point. Precomposed Latin letters still
+ * decompose inside foldGrapheme, while every other code point can be folded
+ * independently because Simple case folding is context-free. Avoiding ICU's
+ * segment iterator on that common path keeps long accented text predictably
+ * linear across runtimes without changing the joined result.
+ */
+function* foldSearchUnits(value: string): Iterable<string> {
+  let needsSegmentation = false;
+  for (const codePoint of value) {
+    if (isLatinDiacritic(codePoint)) {
+      needsSegmentation = true;
+      break;
+    }
+  }
+  if (needsSegmentation) {
+    for (const part of graphemeSegmenter.segment(value)) {
+      yield part.segment;
+    }
+    return;
+  }
+  yield* value;
+}
+
+/**
  * Build a source-preserving search key. Diacritics are removed only when a
  * grapheme has a Latin letter base; non-Latin combining marks remain intact.
  * Canonical decomposition is used for this narrow operation, never
@@ -279,8 +304,8 @@ export function foldSearchText(value: string, caseSensitive = false): string {
   const foldedChunks: string[] = [];
   let foldedParts: string[] = [];
   let foldedChunkLength = 0;
-  for (const part of graphemeSegmenter.segment(canonical)) {
-    const foldedPart = foldGrapheme(part.segment);
+  for (const unit of foldSearchUnits(canonical)) {
+    const foldedPart = foldGrapheme(unit);
     foldedParts.push(foldedPart);
     foldedChunkLength += foldedPart.length;
     if (foldedChunkLength >= textChunkSize) {
