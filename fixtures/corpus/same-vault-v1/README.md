@@ -19,3 +19,9 @@ verifying `manifest.json`, and running the supported cases in `cases.json`. Case
 add a deterministic case and source bytes, update the manifest, explain the independent provenance,
 and include a reproducible runner assertion before changing a case from `unsupported` to
 `supported`.
+
+The manifest intentionally contains two same-directory names that differ only by case. A
+case-insensitive checkout cannot materialize both byte sources. The Threadleaf gate proves the
+filesystem aliases them, validates the surviving bytes against the collision group, reports the
+ambiguity case as `platform-unrepresentable`, and still executes every independent case. Linux CI
+materializes both names and remains the authoritative executable ambiguity gate.

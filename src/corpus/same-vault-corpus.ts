@@ -69,6 +69,11 @@ interface TreeSnapshot {
   files: Map<string, Buffer>;
 }
 
+interface ManifestVerification {
+  snapshot: TreeSnapshot;
+  unrepresentableCollisionKeys: Set<string>;
+}
+
 const corpusDirectory = path.resolve(process.cwd(), "fixtures/corpus/same-vault-v1");
 const canonicalVault = path.join(corpusDirectory, "vault");
 const requiredCaseIds = [
@@ -197,6 +202,26 @@ function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+function portableCollisionKey(value: string): string {
+  return value.normalize("NFC").toLocaleLowerCase("en-US");
+}
+
+async function hostFilesystemCollapsesCase(): Promise<boolean> {
+  const probeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-case-probe-"));
+  const exactPath = path.join(probeRoot, "ThreadleafCaseProbe");
+  try {
+    await fs.writeFile(exactPath, "case-probe\n", "utf8");
+    try {
+      await fs.access(path.join(probeRoot, "threadleafcaseprobe"));
+      return true;
+    } catch {
+      return false;
+    }
+  } finally {
+    await fs.rm(probeRoot, { recursive: true, force: true });
+  }
+}
+
 function assertManifestShape(manifest: CorpusManifest): void {
   assert(manifest.schemaVersion === 1, "manifest schemaVersion must be 1");
   assert(manifest.corpusId === "threadleaf.same-vault.v1", "manifest corpusId is stale");
@@ -222,23 +247,64 @@ function assertManifestShape(manifest: CorpusManifest): void {
   }
 }
 
-async function verifyManifest(manifest: CorpusManifest): Promise<TreeSnapshot> {
+async function verifyManifest(manifest: CorpusManifest): Promise<ManifestVerification> {
   assertManifestShape(manifest);
   const actual = await snapshotTree(canonicalVault);
   const actualPaths = [...actual.files.keys()].sort((left, right) =>
     left.localeCompare(right, "en"),
   );
   const manifestPaths = manifest.files.map((entry) => entry.path);
-  equalJson(actualPaths, manifestPaths, "manifest file inventory");
+  const missingPaths = manifestPaths.filter((entryPath) => !actual.files.has(entryPath));
+  const unexpectedPaths = actualPaths.filter((entryPath) => !manifestPaths.includes(entryPath));
+  const unrepresentableCollisionKeys = new Set<string>();
+  if (missingPaths.length === 0) {
+    equalJson(actualPaths, manifestPaths, "manifest file inventory");
+  } else {
+    assert(unexpectedPaths.length === 0, "manifest file inventory has unexpected paths");
+    assert(
+      await hostFilesystemCollapsesCase(),
+      `manifest file inventory is incomplete on a case-sensitive filesystem: ${JSON.stringify(missingPaths)}`,
+    );
+    for (const missingPath of missingPaths) {
+      const collisionKey = portableCollisionKey(missingPath);
+      const actualAliases = actualPaths.filter(
+        (entryPath) => portableCollisionKey(entryPath) === collisionKey,
+      );
+      const manifestAliases = manifest.files.filter(
+        (entry) => portableCollisionKey(entry.path) === collisionKey,
+      );
+      assert(
+        actualAliases.length === 1 && manifestAliases.length >= 2,
+        `missing manifest path is not an unrepresentable case collision: ${missingPath}`,
+      );
+      const missingRealPath = await fs.realpath(path.join(canonicalVault, missingPath));
+      const actualRealPath = await fs.realpath(path.join(canonicalVault, actualAliases[0] ?? ""));
+      equalJson(missingRealPath, actualRealPath, `${missingPath} filesystem alias`);
+      unrepresentableCollisionKeys.add(collisionKey);
+    }
+  }
   const manifestBytes = await fs.readFile(path.join(corpusDirectory, "manifest.json"), "utf8");
   equalJson(manifestBytes, renderManifest(manifest.files), "manifest regeneration bytes");
   for (const entry of manifest.files) {
     const bytes = actual.files.get(entry.path);
+    if (unrepresentableCollisionKeys.has(portableCollisionKey(entry.path))) {
+      if (!bytes) continue;
+      const aliases = manifest.files.filter(
+        (candidate) => portableCollisionKey(candidate.path) === portableCollisionKey(entry.path),
+      );
+      assert(
+        aliases.some(
+          (candidate) => bytes.length === candidate.size && sha256(bytes) === candidate.sha256,
+        ),
+        `case-collapsed manifest bytes are stale for ${entry.path}`,
+      );
+      continue;
+    }
     assert(bytes, `manifest file is missing: ${entry.path}`);
     assert(bytes.length === entry.size, `manifest size is stale for ${entry.path}`);
     assert(sha256(bytes) === entry.sha256, `manifest hash is stale for ${entry.path}`);
   }
-  return actual;
+  return { snapshot: actual, unrepresentableCollisionKeys };
 }
 
 function verifyCaseShape(corpusCases: CorpusCases, manifest: CorpusManifest): void {
@@ -843,15 +909,28 @@ async function runCase(entry: CorpusCase, manifest: CorpusManifest): Promise<str
   }
 }
 
-export async function runSameVaultCorpus(): Promise<{ passed: number; unsupported: number }> {
+export async function runSameVaultCorpus(): Promise<{
+  passed: number;
+  unsupported: number;
+  platformUnrepresentable: number;
+}> {
   const manifest = await readJson<CorpusManifest>(path.join(corpusDirectory, "manifest.json"));
-  const canonicalBefore = await verifyManifest(manifest);
+  const { snapshot: canonicalBefore, unrepresentableCollisionKeys } =
+    await verifyManifest(manifest);
   const corpusCases = await readJson<CorpusCases>(path.join(corpusDirectory, "cases.json"));
   verifyCaseShape(corpusCases, manifest);
   const results: string[] = [];
   let passed = 0;
   let unsupported = 0;
+  let platformUnrepresentable = 0;
   for (const entry of corpusCases.cases) {
+    if (entry.id === "links.unicode-and-case" && unrepresentableCollisionKeys.size > 0) {
+      results.push(
+        `${entry.id}: platform-unrepresentable (case-colliding fixture paths alias one filesystem object)`,
+      );
+      platformUnrepresentable += 1;
+      continue;
+    }
     const result = await runCase(entry, manifest);
     results.push(result);
     if (entry.support === "supported") {
@@ -869,7 +948,7 @@ export async function runSameVaultCorpus(): Promise<{ passed: number; unsupporte
     process.stdout.write(`${result}\n`);
   }
   process.stdout.write(
-    `same-vault corpus: ${passed} passed, ${unsupported} unsupported, ${corpusCases.cases.length} total\n`,
+    `same-vault corpus: ${passed} passed, ${unsupported} unsupported, ${platformUnrepresentable} platform-unrepresentable, ${corpusCases.cases.length} total\n`,
   );
-  return { passed, unsupported };
+  return { passed, unsupported, platformUnrepresentable };
 }

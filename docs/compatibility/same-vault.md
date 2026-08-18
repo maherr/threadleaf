@@ -28,6 +28,12 @@ supported cases through the public kernel, application services, and CLI, compar
 for round trips, tests no-write and external-edit boundaries, and reports unsupported cases
 separately. It uses temporary vault and state roots, so it never writes the checked-in fixture.
 
+The canonical manifest includes a deliberate same-directory case collision. On a case-insensitive
+checkout, the gate first proves that both names alias one filesystem object, validates the surviving
+bytes against the collision group, reports only the ambiguity case as `platform-unrepresentable`,
+and continues every independent case. The Linux lane materializes both names and executes the full
+ambiguity behavior, so a native filesystem limitation is never mislabeled as a pass.
+
 ## Contribute a case
 
 Add original bytes under the fixture vault, add a manifest entry with the deterministic SHA-256
