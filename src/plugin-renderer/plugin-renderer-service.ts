@@ -85,20 +85,12 @@ function realizeEnvironmentStyles(documentRef: Document): void {
 }
 
 async function settleEnvironmentStyles(documentRef: Document): Promise<void> {
-  const animationFrame = documentRef.defaultView?.requestAnimationFrame;
-  await new Promise<void>((resolve) => {
-    let settled = false;
-    const settle = (): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(fallback);
-      resolve();
-    };
-    const fallback = setTimeout(settle, 50);
-    if (typeof animationFrame === "function") {
-      animationFrame(settle);
-    }
-  });
+  // Style-node insertion and CSSOM parsing are synchronous. Yield once so
+  // pending mutation observers can restore source order, then force a cascade
+  // read. Do not depend on animation frames or timers: an unattached macOS
+  // WebContentsView may suspend both even with background throttling disabled.
+  await Promise.resolve();
+  void documentRef.defaultView?.getComputedStyle(documentRef.documentElement).display;
 }
 
 function applyAccessibilityState(

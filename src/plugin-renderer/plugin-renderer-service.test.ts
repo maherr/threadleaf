@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { JSDOM } from "jsdom";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { revisionOf } from "../kernel/durability";
 import type { Vault } from "../runtime/obsidian-compat";
 import { installObsidianDomCompatibility } from "../runtime/obsidian-dom";
@@ -112,11 +112,20 @@ describe("PluginRendererService", () => {
         }
       ).app;
       app.workspace.on("css-change", () => changes.push("css-change"));
-      const first = await service.handle(
-        request("apply-environment", {
-          environment: environment(1, ".probe { color: rgb(3, 3, 3); --plugin-value: 17px; }"),
-        }),
-      );
+      const timer = vi.spyOn(globalThis, "setTimeout").mockImplementation(() => {
+        throw new Error("Environment acknowledgement must not depend on a renderer timer.");
+      });
+      const first = await (async () => {
+        try {
+          return await service.handle(
+            request("apply-environment", {
+              environment: environment(1, ".probe { color: rgb(3, 3, 3); --plugin-value: 17px; }"),
+            }),
+          );
+        } finally {
+          timer.mockRestore();
+        }
+      })();
       expect(first?.pluginEnvironment).toEqual({
         status: "applied",
         vaultId: "b".repeat(64),
