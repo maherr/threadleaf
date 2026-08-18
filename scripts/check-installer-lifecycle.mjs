@@ -31,7 +31,9 @@ const isolatedAppDataPath =
     ? path.join(scratchPath, "appdata", "roaming")
     : path.join(isolatedHomePath, "Library", "Application Support");
 const isolatedLocalAppDataPath = path.join(scratchPath, "appdata", "local");
-const userDataPath = path.join(isolatedAppDataPath, "Threadleaf");
+// Electron establishes the default userData directory from the npm package name before main.ts
+// can apply the capitalized display name. Keep the lifecycle oracle on that real platform default.
+const userDataPath = path.join(isolatedAppDataPath, packageData.name);
 const processMarker = randomUUID();
 const processMarkerArgument = `--threadleaf-lifecycle-marker=${processMarker}`;
 const candidateVersion = packageData.version;

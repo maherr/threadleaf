@@ -40,7 +40,10 @@ function runShellAsync(
   cwd: string,
 ): Promise<string[]> {
   return new Promise((resolve, reject) => {
-    const child = spawn(shell, ["-c", `source ${shellQuote(scriptPath)}; ${command}`], { cwd });
+    // Generated exhaustive batches can exceed Windows' command-line transport limit and arrive
+    // at Git Bash truncated in the middle of a quoted token. Standard input preserves the exact
+    // script bytes and exercises the shell rather than the host argument encoder.
+    const child = spawn(shell, [], { cwd });
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8");
@@ -52,6 +55,7 @@ function runShellAsync(
       stderr += chunk;
     });
     child.on("error", reject);
+    child.stdin.end(`source ${shellQuote(scriptPath)}; ${command}\n`);
     child.on("close", (status) => {
       if (status !== 0 || stderr !== "") {
         reject(new Error(`${shell} fixture failed (${status}): ${stderr}`));
