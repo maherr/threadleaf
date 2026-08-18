@@ -76,7 +76,7 @@ function fakeBackend(): {
   const handles = new Map<string, FakeHandle[]>();
   return {
     backend: {
-      realpath: (targetPath) => fs.realpath(targetPath),
+      realpath: async (targetPath) => targetPath,
       stat: (targetPath) => fs.stat(targetPath),
       readdir: (targetPath) =>
         fs.readdir(targetPath, { withFileTypes: true }) as Promise<Dirent<string>[]>,

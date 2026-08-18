@@ -95,7 +95,9 @@ describe("FileWorkspaceStateStore", () => {
       ],
     });
     const stat = await fs.stat(filePath);
-    expect(stat.mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") {
+      expect(stat.mode & 0o777).toBe(0o600);
+    }
   });
 
   it("keeps each vault's pinned workspace state isolated for deterministic vault switches", async () => {

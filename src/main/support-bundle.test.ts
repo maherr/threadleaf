@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppUpdateSnapshot } from "../shared/app-updates";
 import type { RuntimeSnapshot } from "../shared/contracts";
@@ -362,11 +362,12 @@ const supportInput = {
 
 describe("support bundle", () => {
   it("accepts an absolute development export path only in unpackaged builds", () => {
+    const absolutePath = resolve("/tmp/threadleaf-support.md");
     expect(
       readDevelopmentSupportBundlePath(false, {
         THREADLEAF_SUPPORT_BUNDLE_PATH: " /tmp/threadleaf-support.md ",
       }),
-    ).toBe("/tmp/threadleaf-support.md");
+    ).toBe(absolutePath);
     expect(readDevelopmentSupportBundlePath(false, {})).toBeUndefined();
     expect(
       readDevelopmentSupportBundlePath(true, {

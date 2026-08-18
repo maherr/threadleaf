@@ -34,7 +34,9 @@ describe("FileAccessibilityPreferencesStore", () => {
     });
     expect(saved.uiFontScale).toBe(1.23);
     await expect(store.load()).resolves.toEqual(saved);
-    expect((await fs.stat(preferencesPath)).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") {
+      expect((await fs.stat(preferencesPath)).mode & 0o777).toBe(0o600);
+    }
     expect(await fs.readFile(preferencesPath, "utf8")).toBe(`${JSON.stringify(saved, null, 2)}\n`);
     expect(await fs.readdir(sandboxPath, { recursive: true })).not.toContain("vault");
   });

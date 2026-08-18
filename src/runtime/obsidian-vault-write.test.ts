@@ -88,12 +88,12 @@ describe("Obsidian compatibility vault writes", () => {
     await fs.writeFile(absolutePath, bytes);
     await fs.writeFile(path.join(rootPath, ".obsidian", "appearance.json"), "{}", "utf8");
     const vault = new Vault(rootPath);
-    const canonicalRootPath = await fs.realpath(rootPath);
-    const canonicalAbsolutePath = path.join(canonicalRootPath, relativePath);
     const file = vault.getFileByPath(relativePath);
     if (!file) {
       throw new Error("Resource fixture was not discovered.");
     }
+    const canonicalRootPath = vault.rootPath;
+    const canonicalAbsolutePath = path.join(canonicalRootPath, relativePath);
 
     expect(vault.adapter).toBeInstanceOf(FileSystemAdapter);
     expect(vault.adapter.getName()).toBe(path.basename(rootPath));

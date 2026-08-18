@@ -55,7 +55,9 @@ describe("FileEditorDraftStore", () => {
       selection: { anchor: 18, head: 18 },
     });
     const stat = await fs.stat(path.join(draftDirectory, `${vaultId}.json`));
-    expect(stat.mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") {
+      expect(stat.mode & 0o777).toBe(0o600);
+    }
   });
 
   it("clears only the exact draft identity", async () => {

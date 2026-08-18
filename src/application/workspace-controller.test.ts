@@ -1121,7 +1121,7 @@ describe("WorkspaceController", () => {
     releaseRestore?.();
     const outcome = await activation;
 
-    expect(picked.vault).toMatchObject({ path: "/picked/vault", source: "picked" });
+    expect(picked.vault).toMatchObject({ path: path.resolve("/picked/vault"), source: "picked" });
     expect(outcome).toEqual({ status: "superseded", snapshot: null });
     expect(controller.vaultPath).toBe(path.resolve("/picked/vault"));
     expect(store.saved).toEqual(["/picked/vault"]);
@@ -1260,7 +1260,7 @@ describe("WorkspaceController", () => {
     const switched = await controller.switchVault("/picked/vault");
 
     expect(switched.vault).toMatchObject({
-      path: "/picked/vault",
+      path: path.resolve("/picked/vault"),
       source: "picked",
       warning: null,
     });

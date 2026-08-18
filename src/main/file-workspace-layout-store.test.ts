@@ -24,7 +24,9 @@ describe("FileWorkspaceLayoutStore", () => {
     await store.save(layout);
     await expect(store.load(vaultId)).resolves.toEqual(layout);
     const filePath = path.join(sandboxPath, "layouts", `${vaultId}.json`);
-    expect((await fs.stat(filePath)).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") {
+      expect((await fs.stat(filePath)).mode & 0o777).toBe(0o600);
+    }
     expect(JSON.parse(await fs.readFile(filePath, "utf8"))).toMatchObject({
       version: 2,
       vaultId,

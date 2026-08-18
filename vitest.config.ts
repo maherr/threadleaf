@@ -5,7 +5,6 @@ import { defineConfig } from "vitest/config";
 // macOS exposes its temp tree through /var while realpath resolves /private/var. Tests that
 // exercise exact filesystem authority must start from one canonical spelling on every host.
 const canonicalTestTemporaryDirectory = realpathSync(os.tmpdir());
-os.tmpdir = () => canonicalTestTemporaryDirectory;
 process.env.TMPDIR = canonicalTestTemporaryDirectory;
 if (process.platform === "win32") {
   process.env.TEMP = canonicalTestTemporaryDirectory;

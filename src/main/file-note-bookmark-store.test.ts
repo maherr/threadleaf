@@ -33,7 +33,9 @@ describe("FileNoteBookmarkStore", () => {
     await expect(store.load(vaultId)).resolves.toEqual(saved);
     const filePath = path.join(bookmarkDirectory, `${vaultId}.json`);
     const stat = await fs.stat(filePath);
-    expect(stat.mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") {
+      expect(stat.mode & 0o777).toBe(0o600);
+    }
     await expect(fs.readFile(filePath, "utf8")).resolves.toBe(
       `${JSON.stringify(saved, null, 2)}\n`,
     );

@@ -57,6 +57,7 @@ export async function testConstructionRequest(
   pluginDirectory: string,
   constructionPath: PluginConstructionPath = "test-execution",
 ): Promise<PluginConstructionRequest> {
+  pluginDirectory = await fs.realpath(pluginDirectory);
   const manifest = JSON.parse(await fs.readFile(`${pluginDirectory}/manifest.json`, "utf8")) as {
     version: string;
   };
@@ -79,6 +80,7 @@ export async function testConstructionDispatch(
   pluginDirectory: string,
   constructionPath: PluginConstructionPath = "test-execution",
 ): Promise<PluginConstructionDispatch> {
+  pluginDirectory = await fs.realpath(pluginDirectory);
   const request = await testConstructionRequest(pluginDirectory, constructionPath);
   const inspected = await inspectSealedPluginPackage(
     {

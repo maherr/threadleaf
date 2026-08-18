@@ -1239,11 +1239,27 @@ export class PluginHost implements PluginRuntimePort {
   }
 
   private async assertSealedPackageRoot(candidatePath: string): Promise<string> {
-    const stat = await fs.lstat(candidatePath);
+    const absoluteCandidate = path.resolve(candidatePath);
+    const filesystemRoot = path.parse(absoluteCandidate).root;
+    let current = filesystemRoot;
+    for (const segment of path
+      .relative(filesystemRoot, absoluteCandidate)
+      .split(path.sep)
+      .filter(Boolean)) {
+      current = path.join(current, segment);
+      const component = await fs.lstat(current);
+      if (!component.isDirectory() || component.isSymbolicLink()) {
+        throw withPluginDiagnosticCode(
+          new Error("Plugin execution requires a real sealed package directory chain."),
+          "package-path-escape",
+        );
+      }
+    }
+    const stat = await fs.lstat(absoluteCandidate);
     const canonicalCandidate = await fs.realpath(candidatePath);
-    if (!stat.isDirectory() || stat.isSymbolicLink() || canonicalCandidate !== candidatePath) {
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
       throw withPluginDiagnosticCode(
-        new Error("Plugin execution requires an exact canonical sealed package root."),
+        new Error("Plugin execution requires a real sealed package root."),
         "package-path-escape",
       );
     }

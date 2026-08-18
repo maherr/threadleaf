@@ -34,7 +34,9 @@ describe("FileAppSettingsStore", () => {
     expect(saved.keyBindings["editor.insert-template"]).toBe("Alt+R");
     await expect(store.load()).resolves.toEqual(saved);
     const stat = await fs.stat(settingsPath);
-    expect(stat.mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") {
+      expect(stat.mode & 0o777).toBe(0o600);
+    }
     await expect(fs.readFile(settingsPath, "utf8")).resolves.toBe(
       `${JSON.stringify(saved, null, 2)}\n`,
     );

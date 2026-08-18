@@ -28,7 +28,9 @@ describe("FileVaultAccessibilityPreferencesStore", () => {
     };
     await store.save(overrides);
     await expect(store.load()).resolves.toEqual(overrides);
-    expect((await fs.stat(filePath)).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") {
+      expect((await fs.stat(filePath)).mode & 0o777).toBe(0o600);
+    }
     expect(JSON.parse(await fs.readFile(filePath, "utf8"))).toMatchObject({
       version: 1,
       byVault: { [vaultA]: { accent: "teal" } },

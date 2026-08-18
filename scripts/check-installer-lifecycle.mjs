@@ -402,6 +402,20 @@ async function waitFor(operation, message, timeoutMs = 30_000) {
   throw new Error(`${message}. Last observation: ${JSON.stringify(last)}`);
 }
 
+async function identifiesSameDirectory(leftPath, rightPath) {
+  try {
+    const [left, right] = await Promise.all([
+      fs.stat(leftPath, { bigint: true }),
+      fs.stat(rightPath, { bigint: true }),
+    ]);
+    return (
+      left.isDirectory() && right.isDirectory() && left.dev === right.dev && left.ino === right.ino
+    );
+  } catch {
+    return false;
+  }
+}
+
 function packageStateExpression() {
   return `(async () => {
     const [snapshot, settings, update] = await Promise.all([
@@ -850,11 +864,22 @@ async function launchPackage(executablePath, expectedVersion, stage) {
   const target = await waitForMainTarget(port, Date.now() + 45_000);
   await observeLaunchMarker();
   const probe = { cdp: connectCdp(target.webSocketDebuggerUrl), child, exited, output, stage };
+  activeProbe = probe;
   await probe.cdp.send("Page.enable");
-  await waitFor(async () => {
-    const observed = await evaluate(probe, packageStateExpression());
-    return observed.ready && observed.vaultPath === vaultPath ? observed : null;
-  }, `${expectedVersion} package did not restore the disposable vault`);
+  let lastState = null;
+  try {
+    await waitFor(async () => {
+      lastState = await evaluate(probe, packageStateExpression());
+      return lastState.ready && (await identifiesSameDirectory(lastState.vaultPath, vaultPath))
+        ? lastState
+        : null;
+    }, `${expectedVersion} package did not restore the disposable vault`);
+  } catch (error) {
+    await captureScreenshot(probe, `${stage}-failure`);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}. Last rendered state: ${JSON.stringify(lastState)}. Last process output: ${JSON.stringify(output.slice(-20))}`,
+    );
+  }
   const state = await evaluate(probe, packageStateExpression());
   assert(
     state.version === expectedVersion,
@@ -865,7 +890,6 @@ async function launchPackage(executablePath, expectedVersion, stage) {
     "Unsigned package did not fail closed for updates.",
   );
   await captureScreenshot(probe, stage);
-  activeProbe = probe;
   return { probe, state };
 }
 

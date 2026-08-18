@@ -233,12 +233,13 @@ describe("PluginConstructionAuthorityStore adversarial contract", () => {
     ).rejects.toThrow();
   });
 
-  it("binds vault activation to the canonical-root hash", async () => {
+  it("binds an established vault identity to one physical root", async () => {
     const harness = await createHarness();
-    const wrongVaultId = "0".repeat(64) === harness.vaultId ? "1".repeat(64) : "0".repeat(64);
+    const replacementRoot = path.join(harness.root, "different-vault");
+    await fs.mkdir(replacementRoot);
 
     await expect(
-      harness.store.activateVault(wrongVaultId, harness.vaultRoot, false),
+      harness.store.activateVault(harness.vaultId, replacementRoot, false),
     ).rejects.toThrow();
   });
 

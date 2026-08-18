@@ -53,6 +53,18 @@ function request(
   return { id: `${operation}-request`, operation, ...(payload ? { payload } : {}) };
 }
 
+async function expectSameDirectoryIdentity(leftPath: string, rightPath: string): Promise<void> {
+  if (process.platform !== "win32") {
+    expect(leftPath).toBe(await fs.realpath(rightPath));
+    return;
+  }
+  const [left, right] = await Promise.all([
+    fs.stat(leftPath, { bigint: true }),
+    fs.stat(rightPath, { bigint: true }),
+  ]);
+  expect({ dev: left.dev, ino: left.ino }).toEqual({ dev: right.dev, ino: right.ino });
+}
+
 describe("PluginRendererService", () => {
   it("applies full environments through source-bearing nodes and settles one css-change per live update", async () => {
     const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-environment-service-"));
@@ -438,7 +450,7 @@ module.exports = class RendererFixture extends Plugin {
           packageJsonPath: path.resolve("package.json"),
         }),
       );
-      expect(initialized?.vault.path).toBe(await fs.realpath(vaultPath));
+      await expectSameDirectoryIdentity(initialized?.vault.path ?? "", vaultPath);
       expect(dom.window.eval("app.vault.getName()")).toBe("vault");
       expect(dom.window.eval("typeof moment")).toBe("function");
 
@@ -712,7 +724,7 @@ module.exports = class RendererFixture extends Plugin {
       if (!completed) {
         throw new Error("Mutation barrier returned no renderer snapshot.");
       }
-      expect(completed.vault?.path).toBe(await fs.realpath(vaultPath));
+      await expectSameDirectoryIdentity(completed.vault?.path ?? "", vaultPath);
       await expect(fs.readFile(absoluteFilePath)).resolves.toEqual(Buffer.from(updatedBytes));
 
       await expect(app.vault.modifyBinary(file, conflictBytes.buffer)).rejects.toThrow(

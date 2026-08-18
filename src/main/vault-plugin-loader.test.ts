@@ -297,10 +297,12 @@ describe("vault plugin loader", () => {
         packageState: "invalid",
         errorCode: "package-path-escape",
       });
-      expect(byId.get("permission-denied")).toMatchObject({
-        packageState: "invalid",
-        errorCode: "package-unreadable",
-      });
+      if (process.platform !== "win32") {
+        expect(byId.get("permission-denied")).toMatchObject({
+          packageState: "invalid",
+          errorCode: "package-unreadable",
+        });
+      }
       const serialized = JSON.stringify(discovery);
       expect(serialized).not.toContain("/home/maher/private-token");
       expect(serialized).not.toContain("Unexpected token");

@@ -134,6 +134,18 @@ async function openContainedDirectory(directoryPath: string) {
   }
 }
 
+async function hasRealDirectoryChain(directoryPath: string): Promise<boolean> {
+  const absolute = path.resolve(directoryPath);
+  const filesystemRoot = path.parse(absolute).root;
+  let current = filesystemRoot;
+  for (const segment of path.relative(filesystemRoot, absolute).split(path.sep).filter(Boolean)) {
+    current = path.join(current, segment);
+    const stat = await fs.lstat(current);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) return false;
+  }
+  return true;
+}
+
 type ContainedDirectory = Awaited<ReturnType<typeof openContainedDirectory>>;
 
 async function readContainedFileAt(
@@ -702,8 +714,7 @@ export async function installStagedFile(stagedPath: string, targetPath: string):
   // unsafe for rename/recovery and also lets a concurrent winner change the
   // transaction's evidence in place.
   const targetDirectory = path.dirname(targetPath);
-  const canonicalTargetDirectory = await fs.realpath(targetDirectory);
-  if (path.resolve(canonicalTargetDirectory) !== path.resolve(targetDirectory)) {
+  if (!(await hasRealDirectoryChain(targetDirectory))) {
     throw new Error(`Staged target parent changed through a symbolic link: ${targetPath}`);
   }
 

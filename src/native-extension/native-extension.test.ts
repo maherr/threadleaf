@@ -577,8 +577,10 @@ describe("native extension manifest and capability host", () => {
       };
       await store.put(grant);
       expect(await store.get(vaultId, "portable")).toEqual(grant);
-      const mode = (await fs.stat(filePath)).mode & 0o777;
-      expect(mode).toBe(0o600);
+      if (process.platform !== "win32") {
+        const mode = (await fs.stat(filePath)).mode & 0o777;
+        expect(mode).toBe(0o600);
+      }
       expect(await store.list(otherVaultId)).toEqual([]);
     } finally {
       await fs.rm(root, { recursive: true, force: true });

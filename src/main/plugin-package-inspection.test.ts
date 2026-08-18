@@ -713,7 +713,13 @@ describe("exact plugin package inspection", () => {
         return created;
       });
     const rmSpy = vi.spyOn(fs, "rm").mockImplementation(async (target, options) => {
-      if (capturedRoot && String(target) === capturedRoot) {
+      const sameCapturedRoot = capturedRoot
+        ? await Promise.all([
+            fs.stat(capturedRoot, { bigint: true }),
+            fs.stat(target, { bigint: true }),
+          ]).then(([left, right]) => left.dev === right.dev && left.ino === right.ino)
+        : false;
+      if (sameCapturedRoot) {
         // Simulate a cleanup call that silently fails to remove this run's own root, the way a
         // permission race or unsupported filesystem behavior could in production.
         return;

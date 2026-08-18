@@ -621,6 +621,14 @@ function isPathInside(rootPath: string, candidatePath: string): boolean {
   return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..");
 }
 
+async function sameFilesystemEntry(leftPath: string, rightPath: string): Promise<boolean> {
+  const [left, right] = await Promise.all([
+    fs.stat(leftPath, { bigint: true }),
+    fs.stat(rightPath, { bigint: true }),
+  ]);
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
 function latestGrantForPlugin(
   state: PluginAuthorityStateFile,
   pluginId: string,
@@ -793,9 +801,6 @@ export class PluginConstructionAuthorityStore {
       this.#assertInitialized();
       const vaultId = this.#parseVaultId(vaultIdValue);
       const binding = await this.#bindVaultRoot(vaultRootValue);
-      if (vaultId !== this.#vaultIdForRoot(binding.canonicalRoot)) {
-        throw new Error("Plugin construction vault identity does not match its canonical root.");
-      }
       if (
         isPathInside(binding.canonicalRoot, this.#stateRoot) ||
         isPathInside(this.#stateRoot, binding.canonicalRoot)
@@ -1401,12 +1406,12 @@ export class PluginConstructionAuthorityStore {
     ]);
     const pluginDirectory = await fs.realpath(pluginDirectoryValue);
     const lexicalPluginDirectory = path.resolve(pluginDirectoryValue);
-    const pluginStat = await fs.lstat(pluginDirectory);
+    const pluginStat = await fs.lstat(lexicalPluginDirectory);
     if (
-      pluginDirectory !== lexicalPluginDirectory ||
+      (process.platform !== "win32" && pluginDirectory !== lexicalPluginDirectory) ||
       !pluginStat.isDirectory() ||
       pluginStat.isSymbolicLink() ||
-      path.dirname(pluginDirectory) !== pluginsRoot
+      !(await sameFilesystemEntry(path.dirname(pluginDirectory), pluginsRoot))
     ) {
       throw new Error("Plugin construction source escaped the active vault plugin directory.");
     }
@@ -1419,9 +1424,14 @@ export class PluginConstructionAuthorityStore {
       current = path.join(current, segment);
       const stat = await fs.lstat(current);
       const canonical = await fs.realpath(current);
-      if (!stat.isDirectory() || stat.isSymbolicLink() || canonical !== current) {
+      if (
+        !stat.isDirectory() ||
+        stat.isSymbolicLink() ||
+        (process.platform !== "win32" && canonical !== current)
+      ) {
         throw new Error("Plugin construction source contains a linked directory component.");
       }
+      current = canonical;
     }
     return current;
   }
@@ -1447,9 +1457,8 @@ export class PluginConstructionAuthorityStore {
     }
     const binding = await this.#bindVaultRoot(session.vaultRoot);
     if (
-      binding.canonicalRoot !== session.vaultRoot ||
-      binding.fingerprint !== session.vaultRootFingerprint ||
-      this.#vaultIdForRoot(binding.canonicalRoot) !== session.vaultId
+      (process.platform !== "win32" && binding.canonicalRoot !== session.vaultRoot) ||
+      binding.fingerprint !== session.vaultRootFingerprint
     ) {
       throw new Error("Plugin construction authority vault identity changed during the session.");
     }
@@ -1645,7 +1654,7 @@ export class PluginConstructionAuthorityStore {
       canonicalRoot,
       fingerprint: authorityJsonSha256({
         schemaVersion: 1,
-        canonicalRoot,
+        canonicalRoot: process.platform === "win32" ? null : canonicalRoot,
         device: root.dev.toString(),
         inode: root.ino.toString(),
         birthtimeNs: root.birthtimeNs.toString(),
@@ -1653,16 +1662,10 @@ export class PluginConstructionAuthorityStore {
     };
   }
 
-  #vaultIdForRoot(canonicalRoot: string): string {
-    const identityPath = process.platform === "win32" ? canonicalRoot.toLowerCase() : canonicalRoot;
-    return createHash("sha256").update(identityPath).digest("hex");
-  }
-
   #assertStateBinding(state: PluginAuthorityStateFile, binding: VaultRootBinding): void {
     if (
-      state.vaultRoot !== binding.canonicalRoot ||
-      state.vaultRootFingerprint !== binding.fingerprint ||
-      state.vaultId !== this.#vaultIdForRoot(binding.canonicalRoot)
+      (process.platform !== "win32" && state.vaultRoot !== binding.canonicalRoot) ||
+      state.vaultRootFingerprint !== binding.fingerprint
     ) {
       throw new Error("Plugin authority state belongs to a different physical vault root.");
     }
@@ -1674,7 +1677,7 @@ export class PluginConstructionAuthorityStore {
       !stat.isFile() ||
       stat.isSymbolicLink() ||
       stat.nlink !== 1n ||
-      (Number(stat.mode) & 0o777) !== expectedMode
+      (process.platform !== "win32" && (Number(stat.mode) & 0o777) !== expectedMode)
     ) {
       throw new Error("Plugin authority private state path is aliased or has unsafe permissions.");
     }
@@ -1697,13 +1700,10 @@ export class PluginConstructionAuthorityStore {
 
   async #assertStoreDirectory(directoryPath: string, parentPath: string): Promise<void> {
     const stat = await fs.lstat(directoryPath);
-    const canonical = await fs.realpath(directoryPath);
     if (
       !stat.isDirectory() ||
       stat.isSymbolicLink() ||
-      canonical !== directoryPath ||
-      !isPathInside(parentPath, canonical) ||
-      path.dirname(canonical) !== parentPath
+      !(await sameFilesystemEntry(path.dirname(directoryPath), parentPath))
     ) {
       throw new Error("Plugin authority store contains an unsafe directory component.");
     }
@@ -1712,7 +1712,11 @@ export class PluginConstructionAuthorityStore {
   async #assertStoreLayout(): Promise<void> {
     const root = await fs.lstat(this.#stateRoot);
     const canonicalRoot = await fs.realpath(this.#stateRoot);
-    if (!root.isDirectory() || root.isSymbolicLink() || canonicalRoot !== this.#stateRoot) {
+    if (
+      !root.isDirectory() ||
+      root.isSymbolicLink() ||
+      (process.platform !== "win32" && canonicalRoot !== this.#stateRoot)
+    ) {
       throw new Error("Plugin construction authority root changed after initialization.");
     }
     for (const directory of [
@@ -1722,12 +1726,10 @@ export class PluginConstructionAuthorityStore {
       this.#anchorsRoot(),
     ]) {
       const stat = await fs.lstat(directory);
-      const canonical = await fs.realpath(directory);
       if (
         !stat.isDirectory() ||
         stat.isSymbolicLink() ||
-        canonical !== directory ||
-        path.dirname(canonical) !== this.#stateRoot
+        !(await sameFilesystemEntry(path.dirname(directory), this.#stateRoot))
       ) {
         throw new Error("Plugin authority store path component changed after initialization.");
       }

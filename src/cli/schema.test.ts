@@ -492,7 +492,8 @@ async function shellOutputByState(
   // initialize. Run independent state batches concurrently so the exhaustive
   // oracle remains a bounded focused test instead of a serial minute-long
   // process. Each batch preserves state indices, so merge order is irrelevant.
-  const batchSize = shell === "fish" ? Math.max(1, Math.ceil(states.length / 8)) : states.length;
+  const batchCount = shell === "fish" || process.platform === "win32" ? 8 : 1;
+  const batchSize = Math.max(1, Math.ceil(states.length / batchCount));
   const batches: Array<{ offset: number; states: readonly CompletionState[] }> = [];
   for (let offset = 0; offset < states.length; offset += batchSize) {
     batches.push({ offset, states: states.slice(offset, offset + batchSize) });
@@ -534,6 +535,10 @@ async function shellOutputByState(
 }
 
 function executable(name: string): string | null {
+  if (process.platform === "win32") {
+    const result = spawnSync("where.exe", [name], { encoding: "utf8" });
+    return result.status === 0 ? (result.stdout.split(/\r?\n/u).find(Boolean) ?? null) : null;
+  }
   const result = spawnSync("sh", ["-c", `command -v ${name}`], { encoding: "utf8" });
   return result.status === 0 ? result.stdout.trim() : null;
 }

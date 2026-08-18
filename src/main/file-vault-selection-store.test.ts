@@ -34,7 +34,9 @@ describe("FileVaultSelectionStore", () => {
     await expect(store.load()).resolves.toBe(second);
 
     const stat = await fs.stat(selectionPath);
-    expect(stat.mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") {
+      expect(stat.mode & 0o777).toBe(0o600);
+    }
     await expect(fs.readFile(selectionPath, "utf8")).resolves.toBe(
       `${JSON.stringify({ version: 1, vaultPath: second }, null, 2)}\n`,
     );
