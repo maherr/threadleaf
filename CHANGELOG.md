@@ -33,6 +33,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Made the reviewed-plugin acceptance harness set and restore its supported 860 by 640 viewport
+  explicitly, so clean hosted runners exercise the intended minimum instead of inheriting the
+  desktop window default.
 - Prepared and asserted the development Electron runtime's exact root-owned Chromium helper before
   the reviewed-plugin end-to-end gate, without disabling or changing that gate's sandbox.
 - Made packaged lifecycle acceptance deterministic by acknowledging the CDP close request before

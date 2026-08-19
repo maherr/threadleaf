@@ -290,6 +290,19 @@ async function screenshot(name, theme) {
   return outputPath;
 }
 
+async function setViewport(width, height, label) {
+  await cdp.send("Emulation.setDeviceMetricsOverride", {
+    width,
+    height,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await waitFor(
+    `innerWidth === ${width} && innerHeight === ${height}`,
+    `${label} viewport did not apply.`,
+  );
+}
+
 async function openReviewFrom(containerSelector, label) {
   await clickRowAction(containerSelector, label);
   await waitFor(
@@ -358,6 +371,7 @@ async function launchApplication(builtScript) {
   const target = await waitForMainTarget(port, Date.now() + 10_000);
   cdp = connectCdp(target.webSocketDebuggerUrl);
   await cdp.send("Page.enable");
+  await setViewport(860, 640, "Minimum supported");
   await waitFor(
     `(() => ({
       ready: document.querySelector("#runtime-state")?.textContent === "Ready",
@@ -605,13 +619,7 @@ try {
     minimumViewport.width === 860 && minimumViewport.height === 640,
     `Authority review was not exercised at the supported 860x640 minimum: ${JSON.stringify(minimumViewport)}`,
   );
-  await cdp.send("Emulation.setDeviceMetricsOverride", {
-    width: 1180,
-    height: 820,
-    deviceScaleFactor: 1,
-    mobile: false,
-  });
-  await waitFor("innerWidth === 1180 && innerHeight === 820", "The wide viewport did not apply.");
+  await setViewport(1180, 820, "Wide desktop");
   const wideOverflow = await evaluate(`[
     ...document.querySelectorAll("#plugin-authority-review-facts, #plugin-authority-review-list"),
   ].some((element) => element.scrollWidth > element.clientWidth + 1)`);
@@ -653,11 +661,7 @@ try {
     })()`);
     assert(positiveControlCleared, "Authority visual positive control did not cleanly revert.");
   }
-  await cdp.send("Emulation.clearDeviceMetricsOverride");
-  await waitFor(
-    "innerWidth === 860 && innerHeight === 640",
-    "The minimum viewport did not restore.",
-  );
+  await setViewport(860, 640, "Minimum supported");
   await click("#plugin-authority-review-grant");
   await waitFor(
     'document.querySelector("#plugin-authority-review-dialog")?.open === false',
