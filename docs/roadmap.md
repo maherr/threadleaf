@@ -435,8 +435,9 @@ Exit gate: selected high-value plugins complete named workflows against public f
       symlink, mode, size, and SHA-256 manifests from two independent builds.
 - [x] Native macOS ARM64 ZIP and DMG packaging with executable, architecture, bundle, resource,
       archive, disk-image, update-metadata, and checksum verification on an M4 Mac.
-- [ ] Complete the first pinned hosted Intel macOS and Windows installer lifecycle runs after the
-      public repository exists.
+- [x] Complete the first pinned hosted Intel macOS and Windows installer lifecycle runs after the
+      public repository exists. Both native lifecycle jobs passed in
+      [Native package CI run 32203562335](https://github.com/maherr/threadleaf/actions/runs/32203562335).
 - [x] Manual, no-background-check update controller and Settings surface for eligible signed macOS
       and Windows packages, with explicit check, download, and install actions; exact package trust
       markers; sanitized failures; Linux package-manager guidance; and packaged viewport coverage.
