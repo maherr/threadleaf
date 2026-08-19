@@ -35,6 +35,12 @@ function assertLinuxWorkflowGate(document, label) {
     runs.filter((run) => run === "pnpm run test:plugin-packages-e2e:built").length === 1,
     `${label} Linux job must run the built plugin E2E exactly once.`,
   );
+  const e2eStep = record(linux.steps[e2eIndex], `${label} plugin E2E step`);
+  assert(
+    record(e2eStep.env, `${label} plugin E2E environment`).CHROME_DEVEL_SANDBOX ===
+      "/usr/local/sbin/threadleaf-chrome-sandbox",
+    `${label} plugin E2E must use the prepared Chromium sandbox helper.`,
+  );
   const nativeTools = runs.find(
     (run) => typeof run === "string" && run.includes("apt-get install"),
   );

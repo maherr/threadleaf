@@ -33,6 +33,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Reused the prepared root-owned Chromium helper for the reviewed-plugin end-to-end gate, so the
+  hosted Linux release lane exercises that workflow without disabling Electron's sandbox.
 - Made packaged lifecycle acceptance deterministic by acknowledging the CDP close request before
   Electron tears down its renderer.
 - Rebuilt Live Preview decorations when CodeMirror advances a cold syntax tree, so an initially
