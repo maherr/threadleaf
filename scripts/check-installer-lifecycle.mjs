@@ -456,7 +456,21 @@ async function waitFor(operation, message, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
   let last = null;
   while (Date.now() < deadline) {
-    last = await operation();
+    const remainingMs = Math.max(1, deadline - Date.now());
+    let timeout;
+    try {
+      last = await Promise.race([
+        Promise.resolve().then(operation),
+        new Promise((_, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error("Observation exceeded the remaining readiness deadline.")),
+            remainingMs,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timeout);
+    }
     if (last) {
       return last;
     }
@@ -995,7 +1009,7 @@ async function stopPackage(probe, force = false) {
   if (!probe) {
     return;
   }
-  if (!force) {
+  if (!force && platform !== "darwin") {
     try {
       await evaluate(probe, "setTimeout(() => window.close(), 0); true");
     } catch {
@@ -1006,6 +1020,9 @@ async function stopPackage(probe, force = false) {
   probe.cdp.close();
   if (!force) {
     try {
+      // Closing the last macOS window intentionally leaves the app resident. Sending
+      // SIGTERM directly exercises Electron's before-quit autosave and cleanup path;
+      // closing the window first races that same preflight and can deadlock shutdown.
       probe.child.kill("SIGTERM");
     } catch {
       // The process already exited.

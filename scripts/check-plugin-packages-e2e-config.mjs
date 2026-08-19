@@ -24,9 +24,12 @@ function assertLinuxWorkflowGate(document, label) {
   assert(linux["runs-on"] === "ubuntu-24.04", `${label} plugin E2E must stay on Linux.`);
   assert(Array.isArray(linux.steps), `${label} Linux job must define steps.`);
   const runs = linux.steps.map((step) => record(step, `${label} Linux step`).run);
-  const buildIndex = runs.indexOf("pnpm run release:linux");
+  const prepareIndex = runs.indexOf("pnpm run release:linux:prepare");
+  const buildIndex = runs.indexOf("pnpm run release:linux:verify");
   const e2eIndex = runs.indexOf("pnpm run test:plugin-packages-e2e:built");
+  assert(prepareIndex >= 0, `${label} Linux job must build the unpacked package first.`);
   assert(buildIndex >= 0, `${label} Linux job must build and verify packages.`);
+  assert(buildIndex > prepareIndex, `${label} Linux job must verify after its unpacked build.`);
   assert(e2eIndex > buildIndex, `${label} Linux job must run plugin E2E after the verified build.`);
   assert(
     runs.filter((run) => run === "pnpm run test:plugin-packages-e2e:built").length === 1,

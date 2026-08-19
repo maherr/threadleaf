@@ -9,6 +9,7 @@ const builderPath = path.join(rootPath, "electron-builder.yml");
 const ciPath = path.join(rootPath, ".github", "workflows", "ci.yml");
 const releasePath = path.join(rootPath, ".github", "workflows", "release.yml");
 const lifecycleScriptPath = path.join(rootPath, "scripts", "check-installer-lifecycle.mjs");
+const mainProcessPath = path.join(rootPath, "src", "main", "main.ts");
 const packagedAttachmentsScriptPath = path.join(
   rootPath,
   "scripts",
@@ -137,6 +138,7 @@ const [
   ciText,
   releaseText,
   lifecycleScriptText,
+  mainProcessText,
   packagedAttachmentsScriptText,
 ] = await Promise.all([
   fs.readFile(fixturePath, "utf8"),
@@ -145,6 +147,7 @@ const [
   fs.readFile(ciPath, "utf8"),
   fs.readFile(releasePath, "utf8"),
   fs.readFile(lifecycleScriptPath, "utf8"),
+  fs.readFile(mainProcessPath, "utf8"),
   fs.readFile(packagedAttachmentsScriptPath, "utf8"),
 ]);
 const fixture = record(JSON.parse(fixtureText), "installer lifecycle fixture");
@@ -174,6 +177,16 @@ assert(
   packageData.scripts?.["test:installer-lifecycle-config"] ===
     "node scripts/check-installer-lifecycle-config.mjs",
   "package.json does not expose the lifecycle config gate.",
+);
+assert(
+  packageData.scripts?.["release:linux"] ===
+    "pnpm run release:linux:prepare && pnpm run release:linux:verify" &&
+    packageData.scripts?.["release:linux:prepare"] === "pnpm run check && pnpm run pack:dir" &&
+    packageData.scripts?.["release:linux:verify"] ===
+      "pnpm run test:packaged-attachments:built && pnpm run pack:linux && pnpm run test:linux-packages && node scripts/package-reproducible-linux.mjs --write" &&
+    packageData.scripts?.["test:packaged-attachments"] ===
+      "pnpm run pack:dir && pnpm run test:packaged-attachments:built",
+  "Linux release scripts must expose one unpacked-build boundary before packaged verification.",
 );
 assert(builder.appId === "org.threadleaf.Threadleaf", "Electron application identity changed.");
 assert(builder.productName === "Threadleaf", "Electron product name changed.");
@@ -205,6 +218,13 @@ assert(
   "Native lifecycle verifier must stop its marked root before cleaning tracked descendants through a quiet window.",
 );
 assert(
+  lifecycleScriptText.includes('if (!force && platform !== "darwin")') &&
+    lifecycleScriptText.includes(
+      "Sending\n      // SIGTERM directly exercises Electron's before-quit autosave and cleanup path",
+    ),
+  "macOS lifecycle shutdown must not race a window-close preflight against app termination.",
+);
+assert(
   lifecycleScriptText.includes("THREADLEAF_LIFECYCLE_RUN") &&
     lifecycleScriptText.includes("THREADLEAF_LIFECYCLE_ARTIFACT_DIR"),
   "Native lifecycle verifier lost its isolated marker/evidence contract.",
@@ -221,6 +241,42 @@ assert(
     lifecycleScriptText.includes("renderedStateTransitions") &&
     lifecycleScriptText.includes("packageReadyTimeoutMs,"),
   "Native lifecycle verification must keep a bounded 90-second readiness gate with rendered progress evidence.",
+);
+assert(
+  lifecycleScriptText.includes("const remainingMs = Math.max(1, deadline - Date.now())") &&
+    lifecycleScriptText.includes("Observation exceeded the remaining readiness deadline.") &&
+    lifecycleScriptText.includes("last = await Promise.race(["),
+  "Native lifecycle readiness must bound each observation, not only the delay between observations.",
+);
+const serializedCatalogStart = mainProcessText.indexOf(
+  "function serializePluginCatalogOperation<T>",
+);
+const serializedCatalogEnd = mainProcessText.indexOf(
+  "async function currentAppearance",
+  serializedCatalogStart,
+);
+const currentCatalogStart = mainProcessText.indexOf("async function currentPluginCatalog");
+const currentCatalogEnd = mainProcessText.indexOf(
+  "async function currentMigrationPreview",
+  currentCatalogStart,
+);
+assert(
+  serializedCatalogStart >= 0 && serializedCatalogEnd > serializedCatalogStart,
+  "Main process lost the serialized plugin catalog boundary.",
+);
+assert(
+  currentCatalogStart >= 0 && currentCatalogEnd > currentCatalogStart,
+  "Main process lost the current plugin catalog boundary.",
+);
+const serializedCatalogText = mainProcessText.slice(serializedCatalogStart, serializedCatalogEnd);
+const currentCatalogText = mainProcessText.slice(currentCatalogStart, currentCatalogEnd);
+assert(
+  serializedCatalogText.includes("const startupActivation = initialWorkspaceActivation") &&
+    serializedCatalogText.includes(
+      "const queuedOperation = startupActivation ? startupActivation.then(run) : run()",
+    ) &&
+    !currentCatalogText.includes("await initialWorkspaceActivation"),
+  "Plugin catalog startup readiness must wait outside the private-mutation queue to prevent a circular wait.",
 );
 assert(
   lifecycleScriptText.includes("await fs.realpath(os.tmpdir())"),
@@ -288,10 +344,15 @@ assert(
 
 const linuxJob = record(ciJobs.linux, "Linux CI job");
 const linuxSteps = stepsFor(linuxJob, "Linux CI job");
+const linuxPrepare = stepWithExactRun(
+  linuxSteps,
+  "pnpm run release:linux:prepare",
+  "Linux source and unpacked build",
+);
 const linuxCheck = stepWithExactRun(
   linuxSteps,
-  "pnpm run release:linux",
-  "Linux build and source check",
+  "pnpm run release:linux:verify",
+  "Linux packaged verification",
 );
 const linuxSandbox = stepContaining(
   linuxSteps,
@@ -304,12 +365,13 @@ assert(
     .split("\n")
     .map((line) => line.trim())
     .join("\n") ===
-    "pnpm run pack:dir\nsudo install -o root -g root -m 4755 release/linux-unpacked/chrome-sandbox /usr/local/sbin/threadleaf-chrome-sandbox",
-  "Linux CI must package first, then install that exact Chromium sandbox helper.",
+    'sudo install -o root -g root -m 4755 release/linux-unpacked/chrome-sandbox /usr/local/sbin/threadleaf-chrome-sandbox\nsudo chown root:root release/linux-unpacked/chrome-sandbox\nsudo chmod 4755 release/linux-unpacked/chrome-sandbox\ntest "$(stat -c \'%u:%g:%a\' release/linux-unpacked/chrome-sandbox)" = "0:0:4755"',
+  "Linux CI must install the helper and repair the exact unpacked helper used by Electron.",
 );
 assert(
-  linuxSteps.indexOf(linuxSandbox) < linuxSteps.indexOf(linuxCheck),
-  "Linux CI installs the packaged Chromium sandbox helper after running packaged checks.",
+  linuxSteps.indexOf(linuxPrepare) < linuxSteps.indexOf(linuxSandbox) &&
+    linuxSteps.indexOf(linuxSandbox) < linuxSteps.indexOf(linuxCheck),
+  "Linux CI must build the unpacked app, prepare its helper, then run packaged checks without rebuilding first.",
 );
 assert(
   envValue(linuxCheck, "CHROME_DEVEL_SANDBOX", "Linux build and source check") ===
@@ -443,10 +505,30 @@ for (const [job, label] of [
   );
 }
 const releaseLinuxSteps = stepsFor(releaseLinux, "Linux release candidate job");
+const releaseLinuxPrepare = stepWithExactRun(
+  releaseLinuxSteps,
+  "pnpm run release:linux:prepare",
+  "Linux release source and unpacked build",
+);
 const releaseLinuxVerify = stepWithExactRun(
   releaseLinuxSteps,
-  "pnpm run release:linux",
+  "pnpm run release:linux:verify",
   "Linux release build and verify",
+);
+const releaseLinuxSandbox = stepContaining(
+  releaseLinuxSteps,
+  "threadleaf-chrome-sandbox",
+  "Linux release Chromium sandbox preparation",
+);
+assert(
+  releaseLinuxSteps.indexOf(releaseLinuxPrepare) < releaseLinuxSteps.indexOf(releaseLinuxSandbox) &&
+    releaseLinuxSteps.indexOf(releaseLinuxSandbox) < releaseLinuxSteps.indexOf(releaseLinuxVerify),
+  "Linux release must prepare the exact unpacked sandbox helper before packaged verification.",
+);
+assert(
+  envValue(releaseLinuxVerify, "CHROME_DEVEL_SANDBOX", "Linux release build and verify") ===
+    "/usr/local/sbin/threadleaf-chrome-sandbox",
+  "Linux release packaged checks must use the prepared Chromium sandbox helper.",
 );
 assertFishBeforeCheck(releaseLinuxSteps, releaseLinuxVerify, "Linux release");
 assert(

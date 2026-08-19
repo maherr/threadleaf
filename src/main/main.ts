@@ -1453,7 +1453,14 @@ function serializePluginCatalogOperation<T>(
   code: PluginDiagnosticCode,
   subject: PluginDiagnosticSubject = {},
 ): Promise<T> {
-  return serializePluginOperation(operation).catch((error: unknown) => {
+  // Never wait for startup activation while holding the private-mutation queue.
+  // Depending on renderer timing, activation may itself be queued behind this
+  // catalog request. Snapshotting the barrier before enqueueing keeps both
+  // event orders serial without creating a circular wait.
+  const startupActivation = initialWorkspaceActivation;
+  const run = () => serializePluginOperation(operation);
+  const queuedOperation = startupActivation ? startupActivation.then(run) : run();
+  return queuedOperation.catch((error: unknown) => {
     // Keep the original exception in the main-process log/cause only. IPC receives the
     // bounded category and validated subject needed for a useful Settings action.
     console.error("Threadleaf plugin catalog operation failed:", error);
@@ -1521,9 +1528,6 @@ async function currentAppearancePackages(expectedVaultId: string) {
 }
 
 async function currentPluginCatalog(expectedVaultId: string): Promise<PluginCatalogResponse> {
-  if (initialWorkspaceActivation) {
-    await initialWorkspaceActivation;
-  }
   if (workspaceController.vaultId !== expectedVaultId) {
     return { status: "stale-vault", vaultId: workspaceController.vaultId };
   }

@@ -67,8 +67,18 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y fish libfuse2t64 rpm xvfb
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Build and verify Linux packages
-        run: pnpm run release:linux
+      - name: Build source and unpacked Linux app
+        run: pnpm run release:linux:prepare
+      - name: Prepare packaged Chromium sandbox helper
+        run: |
+          sudo install -o root -g root -m 4755 release/linux-unpacked/chrome-sandbox /usr/local/sbin/threadleaf-chrome-sandbox
+          sudo chown root:root release/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 release/linux-unpacked/chrome-sandbox
+          test "$(stat -c '%u:%g:%a' release/linux-unpacked/chrome-sandbox)" = "0:0:4755"
+      - name: Verify and package Linux app
+        env:
+          CHROME_DEVEL_SANDBOX: /usr/local/sbin/threadleaf-chrome-sandbox
+        run: pnpm run release:linux:verify
       - name: Verify reviewed plugin package E2E
         run: pnpm run test:plugin-packages-e2e:built
       - name: Check community theme integrity

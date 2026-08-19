@@ -76,10 +76,14 @@ describe("release workflows", () => {
     const packageDocument = JSON.parse(await readFile(path.resolve("package.json"), "utf8")) as {
       scripts?: Record<string, string>;
     };
-    const release = packageDocument.scripts?.["release:linux"] ?? "";
-    expect(release).toContain("pnpm run test:packaged-attachments");
-    expect(release.indexOf("pnpm run test:packaged-attachments")).toBeLessThan(
-      release.indexOf("pnpm run pack:linux"),
+    const scripts = packageDocument.scripts ?? {};
+    expect(scripts["release:linux"]).toBe(
+      "pnpm run release:linux:prepare && pnpm run release:linux:verify",
+    );
+    expect(scripts["release:linux:prepare"]).toContain("pnpm run pack:dir");
+    const verify = scripts["release:linux:verify"] ?? "";
+    expect(verify.indexOf("pnpm run test:packaged-attachments:built")).toBeLessThan(
+      verify.indexOf("pnpm run pack:linux"),
     );
   });
 

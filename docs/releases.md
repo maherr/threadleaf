@@ -142,7 +142,9 @@ The CI workflow can run on pull requests, pushes to `main`, or manual dispatch. 
 publishes, or receives release credentials.
 
 Ubuntu package UI checks install the exact Electron `chrome-sandbox` helper as a root-owned mode
-`4755` executable and pass its path through `CHROME_DEVEL_SANDBOX`. This adapts Chromium's
+`4755` executable and pass its path through `CHROME_DEVEL_SANDBOX`. The hosted command is split at
+the unpacked-app boundary: it builds `release/linux-unpacked`, repairs and asserts that package's
+own helper, then runs the packaged attachment gate without rebuilding first. This adapts Chromium's
 [documented raw-build sandbox setup](https://chromium.googlesource.com/chromium/src/+/main/docs/linux/suid_sandbox_development.md)
 for hosted CI without weakening the package with `--no-sandbox`. Chromium's separate
 [AppArmor guidance](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md)

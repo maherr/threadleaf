@@ -33,6 +33,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Prevented restored startup from deadlocking when a plugin-catalog read and deferred vault
+  activation arrived in either event order. Catalog readiness now waits outside the shared private
+  mutation queue instead of holding that queue while activation waits behind it.
+- Bounded every native lifecycle readiness observation, exercised the real macOS `before-quit`
+  autosave path without racing it against last-window closure, and retained rendered progress
+  evidence on failure.
+- Split hosted Linux packaging at the unpacked-app boundary so CI repairs and verifies the exact
+  root-owned Chromium helper Electron will launch before any packaged UI check runs.
 - Made startup plugin safe mode bypass compatibility-renderer construction entirely, so recovery
   launches can restore the selected vault even when a platform cannot start the hidden plugin
   surface.
