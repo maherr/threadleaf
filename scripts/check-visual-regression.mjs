@@ -596,6 +596,7 @@ const keyCodes = {
   Backspace: 8,
   Escape: 27,
   Enter: 13,
+  Home: 36,
 };
 
 async function pressKey(key, code, modifiers = 0) {
@@ -612,9 +613,20 @@ async function pressKey(key, code, modifiers = 0) {
   }
 }
 
-async function selectNextOption(selector, expectedValue) {
+async function setControlValue(selector, expectedValue) {
+  const optionIndex = await evaluate(`(() => {
+    const control = document.querySelector(${JSON.stringify(selector)});
+    if (!(control instanceof HTMLSelectElement)) return -1;
+    return [...control.options].findIndex(
+      (option) => option.value === ${JSON.stringify(expectedValue)},
+    );
+  })()`);
+  assert(optionIndex >= 0, `Missing option ${expectedValue} in control ${selector}`);
   await clickSelector(selector);
-  await pressKey("ArrowDown", "ArrowDown");
+  await pressKey("Home", "Home");
+  for (let index = 0; index < optionIndex; index += 1) {
+    await pressKey("ArrowDown", "ArrowDown");
+  }
   await pressKey("Enter", "Enter");
   await waitFor(
     async () =>
@@ -999,7 +1011,7 @@ async function runVisualCases(matrix, regionManifest) {
       "#accessibility-reduced-motion",
       "#accessibility-reduced-transparency",
     ]) {
-      await selectNextOption(selector, "on");
+      await setControlValue(selector, "on");
       await waitFor(
         async () =>
           (await evaluate("document.querySelector('#accessibility-status')?.textContent")) ===
