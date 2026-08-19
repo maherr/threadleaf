@@ -33,6 +33,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Made packaged lifecycle acceptance deterministic by acknowledging the CDP close request before
+  Electron tears down its renderer.
 - Retried the bounded Windows delete-pending `EPERM` window around native-extension grant locks,
   while preserving persistent permission failures and serialized revoke/save semantics.
 - Prevented restored startup from deadlocking when a plugin-catalog read and deferred vault

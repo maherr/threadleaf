@@ -679,7 +679,10 @@ try {
     `Packaged compatibility environment updates were rejected:\n${packagedOutput}`,
   );
 
-  await evaluate("setTimeout(() => window.close(), 0); true");
+  // Leave enough time for Runtime.evaluate's response to cross CDP before closing the
+  // renderer. A zero-delay close can win that race on a fast or CPU-constrained runner and
+  // turn an intentional clean shutdown into a false "CDP WebSocket closed" failure.
+  await evaluate("setTimeout(() => window.close(), 200); true");
   const exit = await Promise.race([
     exited,
     delay(10_000).then(() => ({ code: null, signal: "timeout" })),
