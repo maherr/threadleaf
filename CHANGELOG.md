@@ -33,6 +33,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Retried the bounded Windows delete-pending `EPERM` window around native-extension grant locks,
+  while preserving persistent permission failures and serialized revoke/save semantics.
 - Prevented restored startup from deadlocking when a plugin-catalog read and deferred vault
   activation arrived in either event order. Catalog readiness now waits outside the shared private
   mutation queue instead of holding that queue while activation waits behind it.

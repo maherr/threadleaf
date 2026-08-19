@@ -438,16 +438,26 @@ async function withGrantFileLock<T>(filePath: string, action: () => Promise<T>):
   await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
   const lockPath = `${filePath}.lock`;
   let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
+  let lastOpenError: unknown;
   for (let attempt = 0; attempt < 500; attempt += 1) {
     try {
       handle = await fs.open(lockPath, "wx", 0o600);
       break;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EEXIST" && code !== "EPERM") throw error;
+      // Windows can report EPERM while the previous holder's closed lock is still being deleted.
+      // Keep the retry bounded, and preserve a persistent EPERM as the original permission error.
+      lastOpenError = error;
+      await new Promise<void>((resolve) => setTimeout(resolve, 2));
     }
   }
-  if (!handle) throw new Error("Native extension grant store lock timed out.");
+  if (!handle) {
+    if ((lastOpenError as NodeJS.ErrnoException | undefined)?.code === "EPERM") {
+      throw lastOpenError;
+    }
+    throw new Error("Native extension grant store lock timed out.");
+  }
   try {
     return await action();
   } finally {

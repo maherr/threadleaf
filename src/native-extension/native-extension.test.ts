@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   crossVaultRead,
   partialWrite,
@@ -553,6 +553,7 @@ describe("native extension manifest and capability host", () => {
 
   it("persists private per-vault grants atomically with restrictive permissions", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-native-grants-"));
+    let open: ReturnType<typeof vi.spyOn> | undefined;
     try {
       const filePath = path.join(root, "application", "native-grants.v1.json");
       const store = new FileNativeExtensionGrantStore(filePath);
@@ -575,7 +576,29 @@ describe("native extension manifest and capability host", () => {
         capabilities: ["vault.read" as const],
         grantedAt: "2026-08-12T00:00:00.000Z",
       };
+      const originalOpen = fs.open.bind(fs);
+      let injectedTransientLockFailure = false;
+      open = vi.spyOn(fs, "open").mockImplementation(async (target, flags, mode) => {
+        if (!injectedTransientLockFailure && target === `${filePath}.lock` && flags === "wx") {
+          injectedTransientLockFailure = true;
+          throw Object.assign(new Error("transient Windows delete-pending lock"), {
+            code: "EPERM",
+          });
+        }
+        return mode === undefined ? originalOpen(target, flags) : originalOpen(target, flags, mode);
+      });
       await store.put(grant);
+      expect(injectedTransientLockFailure).toBe(true);
+      open.mockRestore();
+      open = vi.spyOn(fs, "open").mockImplementation(async (target, flags, mode) => {
+        if (target === `${filePath}.lock` && flags === "wx") {
+          throw Object.assign(new Error("persistent lock permission failure"), { code: "EPERM" });
+        }
+        return mode === undefined ? originalOpen(target, flags) : originalOpen(target, flags, mode);
+      });
+      await expect(store.put(grant)).rejects.toMatchObject({ code: "EPERM" });
+      open.mockRestore();
+      open = undefined;
       expect(await store.get(vaultId, "portable")).toEqual(grant);
       if (process.platform !== "win32") {
         const mode = (await fs.stat(filePath)).mode & 0o777;
@@ -583,6 +606,7 @@ describe("native extension manifest and capability host", () => {
       }
       expect(await store.list(otherVaultId)).toEqual([]);
     } finally {
+      open?.mockRestore();
       await fs.rm(root, { recursive: true, force: true });
     }
   });
