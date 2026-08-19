@@ -59,9 +59,31 @@ function assertLinuxWorkflowGate(document, label) {
     `${label} plugin E2E must repair and assert Electron's exact adjacent sandbox helper.`,
   );
   const nativeTools = runs.find(
-    (run) => typeof run === "string" && run.includes("apt-get install"),
+    (run) =>
+      typeof run === "string" &&
+      run.includes("install_missing_tools") &&
+      run.includes("sudo apt-get"),
   );
-  assert(nativeTools?.includes("xvfb"), `${label} Linux job must install Xvfb for plugin E2E.`);
+  assert(
+    nativeTools?.includes("command -v Xvfb"),
+    `${label} Linux job must assert the runner's Xvfb before plugin E2E.`,
+  );
+  assert(
+    nativeTools?.includes("command -v rpm"),
+    `${label} Linux job must assert the runner's RPM inspector.`,
+  );
+  assert(
+    nativeTools?.includes("timeout --signal=TERM --kill-after=15s 120s") &&
+      nativeTools.includes("Acquire::Retries=3") &&
+      nativeTools.includes("Acquire::http::Timeout=15") &&
+      nativeTools.includes("Acquire::https::Timeout=15"),
+    `${label} Linux package acquisition must be bounded and retry transient mirror failures.`,
+  );
+  assert(
+    nativeTools.includes("install -y --no-install-recommends fish libfuse2t64") &&
+      nativeTools.includes("ldconfig -p | grep -F 'libfuse.so.2'"),
+    `${label} Linux job must install and assert Fish plus the AppImage FUSE 2 runtime.`,
+  );
 }
 
 const [packageText, ciText, releaseText] = await Promise.all([

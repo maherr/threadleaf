@@ -33,6 +33,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Bounded hosted Linux package acquisition, reused the runner's asserted RPM and Xvfb tools, and
+  kept the real FUSE-mounted AppImage gate from being stranded by a stalled Ubuntu mirror.
 - Made the reviewed-plugin acceptance harness set and restore its supported 860 by 640 viewport
   explicitly, so clean hosted runners exercise the intended minimum instead of inheriting the
   desktop window default.

@@ -67,13 +67,23 @@ function assertMsvcBeforeBuild(steps, buildStep, label) {
 
 function assertFishBeforeCheck(steps, checkStep, label) {
   const installIndex = steps.findIndex(
-    (step) => typeof step.run === "string" && step.run.includes("apt-get install"),
+    (step) =>
+      typeof step.run === "string" &&
+      step.run.includes("install_missing_tools") &&
+      step.run.includes("sudo apt-get"),
   );
   const checkIndex = steps.indexOf(checkStep);
   assert(installIndex >= 0, `${label} does not install its native test tools.`);
   assert(
     /(?:^|\s)fish(?:\s|$)/u.test(steps[installIndex].run),
     `${label} does not install the Fish completion runtime.`,
+  );
+  assert(
+    steps[installIndex].run.includes("timeout --signal=TERM --kill-after=15s 120s") &&
+      steps[installIndex].run.includes("Acquire::Retries=3") &&
+      steps[installIndex].run.includes("Acquire::http::Timeout=15") &&
+      steps[installIndex].run.includes("Acquire::https::Timeout=15"),
+    `${label} does not bound native package acquisition against a stalled runner mirror.`,
   );
   assert(installIndex < checkIndex, `${label} installs Fish after its full source check.`);
 }

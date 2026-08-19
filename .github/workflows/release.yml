@@ -64,7 +64,28 @@ jobs:
           node-version: 22.22.1
           cache: pnpm
       - name: Install native package tools
-        run: sudo apt-get update && sudo apt-get install -y fish libfuse2t64 rpm xvfb
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v rpm
+          command -v Xvfb
+          apt_options=(
+            -o Acquire::Retries=3
+            -o Acquire::http::Timeout=15
+            -o Acquire::https::Timeout=15
+            -o Dpkg::Use-Pty=0
+          )
+          install_missing_tools() {
+            timeout --signal=TERM --kill-after=15s 120s \
+              sudo apt-get "${apt_options[@]}" install -y --no-install-recommends fish libfuse2t64
+          }
+          if ! install_missing_tools; then
+            timeout --signal=TERM --kill-after=15s 120s \
+              sudo apt-get "${apt_options[@]}" update
+            install_missing_tools
+          fi
+          command -v fish
+          ldconfig -p | grep -F 'libfuse.so.2'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build source and unpacked Linux app
