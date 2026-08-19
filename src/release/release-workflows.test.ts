@@ -81,9 +81,11 @@ describe("release workflows", () => {
       "pnpm run release:linux:prepare && pnpm run release:linux:verify",
     );
     expect(scripts["release:linux:prepare"]).toContain("pnpm run pack:dir");
-    const verify = scripts["release:linux:verify"] ?? "";
-    expect(verify.indexOf("pnpm run test:packaged-attachments:built")).toBeLessThan(
-      verify.indexOf("pnpm run pack:linux"),
+    expect(scripts["pack:linux:built"]).toBe(
+      "electron-builder --prepackaged release/linux-unpacked --linux AppImage rpm --x64 --publish never",
+    );
+    expect(scripts["release:linux:verify"]).toBe(
+      "pnpm run test:packaged-attachments:built && pnpm run pack:linux:built && pnpm run test:linux-packages && node scripts/package-reproducible-linux.mjs --write",
     );
   });
 

@@ -226,8 +226,9 @@ pnpm run test:package-reproducible
 ```
 
 `pnpm run release:linux` is the clean-tree release command. It runs the complete repository check,
-builds both native artifacts, verifies the exact AppImage and RPM, and writes the reproducible
-archive and manifest. `release/` is intentionally ignored by Git.
+builds the unpacked application once, verifies that exact packaged surface, creates the AppImage
+and RPM from the already-verified tree, then verifies both native artifacts and writes the
+reproducible archive and manifest. `release/` is intentionally ignored by Git.
 
 ## Packaged smoke contract
 

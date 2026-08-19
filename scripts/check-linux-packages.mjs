@@ -173,7 +173,7 @@ try {
     "native",
     "threadleaf-state-lock.node",
   );
-  await verifyExtractedNative(extractedNative, path.join(extractedRoot, "threadleaf"), "AppImage");
+  await verifyExtractedNative(extractedNative, appImagePath, "AppImage");
 } finally {
   await fs.rm(appImageExtraction, { recursive: true, force: true });
 }

@@ -15,6 +15,7 @@ const packagedAttachmentsScriptPath = path.join(
   "scripts",
   "check-packaged-attachments.mjs",
 );
+const linuxPackagesScriptPath = path.join(rootPath, "scripts", "check-linux-packages.mjs");
 const msvcAction = "ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756";
 
 function assert(condition, message) {
@@ -140,6 +141,7 @@ const [
   lifecycleScriptText,
   mainProcessText,
   packagedAttachmentsScriptText,
+  linuxPackagesScriptText,
 ] = await Promise.all([
   fs.readFile(fixturePath, "utf8"),
   fs.readFile(packagePath, "utf8"),
@@ -149,6 +151,7 @@ const [
   fs.readFile(lifecycleScriptPath, "utf8"),
   fs.readFile(mainProcessPath, "utf8"),
   fs.readFile(packagedAttachmentsScriptPath, "utf8"),
+  fs.readFile(linuxPackagesScriptPath, "utf8"),
 ]);
 const fixture = record(JSON.parse(fixtureText), "installer lifecycle fixture");
 const packageData = record(JSON.parse(packageText), "package.json");
@@ -182,8 +185,10 @@ assert(
   packageData.scripts?.["release:linux"] ===
     "pnpm run release:linux:prepare && pnpm run release:linux:verify" &&
     packageData.scripts?.["release:linux:prepare"] === "pnpm run check && pnpm run pack:dir" &&
+    packageData.scripts?.["pack:linux:built"] ===
+      "electron-builder --prepackaged release/linux-unpacked --linux AppImage rpm --x64 --publish never" &&
     packageData.scripts?.["release:linux:verify"] ===
-      "pnpm run test:packaged-attachments:built && pnpm run pack:linux && pnpm run test:linux-packages && node scripts/package-reproducible-linux.mjs --write" &&
+      "pnpm run test:packaged-attachments:built && pnpm run pack:linux:built && pnpm run test:linux-packages && node scripts/package-reproducible-linux.mjs --write" &&
     packageData.scripts?.["test:packaged-attachments"] ===
       "pnpm run pack:dir && pnpm run test:packaged-attachments:built",
   "Linux release scripts must expose one unpacked-build boundary before packaged verification.",
@@ -234,6 +239,12 @@ assert(
     'process.env.CHROME_DEVEL_SANDBOX ? [] : ["--disable-setuid-sandbox"]',
   ) && !packagedAttachmentsScriptText.includes('"--no-sandbox"'),
   "Packaged Linux attachment verification must use the installed helper when available and never disable Chromium sandboxing.",
+);
+assert(
+  linuxPackagesScriptText.includes(
+    'await verifyExtractedNative(extractedNative, appImagePath, "AppImage")',
+  ) && !linuxPackagesScriptText.includes('path.join(extractedRoot, "threadleaf")'),
+  "AppImage native verification must launch the mounted artifact, not a user-owned extracted sandbox helper.",
 );
 assert(
   lifecycleScriptText.includes("const packageReadyTimeoutMs = 90_000") &&

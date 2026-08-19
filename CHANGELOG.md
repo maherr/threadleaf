@@ -41,6 +41,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   evidence on failure.
 - Split hosted Linux packaging at the unpacked-app boundary so CI repairs and verifies the exact
   root-owned Chromium helper Electron will launch before any packaged UI check runs.
+- Kept Linux artifact creation on that already-verified unpacked tree, and made the AppImage native
+  probe launch the mounted artifact instead of a user-owned extracted sandbox helper.
 - Made startup plugin safe mode bypass compatibility-renderer construction entirely, so recovery
   launches can restore the selected vault even when a platform cannot start the hidden plugin
   surface.
