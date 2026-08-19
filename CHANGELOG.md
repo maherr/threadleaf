@@ -35,6 +35,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Made packaged lifecycle acceptance deterministic by acknowledging the CDP close request before
   Electron tears down its renderer.
+- Rebuilt Live Preview decorations when CodeMirror advances a cold syntax tree, so an initially
+  deferred callout or other parsed structure appears without requiring a user edit.
 - Retried the bounded Windows delete-pending `EPERM` window around native-extension grant locks,
   while preserving persistent permission failures and serialized revoke/save semantics.
 - Prevented restored startup from deadlocking when a plugin-catalog read and deferred vault

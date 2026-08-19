@@ -3137,7 +3137,11 @@ const liveCalloutDecorations = StateField.define<DecorationSet>({
     return buildCalloutDecorations(state);
   },
   update(decorations, transaction) {
-    if (transaction.docChanged || transaction.selection !== undefined) {
+    if (
+      transaction.docChanged ||
+      transaction.selection !== undefined ||
+      syntaxTree(transaction.startState) !== syntaxTree(transaction.state)
+    ) {
       return buildCalloutDecorations(transaction.state);
     }
     return decorations.map(transaction.changes);
@@ -3161,6 +3165,7 @@ export function createLivePreviewExtension(options: LivePreviewOptions): Extensi
             update.docChanged ||
             update.selectionSet ||
             update.viewportChanged ||
+            syntaxTree(update.startState) !== syntaxTree(update.state) ||
             update.transactions.some((transaction) =>
               transaction.effects.some((effect) => effect.is(refreshLivePreview)),
             )
