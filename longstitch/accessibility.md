@@ -45,9 +45,12 @@ written title. Reintroducing a category-dependent pale tint fails the automated 
 - Tags use a framed shape and text. Empty metadata uses a dashed frame and the word `Untagged`.
 - Pass and failure concepts are never encoded as red versus green.
 - Focus remains a visible outline with at least 3:1 contrast against the adjacent component ground.
+- Window-rail actions expose accessible names and shortcut-aware tooltips; operating-system window
+  controls remain native. Meaning never depends on the icon silhouette alone.
 
-Rendered verification also covers Paper and Graphite at desktop and narrow widths, task states,
-table headers, callouts, tags, font loading, overflow, proportional text scaling, the empty-pane
-creation action, and its visible remappable shortcut. The production Electron gates remain `pnpm
-run test:live-preview`, `pnpm run test:tasks`, and the 18-case `pnpm run visual:check`; the design
-color gate is additionally part of `pnpm run check`.
+Rendered verification also covers Paper and Graphite at desktop and narrow widths, integrated
+native window controls, document tabs, task states, table headers, callouts, tags, font loading,
+overflow, proportional text scaling, the empty-pane creation action, and its visible remappable
+shortcut. The production Electron gates remain `pnpm run test:live-preview`, `pnpm run test:tasks`,
+and the 18-case `pnpm run visual:check`; the design color gate is additionally part of `pnpm run
+check`.

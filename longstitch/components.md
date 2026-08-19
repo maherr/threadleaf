@@ -13,6 +13,24 @@ result. Indentation and disclosure state remain readable without color.
 
 Forbidden default: rounded card rows, clipped names, or color as the only selected-state cue.
 
+## Window rail and document tabs
+
+The top rail is both native window furniture and workspace navigation. The left segment carries
+Threadleaf identity, the center segment names the active vault and its state, and the right segment
+holds global search, settings, and theme actions before the operating system's own window controls.
+Self-authored line icons share one weight and 30px target geometry. Every icon has an accessible
+name and a shortcut-aware tooltip. The drag surface excludes all links and buttons.
+
+Document tabs sit directly beneath the rail within each editor pane. The active tab changes both
+material and lower-edge shape; pin and close remain explicit controls. Split panes retain their own
+tab rows so ownership never becomes ambiguous.
+
+Required states: Paper, Graphite, native Linux/Windows controls, macOS traffic lights, hover,
+keyboard focus, one tab, many tabs, pinned tab, split panes, and the 860px minimum window.
+
+Forbidden default: a native title bar stacked above app chrome, unlabeled glyphs, decorative
+window furniture, or a global tab strip that obscures which split pane owns a tab.
+
 ## Theme signatures
 
 Paper uses a neutral near-white editor canvas against light grey chrome. Graphite uses a dark editor

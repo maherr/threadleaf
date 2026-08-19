@@ -23,6 +23,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Replaced the stacked desktop chrome with one uninterrupted 40-pixel Longstitch workbench rail
+  that aligns the file dock, active vault, compact global actions, and native window controls above
+  a quieter document-tab and toolbar tier in both themes and at the minimum supported width.
 - Rebuilt Longstitch around neutral Paper and Graphite themes, compact 28-pixel explorer rows,
   coherent Hanken Grotesk interface and document typography, restrained violet interaction state,
   and less ornamental workspace chrome.
@@ -53,6 +56,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Preserved a plugin view's requested file path when an unchanged plugin implements it as an
+  `ItemView` rather than a `FileView`, preventing successful automatic view opens from entering a
+  reopen loop after pane transfer or restart.
+- Queued the latest navigator selection made during a short workspace mutation, exposed tab
+  readiness through disabled controls, and kept a user's explicit return to source or live editing
+  from being overridden by automatic plugin-view activation.
 - Prevented a candidate vault from hanging during plugin activation behind the active vault's
   singleton plugin-environment lane.
 - Prevented a recovered plugin renderer from silently re-executing plugin code after an unknown

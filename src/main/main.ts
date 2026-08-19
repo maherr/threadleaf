@@ -480,6 +480,13 @@ async function publishPluginSurfaceEnvironment(
 
 async function applyPluginSurfaceTheme(theme: "dark" | "light"): Promise<void> {
   pluginSurfaceTheme = theme;
+  if (mainWindow && !mainWindow.isDestroyed() && process.platform !== "darwin") {
+    mainWindow.setTitleBarOverlay({
+      color: theme === "dark" ? "#1c1c20" : "#f2f2f4",
+      symbolColor: theme === "dark" ? "#dedee3" : "#2f3035",
+      height: 40,
+    });
+  }
   await publishPluginSurfaceEnvironment({ theme });
 }
 
@@ -4444,6 +4451,15 @@ async function createWindow(trustedWorkspace = false): Promise<void> {
     minHeight: 640,
     backgroundColor: "#11151c",
     title: "Threadleaf",
+    titleBarStyle: "hidden",
+    titleBarOverlay:
+      process.platform === "darwin"
+        ? true
+        : {
+            color: pluginSurfaceTheme === "dark" ? "#1c1c20" : "#f2f2f4",
+            symbolColor: pluginSurfaceTheme === "dark" ? "#dedee3" : "#2f3035",
+            height: 40,
+          },
     show: false,
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),

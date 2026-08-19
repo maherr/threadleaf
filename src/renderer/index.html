@@ -30,7 +30,10 @@
             <span class="state-word" id="runtime-state">Starting</span>
           </div>
           <button class="vault-open" id="open-vault" type="button" aria-label="Open another vault">
-            <span aria-hidden="true">＋</span>
+            <svg class="topbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3.5 7.5h6l2-2h9v12.75H3.5z" />
+              <path d="M12 10.5v5M9.5 13h5" />
+            </svg>
             <span id="open-vault-label">Open</span>
           </button>
         </div>
@@ -42,7 +45,10 @@
             type="button"
             aria-label="Open command palette"
           >
-            <span aria-hidden="true">⌘</span>
+            <svg class="topbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="10.5" cy="10.5" r="5.5" />
+              <path d="m14.5 14.5 5 5" />
+            </svg>
             <span class="command-trigger-copy">Commands</span>
             <kbd id="command-shortcut">Ctrl K</kbd>
           </button>
@@ -52,12 +58,20 @@
             type="button"
             aria-label="Open settings"
           >
-            <span aria-hidden="true">⚙</span>
+            <svg class="topbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h7M15 7h5M4 12h2M10 12h10M4 17h10M18 17h2" />
+              <circle cx="13" cy="7" r="2" />
+              <circle cx="8" cy="12" r="2" />
+              <circle cx="16" cy="17" r="2" />
+            </svg>
             <span class="settings-trigger-copy">Settings</span>
             <kbd id="settings-shortcut">Ctrl ,</kbd>
           </button>
           <button class="icon-button" id="theme-toggle" type="button" aria-label="Switch to dark theme">
-            <span aria-hidden="true">◐</span>
+            <svg class="topbar-icon theme-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="7.5" />
+              <path d="M12 4.5a7.5 7.5 0 0 0 0 15z" class="theme-icon-fill" />
+            </svg>
             <span id="theme-label">Dark</span>
           </button>
         </div>

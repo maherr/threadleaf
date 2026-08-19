@@ -9901,32 +9901,40 @@ body {
 }
 
 .app-frame {
-  grid-template-rows: 46px minmax(0, 1fr) 26px;
+  grid-template-rows: 40px minmax(0, 1fr) 26px;
   box-shadow: none;
 }
 
 .topbar {
-  grid-template-columns: minmax(170px, 1fr) auto minmax(170px, 1fr);
-  gap: 12px;
-  padding: 0 10px;
+  grid-template-columns: 268px minmax(0, 1fr) 300px;
+  gap: 0;
+  padding: 0;
   background: var(--surface-sunken);
   box-shadow: none;
 }
 
 .brand {
-  gap: 8px;
+  width: 100%;
+  height: 100%;
+  gap: 7px;
+  padding: 0 11px;
+  border-right: 1px solid var(--line);
+}
+
+:root[data-platform="darwin"] .brand {
+  padding-left: 78px;
 }
 
 .brand-mark {
-  width: 29px;
-  height: 29px;
-  border-color: color-mix(in srgb, var(--accent) 52%, var(--line));
-  border-radius: 7px;
+  width: 24px;
+  height: 24px;
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  border-radius: 6px;
   color: white;
   background: var(--accent);
   box-shadow: none;
   font-family: var(--font-interface);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -9941,7 +9949,7 @@ body {
 
 .brand strong {
   font-family: var(--font-interface);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 720;
   letter-spacing: -0.01em;
 }
@@ -9951,41 +9959,106 @@ body {
 }
 
 .vault-switcher {
-  gap: 4px;
+  width: 100%;
+  height: 100%;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 8px;
 }
 
 .vault-identity {
+  display: flex;
   gap: 7px;
-  padding: 4px 8px;
+  padding: 0 4px;
   border-color: transparent;
-  border-radius: 6px;
+  border-radius: 0;
   background: transparent;
 }
 
 .vault-identity small {
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  text-transform: none;
+  display: none;
 }
 
 .vault-identity strong {
+  max-width: min(42vw, 360px);
   font-size: 12px;
+  font-weight: 650;
 }
 
 .state-word {
-  font-size: 11px;
-  letter-spacing: 0.04em;
+  padding-left: 7px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
   text-transform: none;
 }
 
-.icon-button {
-  min-height: 30px;
-  gap: 6px;
-  padding: 0 9px;
+.status-shape {
+  width: 7px;
+  height: 7px;
+  border-width: 1px;
+}
+
+.vault-open {
+  width: 28px;
+  height: 28px;
+  align-self: center;
+  justify-content: center;
+  padding: 0;
   border-color: transparent;
-  border-radius: 6px;
+  border-radius: 5px;
+  background: transparent;
+}
+
+.vault-open > span {
+  display: none;
+}
+
+.icon-button {
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  gap: 0;
+  padding: 0;
+  border-color: transparent;
+  border-radius: 5px;
   background: transparent;
   font-size: 12px;
+}
+
+.topbar-actions {
+  width: 100%;
+  height: 100%;
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 0 146px 0 8px;
+  border-left: 1px solid var(--line);
+}
+
+:root[data-platform="darwin"] .topbar-actions {
+  padding-right: 8px;
+}
+
+.topbar-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.65;
+}
+
+.theme-icon-fill {
+  fill: currentColor;
+  stroke: none;
+}
+
+.command-trigger-copy,
+.settings-trigger-copy,
+.command-trigger kbd,
+.settings-trigger kbd,
+#theme-label {
+  display: none;
 }
 
 .command-trigger,
@@ -10199,13 +10272,15 @@ body {
 }
 
 .workspace-pane {
-  grid-template-rows: 34px 38px minmax(0, 1fr);
+  grid-template-rows: 32px 36px minmax(0, 1fr);
   background: var(--surface-raised);
 }
 
 .note-tab {
-  grid-template-columns: minmax(0, 1fr) 30px 25px;
-  background: var(--surface-sunken);
+  grid-template-columns: minmax(0, 1fr) 25px 25px;
+  flex: 0 1 210px;
+  border-right-color: color-mix(in srgb, var(--line) 78%, transparent);
+  background: transparent;
 }
 
 .note-tab-activate {
@@ -10213,7 +10288,33 @@ body {
 }
 
 .note-tab[data-active="true"] {
+  background: var(--surface-raised);
   box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.note-tab-pin {
+  font-size: 14px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.pane-layout-actions {
+  border-left-color: var(--line);
+}
+
+.pane-layout-actions button {
+  width: 30px;
+  border-left-color: transparent;
+  background: transparent;
+}
+
+.workspace-pane[data-active="true"] {
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+.workspace-pane[data-active="true"]::after {
+  height: 1px;
+  background: var(--line-strong);
 }
 
 .note-toolbar {
@@ -10599,6 +10700,12 @@ a.tag {
   .command-trigger kbd,
   .settings-trigger kbd {
     display: none;
+  }
+}
+
+@media (max-width: 980px) {
+  .topbar {
+    grid-template-columns: 238px minmax(0, 1fr) 260px;
   }
 }
 

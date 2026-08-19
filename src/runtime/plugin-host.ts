@@ -777,6 +777,13 @@ export class PluginHost implements PluginRuntimePort {
       workspaceActiveViewType !== "empty"
         ? workspaceActiveLeaf
         : this.activePluginLeaf;
+    const activePluginViewState = activePluginLeaf?.getViewState().state;
+    const activePluginFilePath =
+      activePluginLeaf?.view instanceof FileView && activePluginLeaf.view.file
+        ? activePluginLeaf.view.file.path
+        : typeof activePluginViewState?.file === "string" && activePluginViewState.file.length > 0
+          ? activePluginViewState.file
+          : null;
     return {
       vault: {
         id: null,
@@ -805,10 +812,7 @@ export class PluginHost implements PluginRuntimePort {
           : activePluginLeaf?.view && activePluginLeaf !== this.nativeMarkdownLeaf
             ? {
                 displayText: activePluginLeaf.view.getDisplayText(),
-                filePath:
-                  activePluginLeaf.view instanceof FileView && activePluginLeaf.view.file
-                    ? activePluginLeaf.view.file.path
-                    : null,
+                filePath: activePluginFilePath,
                 viewType: activePluginLeaf.view.getViewType(),
               }
             : null,

@@ -743,7 +743,37 @@ try {
       ? true
       : null;
   }, "Alt+Shift+Arrow did not transfer the tab to the other pane");
-  await delay(300);
+  let interactiveSamples = 0;
+  let lastPaneTransferReadiness = null;
+  try {
+    await waitFor(async () => {
+      lastPaneTransferReadiness = await evaluate(`(() => {
+        const source = document.querySelector('#note-tabs-secondary .note-tab-activate[data-note-path="Drawing.excalidraw.md"]');
+        const target = document.querySelector('#note-tabs .note-tab-activate[data-note-path="Third Note.md"]');
+        const toast = document.querySelector('#toast');
+        return {
+          sourceExists: source instanceof HTMLButtonElement,
+          sourceDisabled: source instanceof HTMLButtonElement ? source.disabled : null,
+          targetExists: target instanceof HTMLButtonElement,
+          targetDisabled: target instanceof HTMLButtonElement ? target.disabled : null,
+          pluginStatus: document.querySelector('#plugin-surface-status')?.textContent ?? null,
+          toast: toast instanceof HTMLElement && !toast.hidden ? toast.textContent : null,
+        };
+      })()`);
+      const interactive =
+        lastPaneTransferReadiness?.sourceExists === true &&
+        lastPaneTransferReadiness?.sourceDisabled === false &&
+        lastPaneTransferReadiness?.targetExists === true &&
+        lastPaneTransferReadiness?.targetDisabled === false;
+      interactiveSamples = interactive ? interactiveSamples + 1 : 0;
+      return interactiveSamples >= 10 ? true : null;
+    }, "Pane transfer controls did not become interactive");
+  } catch (error) {
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; readiness=${JSON.stringify(lastPaneTransferReadiness)}`,
+      { cause: error },
+    );
+  }
   const transferSource = await targetCenter(
     '#note-tabs-secondary .note-tab-activate[data-note-path="Drawing.excalidraw.md"]',
   );
@@ -868,10 +898,9 @@ try {
       { cause: error },
     );
   }
-  await clickSelector("#plugin-view");
   await waitFor(
     async () => ((await snapshot()).pluginSurface?.viewType === "excalidraw" ? true : null),
-    "Plugin view did not open",
+    "Plugin file did not open in its registered view",
   );
   assert(
     (await evaluate('document.querySelector("#plugin-surface-status")?.textContent')) ===
@@ -997,7 +1026,6 @@ try {
     "Supported plugin view did not register after restart",
   );
   await clickSelector('.note-tab-activate[data-note-path="Drawing.excalidraw.md"]');
-  await clickSelector("#plugin-view");
   await waitFor(
     async () => ((await snapshot()).pluginSurface?.viewType === "excalidraw" ? true : null),
     "Plugin view did not reopen in the main workspace after restart",
@@ -1176,7 +1204,6 @@ try {
     "Supported plugin view did not register for load-failure recovery",
   );
   await clickSelector('.note-tab-activate[data-note-path="Drawing.excalidraw.md"]');
-  await clickSelector("#plugin-view");
   await waitFor(
     async () => ((await snapshot()).pluginSurface?.viewType === "excalidraw" ? true : null),
     "Plugin view did not open before pop-out load failure",
@@ -1191,7 +1218,7 @@ try {
   }, "A failed native pop-out load did not degrade safely");
   assert(
     failedPopout.viewType === "excalidraw" &&
-      failedPopout.filePath === null &&
+      failedPopout.filePath === "Drawing.excalidraw.md" &&
       !(await mainTargets(port)).some((target) => target.url === "about:blank") &&
       (await evaluate('document.querySelector("#plugin-surface-status")?.textContent')) ===
         "Plugin pop-out unavailable; plugin view is open in the main window.",

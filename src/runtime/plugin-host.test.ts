@@ -1033,7 +1033,7 @@ module.exports = class UiApiPlugin extends Plugin {
 
       const viewSnapshot = await host.openPluginView("ui-api-view", "Drawing.drawing");
       expect(viewSnapshot.pluginSurface).toMatchObject({
-        filePath: null,
+        filePath: "Drawing.drawing",
         viewType: "ui-api-view",
       });
       expect(
@@ -1075,7 +1075,7 @@ module.exports = class UiApiPlugin extends Plugin {
       expect((splitLeaf as { containerEl: HTMLElement }).containerEl.style.display).toBe("flex");
       expect((originalLeaf as { containerEl: HTMLElement }).containerEl.hidden).toBe(true);
       expect((await host.getSnapshot()).pluginSurface).toMatchObject({
-        filePath: null,
+        filePath: "Drawing.drawing",
         viewType: "ui-api-view",
       });
       await fs.writeFile(path.join(vaultPath, "Drawing.md"), "# Drawing\n", "utf8");

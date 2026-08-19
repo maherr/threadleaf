@@ -13,8 +13,8 @@ inspectable compatibility matter more than mobile, hosted sync, or ecosystem bre
 Threadleaf is not affiliated with or endorsed by Obsidian.
 
 The desktop interface uses the bespoke [Longstitch design language](longstitch/README.md), with
-neutral Paper and Graphite themes, compact file navigation, and one restrained violet interaction
-channel.
+neutral Paper and Graphite themes, compact file navigation, one uninterrupted native workbench
+rail, and a restrained violet interaction channel.
 
 ![Threadleaf Live Preview in the Graphite dark appearance](visual/baselines/workspace-live-dark.png)
 

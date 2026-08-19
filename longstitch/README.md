@@ -4,7 +4,7 @@
 **Owner:** Threadleaf  
 **Status:** live  
 **Maturity:** bespoke  
-**Signature:** A quiet file tree, neutral writing surface, and violet focus rail keep the active note obvious without competing with it.
+**Signature:** One uninterrupted workbench rail aligns the file dock, active vault, and global actions above a quiet tree, neutral writing surface, and violet focus cue.
 **Themes:** Paper / Graphite
 **Runtime authority:** `tokens.css`  
 **Reference implementation:** `../src/renderer/styles.css`  
@@ -19,17 +19,19 @@ show depth, compact rows preserve information density, and violet marks focus an
 Machine text stays visibly separate from prose, but ordinary interface copy remains comfortably
 readable instead of shrinking into metadata.
 
-The arrival question is: **which note am I working on, and how do I begin without surrendering file
-truth?** The open note answers with title and path; an empty pane answers with a direct, shortcut-
-labeled creation action instead of a dead end. A fresh install arrives on a read-only welcome leaf
-with **Open folder** beside the clearly labeled demo identity.
+The arrival question is: **which vault and note am I working in, and what can I do next without
+surrendering file truth?** The integrated window rail answers with the active vault and immediate
+global actions; the document tab, title, and path identify the note. An empty pane answers with a
+direct, shortcut-labeled creation action instead of a dead end. A fresh install arrives on a
+read-only welcome leaf with **Open folder** beside the clearly labeled demo identity.
 
 ## Signature
 
-The signature is restraint with an inspectable file boundary: a compact tree, one clear active-row
-rail, a calm document canvas, and controls that appear where the work happens. The interface should
-feel immediately legible to an experienced Markdown-workspace user while remaining recognizably
-Threadleaf through its typography, violet interaction channel, and explicit file-state language.
+The signature is restraint with an inspectable file boundary: a compact integrated window rail, a
+compact tree, one clear active-row cue, a calm document canvas, and controls that appear where the
+work happens. The interface should feel immediately legible to an experienced Markdown-workspace
+user while remaining recognizably Threadleaf through its typography, violet interaction channel,
+and explicit file-state language.
 
 ## Themes
 

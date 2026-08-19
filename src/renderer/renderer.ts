@@ -85,6 +85,13 @@ import {
   shortcutTargetForEvent,
   workspaceSettingsForVault,
 } from "../shared/key-bindings";
+
+document.documentElement.dataset.platform = /Macintosh|Mac OS X/u.test(navigator.userAgent)
+  ? "darwin"
+  : /Windows/u.test(navigator.userAgent)
+    ? "win32"
+    : "linux";
+
 import type {
   MigrationCandidate,
   MigrationPlan,
@@ -981,6 +988,15 @@ let lastVaultWarning: string | null = null;
 let lastWorkspaceLayoutWarningKey: string | null = null;
 let toastTimer: number | undefined;
 let busy = false;
+let queuedNoteOpen:
+  | {
+      vaultId: string;
+      filePath: string;
+      line: number | undefined;
+      paneId: WorkspacePaneId;
+      activate: boolean;
+    }
+  | undefined;
 let bookmarkVaultId: string | null = null;
 let bookmarkPaths: string[] = [];
 let bookmarkBusy = false;
@@ -1011,6 +1027,7 @@ let renderedPreviewIndexGeneration: string | null = null;
 let previewHydrationRequest = 0;
 let pluginSurfaceRequest = 0;
 let pluginDocumentActivationRequest = 0;
+let pluginViewSuppressedPath: string | null = null;
 let pluginSettingsTargetId: string | null = null;
 let pluginLayoutReadyVaultId: string | null = null;
 let paletteMatches: RendererCommand[] = [];
@@ -1291,6 +1308,7 @@ interface WorkspacePaneSession {
   renderedPreviewWatchSequence: number;
   renderedPreviewIndexGeneration: string | null;
   previewHydrationRequest: number;
+  pluginViewSuppressedPath: string | null;
   editorReadOnly: boolean;
 }
 
@@ -1335,6 +1353,7 @@ function createWorkspacePaneSession(): WorkspacePaneSession {
     renderedPreviewWatchSequence: -1,
     renderedPreviewIndexGeneration: null,
     previewHydrationRequest: 0,
+    pluginViewSuppressedPath: null,
     editorReadOnly: false,
   };
 }
@@ -1411,6 +1430,7 @@ function captureActivePaneSession(): void {
   session.renderedPreviewWatchSequence = renderedPreviewWatchSequence;
   session.renderedPreviewIndexGeneration = renderedPreviewIndexGeneration;
   session.previewHydrationRequest = previewHydrationRequest;
+  session.pluginViewSuppressedPath = pluginViewSuppressedPath;
   session.editorReadOnly = editorReadOnly;
 }
 
@@ -1458,6 +1478,7 @@ function activatePaneContext(paneId: WorkspacePaneId): void {
     session.modeInitialized = false;
     session.documentViewMode = "live";
     session.editingViewMode = "live";
+    session.pluginViewSuppressedPath = null;
   }
   session.modeVaultId = currentSnapshot?.vault.id ?? null;
   modeVaultId = session.modeVaultId;
@@ -1470,6 +1491,7 @@ function activatePaneContext(paneId: WorkspacePaneId): void {
   renderedPreviewWatchSequence = session.renderedPreviewWatchSequence;
   renderedPreviewIndexGeneration = session.renderedPreviewIndexGeneration;
   previewHydrationRequest = session.previewHydrationRequest;
+  pluginViewSuppressedPath = session.pluginViewSuppressedPath;
   editorReadOnly = session.editorReadOnly;
 }
 
@@ -2886,6 +2908,7 @@ async function activatePluginView(): Promise<void> {
     return;
   }
   const request = ++pluginSurfaceRequest;
+  pluginViewSuppressedPath = null;
   documentViewMode = "plugin";
   renderDocumentView();
   setActionState(true);
@@ -2900,6 +2923,7 @@ async function activatePluginView(): Promise<void> {
     }
     render(snapshot);
   } catch (error) {
+    pluginViewSuppressedPath = filePath;
     documentViewMode = editingViewMode;
     renderDocumentView();
     showToast(pluginIpcErrorMessage(error, "runtime-view-failed"));
@@ -3045,6 +3069,11 @@ function setDocumentView(mode: DocumentViewMode, focus = true): void {
   renderDocumentView();
   renderPaletteResults();
   if (closingPlugin) {
+    pluginViewSuppressedPath =
+      activePluginFile?.path ??
+      loadedNote?.path ??
+      currentSnapshot?.pluginSurface?.filePath ??
+      null;
     pluginSurfaceRequest += 1;
     void window.threadleaf
       .closePluginView()
@@ -4802,8 +4831,14 @@ function applySettingsSnapshot(snapshot: AppSettingsSnapshot): void {
 }
 
 function updateShortcutLabels(): void {
-  elements.commandShortcut.textContent = shortcutFor("ui.command-palette") ?? "None";
-  elements.settingsShortcut.textContent = shortcutFor("settings.open-keybindings") ?? "None";
+  const commandShortcut = shortcutFor("ui.command-palette") ?? "None";
+  const settingsShortcut = shortcutFor("settings.open-keybindings") ?? "None";
+  elements.commandShortcut.textContent = commandShortcut;
+  elements.settingsShortcut.textContent = settingsShortcut;
+  elements.commandTrigger.title =
+    commandShortcut === "None" ? "Commands" : `Commands (${commandShortcut})`;
+  elements.settingsTrigger.title =
+    settingsShortcut === "None" ? "Settings" : `Settings (${settingsShortcut})`;
   elements.searchShortcut.textContent = shortcutFor("workspace.focus-note-filter") ?? "None";
   const newNoteShortcut = shortcutFor("workspace.create-note");
   elements.newNote.title = newNoteShortcut
@@ -7506,6 +7541,7 @@ function applyColorScheme(preference: ColorSchemePreference): void {
   const next = scheme === "light" ? "dark" : "light";
   elements.themeLabel.textContent = next === "dark" ? "Dark" : "Light";
   elements.themeToggle.ariaLabel = `Switch to ${next} theme`;
+  elements.themeToggle.title = `Switch to ${next} theme`;
   void window.threadleaf.setPluginSurfaceTheme(scheme).catch(() => undefined);
   setAccessibilityRootAttributes(effectiveCurrentAccessibilityPreferences());
   refreshAccessibilityDiagnostics();
@@ -11083,6 +11119,7 @@ function render(snapshot: RuntimeSnapshot): void {
     "aria-label",
     bundledDemo ? "Open your Markdown folder" : "Open another vault",
   );
+  elements.openVault.title = bundledDemo ? "Open your Markdown folder" : "Open another vault";
   elements.vaultName.textContent = opening ? startup.targetName : snapshot.vault.name;
   elements.vaultIdentity.title = opening ? startup.targetPath : snapshot.vault.path;
   elements.vaultMode.title = opening ? startup.targetPath : snapshot.vault.path;
@@ -11229,6 +11266,7 @@ function render(snapshot: RuntimeSnapshot): void {
   if (
     activePluginFile &&
     activePluginViewType &&
+    pluginViewSuppressedPath !== activePluginFile.path &&
     !pluginSurfaceMatchesActiveFile &&
     pluginSettingsTargetId === null
   ) {
@@ -11246,6 +11284,7 @@ function render(snapshot: RuntimeSnapshot): void {
       if (
         currentPluginFile?.path === activePluginFile.path &&
         currentViewType === activePluginViewType &&
+        pluginViewSuppressedPath !== activePluginFile.path &&
         (currentSnapshot?.pluginSurface?.filePath !== activePluginFile.path ||
           currentSnapshot?.pluginSurface?.viewType !== activePluginViewType)
       ) {
@@ -11634,6 +11673,7 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
     activate.tabIndex = isActive || (!displayedPath && tab.path === runtimeActivePath) ? 0 : -1;
     activate.dataset.notePath = tab.path;
     activate.title = tab.path;
+    activate.disabled = busy;
     activate.ariaLabel = `${tab.pinned ? "Pinned " : ""}${
       isActive ? "current note" : "open note"
     }: ${tab.path}`;
@@ -11698,7 +11738,7 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
     pin.ariaPressed = String(tab.pinned);
     pin.ariaLabel = `${tab.pinned ? "Unpin" : "Pin"} ${tab.path}`;
     pin.title = `${tab.pinned ? "Unpin" : "Pin"} ${tab.path}`;
-    pin.textContent = tab.pinned ? "Unpin" : "Pin";
+    pin.textContent = "⌖";
     pin.disabled = busy;
     pin.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -14149,6 +14189,10 @@ async function openNote(
 ): Promise<boolean> {
   activatePaneContext(paneId);
   if (busy) {
+    const vaultId = currentSnapshot?.vault.id;
+    if (vaultId) {
+      queuedNoteOpen = { vaultId, filePath, line, paneId, activate };
+    }
     return false;
   }
   const expectedVaultId = currentSnapshot?.vault.id;
@@ -14510,8 +14554,30 @@ function setActionState(nextBusy: boolean): void {
     pluginSafeModeActive() ||
     currentPluginPreference().compatibilityMode === "restricted";
   elements.runCommand.disabled = opening || busy || (currentSnapshot?.commands.length ?? 0) === 0;
+  for (const pane of paneElements.values()) {
+    for (const activate of pane.noteTabs.querySelectorAll<HTMLButtonElement>(
+      ".note-tab-activate",
+    )) {
+      activate.disabled = busy;
+    }
+    for (const pin of pane.noteTabs.querySelectorAll<HTMLButtonElement>(".note-tab-pin")) {
+      pin.disabled = busy;
+    }
+    for (const close of pane.noteTabs.querySelectorAll<HTMLButtonElement>(".note-tab-close")) {
+      close.disabled = busy || close.closest<HTMLElement>(".note-tab")?.dataset.pinned === "true";
+    }
+  }
   renderAllPaneEditControls();
   renderNoteBookmarks(currentLoadedWorkspaceFiles(), loadedNote?.path ?? null);
+  if (!busy && queuedNoteOpen) {
+    const queued = queuedNoteOpen;
+    queuedNoteOpen = undefined;
+    if (currentSnapshot?.vault.id === queued.vaultId) {
+      queueMicrotask(() => {
+        void openNote(queued.filePath, queued.line, queued.paneId, queued.activate);
+      });
+    }
+  }
 }
 
 elements.fileSearch.addEventListener("input", () => {

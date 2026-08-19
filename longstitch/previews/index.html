@@ -88,10 +88,7 @@
         font-size: 0.72rem;
       }
 
-      .workspace {
-        display: grid;
-        grid-template-columns: 255px minmax(0, 1fr);
-        min-height: 570px;
+      .window-frame {
         overflow: hidden;
         border: 1px solid var(--line-strong);
         border-radius: var(--radius-m);
@@ -99,39 +96,132 @@
         box-shadow: var(--shadow-large);
       }
 
+      .window-rail {
+        display: grid;
+        grid-template-columns: 255px minmax(0, 1fr) auto;
+        height: 40px;
+        border-bottom: 1px solid var(--line);
+        background: var(--surface-sunken);
+      }
+
+      .rail-brand,
+      .rail-vault,
+      .rail-actions,
+      .rail-controls {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+      }
+
+      .rail-brand {
+        gap: 7px;
+        padding: 0 11px;
+        border-right: 1px solid var(--line);
+        font-size: 0.82rem;
+        font-weight: 720;
+      }
+
+      .rail-mark {
+        display: grid;
+        width: 24px;
+        height: 24px;
+        place-items: center;
+        border-radius: 6px;
+        color: var(--surface-sunken);
+        background: var(--accent);
+        font-size: 0.72rem;
+        font-weight: 800;
+      }
+
+      .rail-vault {
+        gap: 7px;
+        padding: 0 12px;
+        font-size: 0.76rem;
+        font-weight: 650;
+      }
+
+      .rail-vault::before {
+        width: 7px;
+        height: 7px;
+        border: 1px solid var(--accent);
+        border-radius: 50%;
+        content: "";
+      }
+
+      .rail-state {
+        padding-left: 7px;
+        border-left: 1px solid var(--line-strong);
+        color: var(--accent-strong);
+        font-family: var(--font-monospace);
+        font-size: 0.68rem;
+      }
+
+      .rail-actions {
+        gap: 2px;
+        padding-left: 8px;
+        border-left: 1px solid var(--line);
+      }
+
+      .rail-action,
+      .rail-control {
+        display: grid;
+        width: 30px;
+        height: 30px;
+        place-items: center;
+        border: 0;
+        border-radius: 5px;
+        color: var(--ink-soft);
+        background: transparent;
+      }
+
+      .rail-action:hover {
+        color: var(--ink);
+        background: var(--background-modifier-hover);
+      }
+
+      .rail-action svg {
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentColor;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 1.65;
+      }
+
+      .rail-controls {
+        padding: 0 5px 0 30px;
+      }
+
+      .rail-control {
+        width: 32px;
+        font-family: var(--font-monospace);
+        font-size: 0.72rem;
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: 255px minmax(0, 1fr);
+        min-height: 530px;
+        overflow: hidden;
+        background: var(--surface);
+      }
+
       .navigator {
         position: relative;
         display: flex;
         min-width: 0;
         flex-direction: column;
-        padding: 26px 12px 12px;
+        padding: 14px 12px 12px;
         border-right: 1px solid var(--line-strong);
         background: var(--surface-sunken);
       }
 
-      .navigator::before {
-        content: "";
-        position: absolute;
-        top: 0;
-        right: 0;
-        left: 0;
-        height: 7px;
-        background: repeating-linear-gradient(
-          90deg,
-          #7a2617 0 8px,
-          #ede4cf 8px 16px
-        );
-      }
-
-      :root[data-condition="graphite"] .navigator::before {
-        opacity: 0;
-      }
-
       .navigator h2 {
-        margin: 4px 0 18px;
+        margin: 4px 0 12px;
         font-family: var(--font-text);
-        font-size: 1.9rem;
-        font-weight: 500;
+        font-size: 1.1rem;
+        font-weight: 700;
       }
 
       .tree {
@@ -549,6 +639,15 @@
           width: 100%;
         }
 
+        .window-rail {
+          grid-template-columns: minmax(150px, 1fr) auto;
+        }
+
+        .rail-vault,
+        .rail-controls {
+          display: none;
+        }
+
         .workspace,
         .specimens {
           grid-template-columns: 1fr;
@@ -599,7 +698,21 @@
         <button class="theme-switch" id="theme" type="button" aria-pressed="false"></button>
       </header>
 
-      <section class="workspace" aria-label="Longstitch signature composition">
+      <section class="window-frame" aria-label="Longstitch signature composition">
+        <header class="window-rail">
+          <div class="rail-brand"><span class="rail-mark">T</span><span>Threadleaf</span></div>
+          <div class="rail-vault"><span>field-notes</span><span class="rail-state">Ready</span></div>
+          <nav class="rail-actions" aria-label="Global workspace actions">
+            <button class="rail-action" type="button" aria-label="Search workspace" title="Search workspace">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"></circle><path d="m14.5 14.5 5 5"></path></svg>
+            </button>
+            <button class="rail-action" type="button" aria-label="Open settings" title="Open settings">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h7M15 7h5M4 12h2M10 12h10M4 17h10M18 17h2"></path><circle cx="13" cy="7" r="2"></circle><circle cx="8" cy="12" r="2"></circle><circle cx="16" cy="17" r="2"></circle></svg>
+            </button>
+            <div class="rail-controls" aria-hidden="true"><span class="rail-control">_</span><span class="rail-control">□</span><span class="rail-control">×</span></div>
+          </nav>
+        </header>
+        <section class="workspace">
         <aside class="navigator">
           <span class="eyebrow">Vault</span>
           <h2>Notes</h2>
@@ -637,6 +750,7 @@
             </section>
           </div>
         </article>
+        </section>
       </section>
 
       <section class="specimens">
