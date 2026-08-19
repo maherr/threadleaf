@@ -5442,6 +5442,10 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
     const note = opened.workspace?.activeNote;
     if (!note) throw new Error("Expected the note to open.");
     await workspace.toggleTabPin("Welcome.md", "primary", workspace.vaultId);
+    // Keep the external touch pending until the move-aside hook scans it. A live backend can
+    // otherwise consume that change first on a slow runner, leaving the injected refresh failure
+    // to escape through the later save reconciliation instead of exercising the intended rebuild.
+    await workspace.watcher.close();
     await fs.writeFile(
       path.join(vaultPath, "Linked Note.md"),
       "# Linked Note\n\ntouched\n",
