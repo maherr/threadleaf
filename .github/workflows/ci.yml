@@ -68,9 +68,14 @@ jobs:
         env:
           CHROME_DEVEL_SANDBOX: /usr/local/sbin/threadleaf-chrome-sandbox
         run: pnpm run release:linux:verify
+      - name: Prepare development Chromium sandbox helper
+        run: |
+          electron_path="$(node -p 'require("electron")')"
+          electron_sandbox="$(dirname "$electron_path")/chrome-sandbox"
+          sudo chown root:root "$electron_sandbox"
+          sudo chmod 4755 "$electron_sandbox"
+          test "$(stat -c '%u:%g:%a' "$electron_sandbox")" = "0:0:4755"
       - name: Verify reviewed plugin package E2E
-        env:
-          CHROME_DEVEL_SANDBOX: /usr/local/sbin/threadleaf-chrome-sandbox
         run: pnpm run test:plugin-packages-e2e:built
       - name: Check community theme integrity
         run: pnpm run community-theme:integrity

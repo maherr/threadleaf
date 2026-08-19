@@ -26,20 +26,37 @@ function assertLinuxWorkflowGate(document, label) {
   const runs = linux.steps.map((step) => record(step, `${label} Linux step`).run);
   const prepareIndex = runs.indexOf("pnpm run release:linux:prepare");
   const buildIndex = runs.indexOf("pnpm run release:linux:verify");
+  const developmentSandboxIndex = runs.findIndex(
+    (run) =>
+      typeof run === "string" &&
+      run.includes("electron_sandbox") &&
+      run.includes("node -p 'require(\"electron\")'"),
+  );
   const e2eIndex = runs.indexOf("pnpm run test:plugin-packages-e2e:built");
   assert(prepareIndex >= 0, `${label} Linux job must build the unpacked package first.`);
   assert(buildIndex >= 0, `${label} Linux job must build and verify packages.`);
   assert(buildIndex > prepareIndex, `${label} Linux job must verify after its unpacked build.`);
-  assert(e2eIndex > buildIndex, `${label} Linux job must run plugin E2E after the verified build.`);
+  assert(
+    developmentSandboxIndex > buildIndex && e2eIndex > developmentSandboxIndex,
+    `${label} Linux job must repair the development helper after package verification and before plugin E2E.`,
+  );
   assert(
     runs.filter((run) => run === "pnpm run test:plugin-packages-e2e:built").length === 1,
     `${label} Linux job must run the built plugin E2E exactly once.`,
   );
-  const e2eStep = record(linux.steps[e2eIndex], `${label} plugin E2E step`);
+  const developmentSandboxRun = runs[developmentSandboxIndex];
   assert(
-    record(e2eStep.env, `${label} plugin E2E environment`).CHROME_DEVEL_SANDBOX ===
-      "/usr/local/sbin/threadleaf-chrome-sandbox",
-    `${label} plugin E2E must use the prepared Chromium sandbox helper.`,
+    developmentSandboxRun
+      .trim()
+      .split("\n")
+      .map((line) => line.trim())
+      .join("\n") ===
+      'electron_path="$(node -p \'require("electron")\')"\n' +
+        'electron_sandbox="$(dirname "$electron_path")/chrome-sandbox"\n' +
+        'sudo chown root:root "$electron_sandbox"\n' +
+        'sudo chmod 4755 "$electron_sandbox"\n' +
+        'test "$(stat -c \'%u:%g:%a\' "$electron_sandbox")" = "0:0:4755"',
+    `${label} plugin E2E must repair and assert Electron's exact adjacent sandbox helper.`,
   );
   const nativeTools = runs.find(
     (run) => typeof run === "string" && run.includes("apt-get install"),
