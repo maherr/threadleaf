@@ -366,6 +366,7 @@ describe("exact plugin package inspection", () => {
     expect(report.stages.map((stage) => stage.id)).toEqual(pluginPackageInspectionStageIds);
     expect(report.stages.every((stage) => stage.status === "pass")).toBe(true);
     expect(report.staticAuthority).toMatchObject({ staticOnly: true });
+    expect(report.dependencies).toContainEqual({ module: "node:buffer", kind: "node-builtin" });
     expect(
       report.stages.every((stage) => {
         return stage.durationMs >= 0 && stage.toolVersion === "1.0.0" && stage.schemaVersion === 1;

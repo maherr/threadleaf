@@ -4447,7 +4447,7 @@ async function createWindow(trustedWorkspace = false): Promise<void> {
     show: false,
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
-      contextIsolation: true,
+      contextIsolation: !trustedWorkspace,
       nodeIntegration: trustedWorkspace,
       sandbox: !trustedWorkspace,
       ...(trustedWorkspace

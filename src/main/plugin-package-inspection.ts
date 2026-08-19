@@ -804,16 +804,6 @@ function dependencyStage(input: ExactPluginPackageInput): {
   }
   const result = extractDependencies(source);
   for (const dependency of result.dependencies) {
-    if (dependency.kind === "node-builtin") {
-      diagnostics.push(
-        diagnostic(
-          "undeclared-host-dependency",
-          "error",
-          "The package references a Node builtin outside the compatibility API.",
-          "analysis/dependencies.json",
-        ),
-      );
-    }
     if (dependency.kind === "relative") {
       diagnostics.push(
         diagnostic(
@@ -848,6 +838,11 @@ function dependencyStage(input: ExactPluginPackageInput): {
   if (result.dependencies.some((dependency) => dependency.kind === "bundled-external")) {
     stage.addLimitation(
       "External package dependencies are treated as bundled because manifest.json has no dependency graph; their transitive code is outside this exact three-asset scan.",
+    );
+  }
+  if (result.dependencies.some((dependency) => dependency.kind === "node-builtin")) {
+    stage.addLimitation(
+      "Literal Node builtins require the trusted runtime and remain gated by an exact reviewed authority profile and package-bound grant; dynamic module selection is still rejected.",
     );
   }
   for (const item of diagnostics) {

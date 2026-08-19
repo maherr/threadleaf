@@ -2780,6 +2780,8 @@ function renderDocumentView(): void {
   const plugin = documentViewMode === "plugin" && (hasNote || hasPluginFile || pluginSettings);
   const popoutState = workspaceLayoutSnapshot?.popout.state ?? "closed";
   const popoutOpen = popoutState === "open";
+  const pluginPopoutSupported =
+    currentPluginPreference().compatibilityTopology !== "trusted-workspace";
   const hasPluginSurface =
     currentSnapshot?.pluginSurface !== null && currentSnapshot?.pluginSurface !== undefined;
   const pluginViewType = preferredPluginViewType();
@@ -2801,6 +2803,7 @@ function renderDocumentView(): void {
       : popoutState === "degraded"
         ? "Plugin pop-out unavailable; plugin view is open in the main window."
         : "Plugin view is open in the main window.";
+  elements.pluginSurfaceStatus.hidden = hasPluginSurface && !popoutOpen;
   elements.noteView.dataset.view = reading ? "reading" : documentViewMode;
   elements.noteEditorShell.dataset.editorMode = editingViewMode;
   elements.noteEditorShell.classList.toggle("is-live-preview", editingViewMode === "live");
@@ -2821,8 +2824,9 @@ function renderDocumentView(): void {
     : visiblePluginViewType
       ? `Open ${visiblePluginViewType} community plugin view`
       : "No community plugin view is registered";
-  elements.popOutPluginView.hidden = !hasPluginSurface && !popoutOpen;
-  elements.popOutPluginView.disabled = busy || (!hasPluginSurface && !popoutOpen);
+  elements.popOutPluginView.hidden = !pluginPopoutSupported || (!hasPluginSurface && !popoutOpen);
+  elements.popOutPluginView.disabled =
+    !pluginPopoutSupported || busy || (!hasPluginSurface && !popoutOpen);
   elements.popOutPluginView.textContent = popoutOpen ? "↙" : "↗";
   elements.popOutPluginView.ariaLabel = popoutOpen ? "Reattach plugin view" : "Pop out plugin view";
   elements.popOutPluginView.title = popoutOpen ? "Reattach plugin view" : "Pop out plugin view";

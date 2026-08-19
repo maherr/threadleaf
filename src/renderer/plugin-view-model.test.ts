@@ -28,6 +28,7 @@ describe("plugin document view selection", () => {
   });
 
   it("admits only the measured native Excalidraw contract to workspace tabs", () => {
+    expect(workspacePluginViewTypeForPath("Sketch.excalidraw.md", integrations)).toBe("excalidraw");
     expect(workspacePluginViewTypeForPath("Sketch.excalidraw", integrations)).toBe("excalidraw");
     expect(workspacePluginViewTypeForPath("Board.drawing", integrations)).toBeNull();
     expect(workspacePluginViewTypeForPath("Sketch.excalidraw", null)).toBeNull();

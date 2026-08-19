@@ -4,7 +4,7 @@ import path from "node:path";
 import { JSDOM } from "jsdom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App, CommandRegistry, FileManager, NoticeBus, TFile, Vault } from "./obsidian-compat";
-import { Editor, MarkdownView, WorkspaceLeaf } from "./obsidian-ui-compat";
+import { Editor, ItemView, MarkdownView, WorkspaceLeaf } from "./obsidian-ui-compat";
 import { Workspace } from "./obsidian-workspace-compat";
 
 const temporaryDirectories: string[] = [];
@@ -285,6 +285,44 @@ describe("Obsidian workspace compatibility wedge", () => {
       emptyWorkspace.registerLeaf(malformedOnlyLeaf);
       expect(emptyWorkspace.getActiveFile()).toBeNull();
       expect(emptyWorkspace.activeEditor).toBeNull();
+    });
+  });
+
+  it("routes compound .excalidraw.md files through the registered Excalidraw view", async () => {
+    const vault = await createVault({
+      "Drawings/Architecture.excalidraw.md": "---\nexcalidraw-plugin: parsed\n---\n",
+    });
+    await withDocument(async () => {
+      const app = new App(vault, new CommandRegistry(), new NoticeBus(() => undefined));
+      app.workspace.setLeafFactory((containerEl) => new WorkspaceLeaf(app, containerEl));
+      app.compatibility.registerView(
+        "obsidian-excalidraw-plugin",
+        "excalidraw",
+        (leaf) =>
+          new (class extends ItemView {
+            override getViewType(): string {
+              return "excalidraw";
+            }
+          })(leaf as WorkspaceLeaf),
+      );
+      app.compatibility.registerExtensions(
+        "obsidian-excalidraw-plugin",
+        ["excalidraw"],
+        "excalidraw",
+      );
+      const drawing = vault.getFileByPath("Drawings/Architecture.excalidraw.md");
+      if (!drawing) {
+        throw new Error("Compound Excalidraw fixture was not discovered.");
+      }
+
+      const leaf = app.workspace.getLeaf(false);
+      await leaf.openFile(drawing);
+
+      expect(leaf.getViewState()).toMatchObject({
+        state: { file: drawing.path },
+        type: "excalidraw",
+      });
+      expect(leaf.view?.getViewType()).toBe("excalidraw");
     });
   });
 

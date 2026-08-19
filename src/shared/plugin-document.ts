@@ -43,5 +43,8 @@ export function workspacePluginViewTypeForPath(
   filePath: string,
   integrations: PluginIntegrationSnapshot | null | undefined,
 ): string | null {
-  return isNativeExcalidrawPath(filePath) ? pluginViewTypeForPath(filePath, integrations) : null;
+  const lowerPath = filePath.toLocaleLowerCase("en-US");
+  return isNativeExcalidrawPath(filePath) || lowerPath.endsWith(".excalidraw.md")
+    ? pluginViewTypeForPath(filePath, integrations)
+    : null;
 }

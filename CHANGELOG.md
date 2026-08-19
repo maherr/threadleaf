@@ -44,6 +44,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   enablement, command-palette drawing creation, edit/save/reopen, embed insertion, PNG and SVG
   export, plugin settings, pop-out detach and recovery, plugin-renderer crash, vault switching,
   explicit reload, restart, and byte-manifest verification.
+- Made trusted-workspace plugins execute in the renderer's real Node-enabled world, with literal
+  Node builtins recorded and admitted only through the existing exact-package reviewed authority
+  profile and package-bound grant.
+- Extended the Excalidraw workflow to the trusted shared renderer, compound `.excalidraw.md`
+  documents, native plugin-created leaves, visible hit-tested controls, settings in both themes,
+  and scene-semantic persistence across vault switches and restarts.
 
 ### Fixed
 
@@ -57,6 +63,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   without weakening malformed or unreadable private-state protection.
 - Yielded large bootstrap and snapshot scans at bounded intervals so Electron window and IPC work
   remain serviceable during full-vault startup.
+- Prevented inactive trusted-plugin leaves from invisibly covering the active canvas, even when a
+  community plugin loads later CSS that forces every workspace leaf to display.
+- Kept plugin-owned views and settings mounted in the visible workspace instead of leaving their
+  real DOM surfaces detached behind a status placeholder.
 
 ## [0.1.0]
 

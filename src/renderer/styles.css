@@ -2275,6 +2275,37 @@ h2 {
   background: var(--background-primary, var(--surface-raised));
 }
 
+.plugin-surface-host > .threadleaf-plugin-surface,
+.plugin-surface-host > .threadleaf-plugin-surface > .view-content {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.plugin-surface-host > .threadleaf-plugin-surface {
+  z-index: 1;
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--background-primary, var(--surface-raised));
+}
+
+.plugin-surface-host > .threadleaf-plugin-surface[hidden] {
+  display: none;
+}
+
+.plugin-surface-host > .threadleaf-plugin-surface > .view-content {
+  height: auto;
+  flex: 1;
+  overflow: hidden;
+}
+
+.plugin-surface-host > .threadleaf-plugin-settings-surface {
+  overflow: auto;
+}
+
 .plugin-surface-loading {
   color: var(--ink-muted);
   font-family: var(--mono);

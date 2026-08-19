@@ -186,7 +186,10 @@ export class PluginHost implements PluginRuntimePort {
     const commands = new CommandRegistry(actions);
     const notices = new NoticeBus((message) => this.record("notice", message));
     this.app = new App(this.vault, commands, notices);
-    this.app.workspace.setLeafFactory((containerEl) => new WorkspaceLeaf(this.app, containerEl));
+    this.app.workspace.setLeafFactory((containerEl) => {
+      if (containerEl) this.mountPluginSurfaceContainer(containerEl);
+      return new WorkspaceLeaf(this.app, containerEl);
+    });
     this.app.workspace.setLayoutReadyErrorHandler((_error) => {
       this.record("error", createPluginDiagnostic("runtime-load-failed").message);
     });
@@ -365,7 +368,10 @@ export class PluginHost implements PluginRuntimePort {
       if (!ran || !command) {
         throw new Error("command is not available");
       }
-      await this.vault.waitForSettledMutations();
+      // Obsidian commands are allowed to start async vault work without returning its Promise.
+      // Keep a short post-command quiet window so the returned snapshot reflects that work instead
+      // of reporting success against the leaf and file that preceded the command.
+      await this.vault.waitForSettledMutations(250, 10_000);
       this.captureEditorUpdate();
 
       this.record("command", `Ran command: ${command.name}.`);
@@ -539,7 +545,7 @@ export class PluginHost implements PluginRuntimePort {
     const container = document.createElement("div");
     container.id = "threadleaf-plugin-surface";
     container.className = "threadleaf-plugin-surface workspace-leaf mod-active";
-    document.body.append(container);
+    this.mountPluginSurfaceContainer(container);
     const leaf = new WorkspaceLeaf(this.app, container);
     this.activePluginLeaf = leaf;
     try {
@@ -576,7 +582,7 @@ export class PluginHost implements PluginRuntimePort {
     container.id = "threadleaf-plugin-surface";
     container.className = "threadleaf-plugin-surface threadleaf-plugin-settings-surface";
     container.append(settingTab.containerEl);
-    document.body.append(container);
+    this.mountPluginSurfaceContainer(container);
     this.activeSettingTab = settingTab;
     this.activeSettingTabContainer = container;
     this.activeSettingTabPluginId = pluginId;
@@ -655,6 +661,23 @@ export class PluginHost implements PluginRuntimePort {
     this.nativeEditorContext = null;
     this.editorUpdate = null;
     return this.getSnapshot();
+  }
+
+  private mountPluginSurfaceContainer(container: HTMLElement): void {
+    container.classList.add("threadleaf-plugin-surface");
+    const visibleHost = document.getElementById("plugin-surface-host");
+    if (!visibleHost) {
+      document.body.append(container);
+      return;
+    }
+    Object.assign(container.style, {
+      inset: "0",
+      minHeight: "0",
+      minWidth: "0",
+      overflow: "hidden",
+      position: "absolute",
+    });
+    visibleHost.append(container);
   }
 
   async unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot> {
@@ -745,9 +768,14 @@ export class PluginHost implements PluginRuntimePort {
     const currentPlugin = this.lastPluginId
       ? (plugins.find(({ id }) => id === this.lastPluginId) ?? null)
       : null;
+    const workspaceActiveLeaf =
+      this.app.workspace.activeLeaf instanceof WorkspaceLeaf ? this.app.workspace.activeLeaf : null;
+    const workspaceActiveViewType = workspaceActiveLeaf?.view?.getViewType() ?? "empty";
     const activePluginLeaf =
-      this.app.workspace.activeLeaf instanceof WorkspaceLeaf
-        ? this.app.workspace.activeLeaf
+      workspaceActiveLeaf &&
+      workspaceActiveLeaf !== this.nativeMarkdownLeaf &&
+      workspaceActiveViewType !== "empty"
+        ? workspaceActiveLeaf
         : this.activePluginLeaf;
     return {
       vault: {

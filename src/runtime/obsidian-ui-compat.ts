@@ -2192,8 +2192,11 @@ export class WorkspaceLeaf extends WorkspaceItem {
   }
 
   async openFile(file: TFile, openState: OpenViewState = {}): Promise<void> {
+    const compatibilityExtension = file.path.toLocaleLowerCase("en-US").endsWith(".excalidraw.md")
+      ? "excalidraw"
+      : file.extension;
     const viewType =
-      this.app.compatibility.getViewTypeForExtension(file.extension) ??
+      this.app.compatibility.getViewTypeForExtension(compatibilityExtension) ??
       this.view?.getViewType() ??
       "markdown";
     await this.setViewState({

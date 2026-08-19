@@ -280,7 +280,6 @@ describe("extension porting toolkit", () => {
     expect(report.authority.suggestedCapabilities).toEqual(["workspace-ui"]);
     expect(report.authority.suggestedNativeRuntime).toBe("portable");
     expect(report.diagnostics.map((item) => item.code)).toEqual([
-      "undeclared-host-dependency",
       "unmapped-authority",
       "node-filesystem",
       "unmeasured-api",

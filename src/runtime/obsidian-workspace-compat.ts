@@ -971,6 +971,10 @@ export class Workspace extends Events {
       return;
     }
     containerEl.hidden = !active;
+    // Community plugin styles load after the host shell and can mark every workspace leaf as
+    // `display: flex !important`. Mirror Obsidian's tab ownership at the inline-important level
+    // so an inactive leaf cannot invisibly cover the active plugin surface.
+    containerEl.style.setProperty("display", active ? "flex" : "none", "important");
     containerEl.classList.toggle("mod-active", active);
   }
 

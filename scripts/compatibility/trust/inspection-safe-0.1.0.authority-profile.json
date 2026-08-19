@@ -2,17 +2,17 @@
   "$schema": "./reviewed-authority-profile.v1.schema.json",
   "schemaVersion": 1,
   "profileId": "inspection-safe-0.1.0",
-  "profileRevision": 1,
+  "profileRevision": 2,
   "packageIdentity": {
     "pluginId": "inspection-safe",
     "manifestVersion": "0.1.0",
     "distributionTag": "0.1.0",
     "manifestSha256": "e41ba4a20494e9aa0ffff7d4d2e91731d7bbe21a429f3f7c2724c63d84a2e0e1",
-    "mainSha256": "ce6dba4d929f9b007c3c18863a0925f3cfb1ac0fd877252ee10f3befa7ebc2fc",
+    "mainSha256": "e8c4bf3456c55a93e075c2e6dd03a84f56e9e8152a4196157fe2c9c046bc63ad",
     "stylesSha256": "9427ffdd98cc3485b6a0d28a5405bd35e6191e552449367b5adad5ec0b574e54",
-    "packageTreeSha256": "fc59639106c9120abd0b7366725bb1187cb99a11bcdefb10e3e1781d4ec214e0"
+    "packageTreeSha256": "6a564b61b9423517516e0bf535669c56493179b4df3671fa31b253af1e6e3eac"
   },
-  "packageIdentityDigest": "d346c598e4a5a56af0b9868c31bd06a6e017db73a90b7954ca1a7fb1523f3401",
+  "packageIdentityDigest": "98e918d193d1465291a7bed926021b7da29e69c60404827f053335435de71f87",
   "expectedStaticCapabilities": ["workspace-ui"],
   "requiredAuthorities": [
     "network",
@@ -24,5 +24,5 @@
   ],
   "executionProfile": "trusted-node-renderer",
   "allowedPlatforms": ["linux", "darwin", "win32"],
-  "authorityDigest": "f99ccfe401c5d29168a807a1d70fd40b5286f52f3484e22de24bf6458568b0fc"
+  "authorityDigest": "d238991c8e89c68eb6acaced469faaea2a0e0354dce08a2da7e3fa07f82cbeef"
 }

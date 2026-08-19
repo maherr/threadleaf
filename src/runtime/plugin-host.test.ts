@@ -926,7 +926,7 @@ module.exports = class HostModulePlugin extends Plugin {
   it("provides UI base classes and releases registered integrations on unload", async () => {
     const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-ui-api-"));
     const vaultPath = path.join(sandboxPath, "vault");
-    const dom = new JSDOM("<!doctype html><body></body>", {
+    const dom = new JSDOM("<!doctype html><body><div id='plugin-surface-host'></div></body>", {
       url: "https://threadleaf.invalid/",
     });
     const previousWindow = globalThis.window;
@@ -971,7 +971,9 @@ module.exports = class UiApiPlugin extends Plugin {
       throw new Error("sanitizeHTMLToDom failed");
     }
     addIcon("ui-api-icon", "<path d='M0 0h1v1z'/>");
-    this.registerView("ui-api-view", (leaf) => new ItemView(leaf));
+    this.registerView("ui-api-view", (leaf) => new (class extends ItemView {
+      getViewType() { return "ui-api-view"; }
+    })(leaf));
     this.registerExtensions(["drawing"], "ui-api-view");
     this.addRibbonIcon("ui-api-icon", "Open drawing", () => {});
     this.addStatusBarItem().setText("Ready");
@@ -1021,6 +1023,9 @@ module.exports = class UiApiPlugin extends Plugin {
       expect(dom.window.document.querySelector(".vertical-tab-content")?.textContent).toBe(
         "UI API settings",
       );
+      expect(
+        dom.window.document.querySelector("#threadleaf-plugin-surface")?.parentElement?.id,
+      ).toBe("plugin-surface-host");
       expect(dom.window.eval("window.__threadleafSettingsDisplays")).toBe(1);
       await host.closePluginView();
       expect(dom.window.eval("window.__threadleafSettingsHides")).toBe(1);
@@ -1029,8 +1034,11 @@ module.exports = class UiApiPlugin extends Plugin {
       const viewSnapshot = await host.openPluginView("ui-api-view", "Drawing.drawing");
       expect(viewSnapshot.pluginSurface).toMatchObject({
         filePath: null,
-        viewType: "empty",
+        viewType: "ui-api-view",
       });
+      expect(
+        dom.window.document.querySelector("#threadleaf-plugin-surface")?.parentElement?.id,
+      ).toBe("plugin-surface-host");
       expect(host.app.workspace.getLayout()).toEqual({
         floating: { children: [], direction: "vertical", type: "split" },
         left: { children: [], direction: "vertical", type: "split" },
@@ -1056,9 +1064,20 @@ module.exports = class UiApiPlugin extends Plugin {
       expect(splitLeaf).not.toBeNull();
       expect(host.app.workspace.getLayout().main.children).toHaveLength(2);
       expect((splitLeaf as { containerEl: HTMLElement }).containerEl.hidden).toBe(true);
+      expect((splitLeaf as { containerEl: HTMLElement }).containerEl.style.display).toBe("none");
+      expect(
+        (splitLeaf as { containerEl: HTMLElement }).containerEl.style.getPropertyPriority(
+          "display",
+        ),
+      ).toBe("important");
       host.app.workspace.setActiveLeaf(splitLeaf);
       expect((splitLeaf as { containerEl: HTMLElement }).containerEl.hidden).toBe(false);
+      expect((splitLeaf as { containerEl: HTMLElement }).containerEl.style.display).toBe("flex");
       expect((originalLeaf as { containerEl: HTMLElement }).containerEl.hidden).toBe(true);
+      expect((await host.getSnapshot()).pluginSurface).toMatchObject({
+        filePath: null,
+        viewType: "ui-api-view",
+      });
       await fs.writeFile(path.join(vaultPath, "Drawing.md"), "# Drawing\n", "utf8");
       await (
         splitLeaf as {

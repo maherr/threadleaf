@@ -90,6 +90,19 @@ import type { WorkspaceOpenTransferAcknowledgement } from "../shared/workspace-o
 import type { VaultWorkspaceMode, VaultWorkspaceSettings } from "../shared/workspace-settings";
 import { trustedWorkspaceProbeArgument } from "./trusted-workspace-probe";
 
+function exposeRendererGlobal(name: string, value: unknown): void {
+  if (process.contextIsolated) {
+    contextBridge.exposeInMainWorld(name, value);
+    return;
+  }
+  Object.defineProperty(globalThis, name, {
+    configurable: false,
+    enumerable: true,
+    value,
+    writable: false,
+  });
+}
+
 function acknowledgeWorkspaceOpenReceipt(snapshot: RuntimeSnapshot): RuntimeSnapshot {
   const receipt = snapshot.workspaceOpenDiagnostics;
   if (receipt) {
@@ -762,38 +775,7 @@ if (process.argv.includes("--threadleaf-trusted-workspace")) {
     const workspaceTestProbeEnabled = process.argv.includes(trustedWorkspaceProbeArgument);
     const { readFileSync } = require("node:fs") as typeof import("node:fs");
     const { join } = require("node:path") as typeof import("node:path");
-    const createTrustedCryptoFacade = () => {
-      const crypto = require("node:crypto") as typeof import("node:crypto");
-      return {
-        createHash: (algorithm: string, options?: unknown) => {
-          const hash = crypto.createHash(
-            algorithm,
-            options as Parameters<typeof crypto.createHash>[1],
-          );
-          const facade = {
-            update: (data: string | Uint8Array, inputEncoding?: BufferEncoding) => {
-              if (inputEncoding === undefined) {
-                hash.update(data as Parameters<typeof hash.update>[0]);
-              } else {
-                hash.update(data as Parameters<typeof hash.update>[0], inputEncoding);
-              }
-              return facade;
-            },
-            digest: (encoding?: "base64" | "base64url" | "hex") =>
-              encoding === undefined ? hash.digest() : hash.digest(encoding),
-          };
-          return facade;
-        },
-        randomUUID: crypto.randomUUID,
-      };
-    };
-    const trustedNodeRequire = (request: string): unknown => {
-      if (request === "crypto" || request === "node:crypto") {
-        return createTrustedCryptoFacade();
-      }
-      return require(request);
-    };
-    contextBridge.exposeInMainWorld("__threadleafTrustedRuntime", {
+    exposeRendererGlobal("__threadleafTrustedRuntime", {
       workspaceTestProbeEnabled,
       hostBundle: readFileSync(join(__dirname, "trusted-plugin-host.cjs"), "utf8"),
       ipcRenderer: {
@@ -803,7 +785,7 @@ if (process.argv.includes("--threadleaf-trusted-workspace")) {
         },
         send: (channel: string, ...args: unknown[]) => ipcRenderer.send(channel, ...args),
       },
-      nodeRequire: trustedNodeRequire,
+      nodeRequire: require,
       nodeResolve: (request: string, options?: { paths?: string[] }) =>
         require.resolve(request, options),
       nodeResolveFrom: (modulePath: string, request: string, options?: { paths?: string[] }) =>
@@ -816,12 +798,12 @@ if (process.argv.includes("--threadleaf-trusted-workspace")) {
 }
 
 try {
-  contextBridge.exposeInMainWorld("threadleaf", bridge);
+  exposeRendererGlobal("threadleaf", bridge);
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   console.error("Threadleaf could not expose its renderer bridge:", error);
   try {
-    contextBridge.exposeInMainWorld("__threadleafPreloadError", message);
+    exposeRendererGlobal("__threadleafPreloadError", message);
   } catch {
     // The error is already reported to the preload console.
   }

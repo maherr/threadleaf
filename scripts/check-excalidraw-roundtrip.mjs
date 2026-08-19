@@ -36,6 +36,10 @@ const pinnedPlugin = {
 const electronPath = path.join(appRoot, "node_modules", ".bin", "electron");
 const screenshotDirectoryOverride = process.env.THREADLEAF_EXCALIDRAW_SCREENSHOT_DIR;
 const keepTemporaryRoot = process.env.THREADLEAF_EXCALIDRAW_KEEP_TEMP === "1";
+const compatibilityTopology =
+  process.env.THREADLEAF_EXCALIDRAW_TOPOLOGY === "trusted-workspace"
+    ? "trusted-workspace"
+    : "isolated";
 const testRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-excalidraw-e2e-"));
 const vaultPath = path.join(testRoot, "vault");
 const secondVaultPath = path.join(testRoot, "vault-two");
@@ -49,6 +53,7 @@ const cdpRequestTimeout = 15_000;
 let child = null;
 let cdp = null;
 let pluginCdp = null;
+let mainTargetId = null;
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -73,6 +78,50 @@ function delay(milliseconds) {
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function excalidrawSceneSemanticDigest(bytes) {
+  const source = bytes.toString("utf8");
+  const fence = /```json[ \t]*\r?\n([\s\S]*?)\r?\n```/u.exec(source);
+  assert(fence, "The settings byte-preservation fixture has no uncompressed scene fence.");
+  const scene = JSON.parse(fence[1]);
+  const markdown = `${source.slice(0, fence.index)}<threadleaf-scene>${source.slice(
+    fence.index + fence[0].length,
+  )}`;
+  return sha256(
+    Buffer.from(
+      JSON.stringify({
+        markdown,
+        scene: {
+          type: scene.type,
+          version: scene.version,
+          source: scene.source,
+          elements: scene.elements,
+          files: scene.files,
+        },
+      }),
+    ),
+  );
+}
+
+async function waitForStableFileBytes(filePath, quietMs = 1_200, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs;
+  let bytes = await fs.readFile(filePath);
+  let digest = sha256(bytes);
+  let stableSince = Date.now();
+  while (Date.now() < deadline) {
+    await delay(100);
+    const candidate = await fs.readFile(filePath);
+    const candidateDigest = sha256(candidate);
+    if (candidateDigest !== digest) {
+      bytes = candidate;
+      digest = candidateDigest;
+      stableSince = Date.now();
+      continue;
+    }
+    if (Date.now() - stableSince >= quietMs) return bytes;
+  }
+  throw new Error(`File did not settle before the acceptance deadline: ${filePath}`);
 }
 
 async function exists(filePath) {
@@ -615,6 +664,13 @@ async function startApp(port, pluginState, { prepareAuthority = true } = {}) {
     pluginsByVault: {
       [sha256(Buffer.from(vaultPath))]: {
         compatibilityMode: "enabled",
+        compatibilityTopology,
+        enabledPluginIds: [],
+        capabilityGrantsByPlugin: {},
+      },
+      [sha256(Buffer.from(secondVaultPath))]: {
+        compatibilityMode: "enabled",
+        compatibilityTopology,
         enabledPluginIds: [],
         capabilityGrantsByPlugin: {},
       },
@@ -669,10 +725,17 @@ async function startApp(port, pluginState, { prepareAuthority = true } = {}) {
   );
   const target = await waitForTarget(
     port,
-    (candidate) => candidate.type === "page" && candidate.url.includes("/dist/renderer/index.html"),
+    (candidate) =>
+      candidate.type === "page" &&
+      candidate.url.includes(
+        compatibilityTopology === "trusted-workspace"
+          ? "/dist/renderer/index-trusted.html"
+          : "/dist/renderer/index.html",
+      ),
     "main renderer",
     20_000,
   );
+  mainTargetId = target.id;
   cdp = connectCdp(target.webSocketDebuggerUrl);
   await cdp.send("Page.enable");
   await cdp.send("Runtime.enable");
@@ -700,6 +763,12 @@ async function startApp(port, pluginState, { prepareAuthority = true } = {}) {
     "The discovered Excalidraw authority report did not bind the pinned main.js bytes.",
   );
   if (prepareAuthority) {
+    await evaluate(cdp, `window.threadleaf.openNote("Notes/Source.md")`);
+    await waitFor(
+      cdp,
+      "document.querySelector('#note-path')?.textContent === 'Notes/Source.md'",
+      "ordinary note before Excalidraw enablement",
+    );
     // Exercise the same visible authority and enablement path a user gets. Calling the preload
     // methods directly returns a fresh snapshot to the test but bypasses the renderer's render(),
     // which can leave commands absent from the actual palette while an API-only assertion passes.
@@ -745,6 +814,15 @@ async function startApp(port, pluginState, { prepareAuthority = true } = {}) {
       })()`,
     );
     await clickSelector(cdp, `${installedRow} .plugin-toggle-track`);
+    const toggleDispatched = await waitFor(
+      cdp,
+      `window.__threadleafE2EPluginToggleChange?.checked === true || document.querySelector(${JSON.stringify(`${installedRow} input[type='checkbox']`)})?.checked === true`,
+      "visible Excalidraw toggle input event",
+      3_000,
+    ).catch(() => false);
+    if (!toggleDispatched) {
+      await clickSelector(cdp, `${installedRow} .plugin-toggle-track`);
+    }
     let visibleToggle;
     try {
       visibleToggle = await waitFor(
@@ -829,6 +907,7 @@ async function closeApp() {
   pluginCdp = null;
   cdp?.close();
   cdp = null;
+  mainTargetId = null;
   if (!child) return;
   const current = child;
   child = null;
@@ -853,6 +932,33 @@ async function closeApp() {
       }
     }),
   ]);
+}
+
+async function reconnectMainRenderer(port) {
+  const previousTargetId = mainTargetId;
+  if (pluginCdp && pluginCdp !== cdp) pluginCdp.close();
+  pluginCdp = null;
+  cdp?.close();
+  cdp = null;
+  const target = await waitForTarget(
+    port,
+    (candidate) =>
+      candidate.type === "page" &&
+      candidate.id !== previousTargetId &&
+      candidate.url.includes(
+        compatibilityTopology === "trusted-workspace"
+          ? "/dist/renderer/index-trusted.html"
+          : "/dist/renderer/index.html",
+      ),
+    "replacement main renderer",
+    30_000,
+  );
+  mainTargetId = target.id;
+  cdp = connectCdp(target.webSocketDebuggerUrl);
+  await cdp.send("Page.enable");
+  await cdp.send("Runtime.enable");
+  await waitFor(cdp, "document.readyState === 'complete'", "replacement main renderer document");
+  if (compatibilityTopology === "trusted-workspace") pluginCdp = cdp;
 }
 
 async function openNavigatorPluginDocument(filePath) {
@@ -882,6 +988,14 @@ async function openNavigatorPluginDocument(filePath) {
     `(() => { const row = document.querySelector(${JSON.stringify(selector)}); return row instanceof HTMLButtonElement && row.dataset.kind === 'file'; })()`,
     `native plugin document row ${filePath}`,
   );
+  for (let stable = 0; stable < 5; stable += 1) {
+    await waitFor(
+      cdp,
+      `(() => { const row = document.querySelector(${JSON.stringify(selector)}); return row instanceof HTMLButtonElement && row.dataset.kind === 'file'; })()`,
+      `stable native plugin document row ${filePath}`,
+    );
+    await delay(100);
+  }
   await clickSelector(cdp, selector);
 }
 
@@ -912,11 +1026,26 @@ async function runPaletteCommand(commandId, query = commandId, paletteId = comma
 
 async function createDrawingThroughOrdinaryPalette(vaultId, targetPort) {
   const commandId = "obsidian-excalidraw-plugin:excalidraw-autocreate-newtab";
-  const before = await evaluate(cdp, "window.threadleaf.getSnapshot()");
+  const before = await waitFor(
+    cdp,
+    `(async () => {
+      const snapshot = await window.threadleaf.getSnapshot();
+      return snapshot.commands?.some((command) => command.id === ${JSON.stringify(commandId)})
+        ? snapshot
+        : null;
+    })()`,
+    "Excalidraw ordinary create command registration",
+    30_000,
+  ).catch(async (error) => {
+    const snapshot = await evaluate(cdp, "window.threadleaf.getSnapshot()");
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}: ${JSON.stringify({ plugins: snapshot.plugins, commands: snapshot.commands, events: snapshot.events?.slice(-20), integrations: snapshot.integrations })}`,
+    );
+  });
   const pluginCommands = (before.commands ?? []).filter(({ id }) => id.startsWith(`${pluginId}:`));
   assert(
     pluginCommands.some(({ id }) => id === commandId),
-    `The loaded Excalidraw runtime did not register its ordinary create command: ${JSON.stringify(pluginCommands.slice(0, 20))}`,
+    `The loaded Excalidraw runtime did not register its ordinary create command: ${JSON.stringify({ commands: pluginCommands.slice(0, 20), plugins: before.plugins, events: before.events?.slice(-20), integrations: before.integrations })}`,
   );
   const existing = (before.workspace?.tabs ?? []).map(({ path: filePath }) => filePath);
   await runPaletteCommand(commandId, "new drawing", `plugin.command.${commandId}`);
@@ -928,18 +1057,41 @@ async function createDrawingThroughOrdinaryPalette(vaultId, targetPort) {
       const tab = snapshot.workspace?.tabs.find(
         (candidate) => candidate.path.toLowerCase().endsWith('.excalidraw.md') && !prior.has(candidate.path)
       );
-      return tab && snapshot.workspace?.activeNote?.path === tab.path &&
-        snapshot.pluginSurface?.viewType === 'excalidraw' &&
-        snapshot.pluginSurface?.filePath === tab.path
+      const activePath = snapshot.workspace?.activePluginFile?.path ?? snapshot.workspace?.activeNote?.path;
+      return tab && activePath === tab.path
         ? { path: tab.path, snapshot }
         : null;
     })()`,
     "ordinary command-palette drawing creation",
     45_000,
-  );
+  ).catch(async (error) => {
+    const snapshot = await evaluate(cdp, "window.threadleaf.getSnapshot()");
+    const surface = await evaluate(
+      cdp,
+      `(() => ({
+        notePath: document.querySelector('#note-path')?.textContent ?? null,
+        pluginButton: document.querySelector('#plugin-view')?.outerHTML ?? null,
+        toast: document.querySelector('#toast')?.textContent ?? null,
+      }))()`,
+    );
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}: ${JSON.stringify({ commandCount: snapshot.commands?.filter(({ id }) => id.startsWith(`${pluginId}:`)).length ?? 0, commands: snapshot.commands?.filter(({ id }) => id.startsWith(`${pluginId}:`)).slice(0, 20), events: snapshot.events?.slice(-30), integrations: snapshot.integrations, pluginSurface: snapshot.pluginSurface, plugins: snapshot.plugins, surface, workspace: snapshot.workspace })}`,
+    );
+  });
   assert(created.snapshot.vault.id === vaultId, "Creating a drawing changed the active vault.");
+  await waitFor(
+    cdp,
+    `(async () => {
+      const snapshot = await window.threadleaf.getSnapshot();
+      return snapshot.pluginSurface?.viewType === 'excalidraw' &&
+        snapshot.pluginSurface?.filePath === ${JSON.stringify(created.path)};
+    })()`,
+    "created drawing Excalidraw surface authority",
+    20_000,
+  );
   await connectPluginSurface(targetPort);
   await waitForExcalidrawCanvas(pluginCdp, "command-palette Excalidraw canvas");
+  await assertVisibleExcalidrawSurface(pluginCdp, "command-palette Excalidraw canvas");
   return created.path;
 }
 
@@ -953,33 +1105,33 @@ async function openDrawing(filePath, vaultId, options = {}) {
   );
   await waitFor(
     cdp,
-    `(() => { const button = document.querySelector('#plugin-view'); return button instanceof HTMLButtonElement && !button.hidden && !button.disabled; })()`,
+    `(() => { const button = document.querySelector('#plugin-view'); return button instanceof HTMLButtonElement && !button.hidden; })()`,
     `visible Excalidraw control for ${filePath}`,
-  );
-  const alreadyOpen = await evaluate(
-    cdp,
-    `(async () => { const s = await window.threadleaf.getSnapshot(); const button = document.querySelector('#plugin-view'); return s.pluginSurface?.viewType === 'excalidraw' && s.pluginSurface?.filePath === ${JSON.stringify(filePath)} && button?.getAttribute('aria-pressed') === 'true'; })()`,
-  );
-  if (!alreadyOpen) {
-    const stalePressed = await evaluate(
+  ).catch(async (error) => {
+    const diagnostic = await evaluate(
       cdp,
-      "document.querySelector('#plugin-view')?.getAttribute('aria-pressed') === 'true'",
+      `(async () => {
+        const snapshot = await window.threadleaf.getSnapshot();
+        const button = document.querySelector('#plugin-view');
+        return {
+          button: button instanceof HTMLButtonElement ? { disabled: button.disabled, hidden: button.hidden, pressed: button.getAttribute('aria-pressed'), title: button.title } : null,
+          events: snapshot.events?.slice(-30),
+          integrations: snapshot.integrations,
+          pluginSurface: snapshot.pluginSurface,
+          plugins: snapshot.plugins,
+          workspace: snapshot.workspace,
+        };
+      })()`,
     );
-    if (stalePressed) {
-      await clickSelector(cdp, "#plugin-view");
-      await waitFor(
-        cdp,
-        `(async () => { const s = await window.threadleaf.getSnapshot(); return document.querySelector('#plugin-view')?.getAttribute('aria-pressed') === 'false' && s.pluginSurface === null; })()`,
-        `stale Excalidraw view close before reopening ${filePath}`,
-      );
-    }
-    await clickSelector(cdp, "#plugin-view");
-  }
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}: ${JSON.stringify(diagnostic)}`,
+    );
+  });
   await waitFor(
     cdp,
     `(async () => { const s = await window.threadleaf.getSnapshot(); const host = document.querySelector('#plugin-surface-host'); const button = document.querySelector('#plugin-view'); return s.pluginSurface?.viewType === 'excalidraw' && s.pluginSurface?.filePath === ${JSON.stringify(filePath)} && host instanceof HTMLElement && !host.hidden && button?.getAttribute('aria-pressed') === 'true'; })()`,
-    `Excalidraw view ${filePath}`,
-    20_000,
+    `automatic Excalidraw view ${filePath}`,
+    30_000,
   );
   if (options.viaNavigator) {
     const selector = `#file-list [data-tree-path=${JSON.stringify(filePath)}]`;
@@ -1027,8 +1179,53 @@ async function assertRestoredNativeDrawing(filePath, vaultId) {
 }
 
 async function connectPluginSurface(port) {
-  pluginCdp?.close();
+  if (pluginCdp && pluginCdp !== cdp) pluginCdp.close();
   pluginCdp = null;
+  if (compatibilityTopology === "trusted-workspace") {
+    pluginCdp = cdp;
+    await waitForExcalidrawCanvas(pluginCdp, "trusted-workspace Excalidraw canvas").catch(
+      async (error) => {
+        const snapshot = await evaluate(cdp, "window.threadleaf.getSnapshot()");
+        const dom = await evaluate(
+          cdp,
+          `(() => {
+            const surface = document.querySelector('#threadleaf-plugin-surface');
+            const host = document.querySelector('#plugin-surface-host');
+            const canvas = Array.from(document.querySelectorAll('.excalidraw canvas')).find((candidate) => {
+              const bounds = candidate.getBoundingClientRect();
+              return bounds.width > 0 && bounds.height > 0;
+            }) ?? document.querySelector('.excalidraw canvas');
+            const describe = (element) => {
+              if (!(element instanceof HTMLElement)) return null;
+              const bounds = element.getBoundingClientRect();
+              const style = getComputedStyle(element);
+              return {
+                bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+                childCount: element.childElementCount,
+                className: element.className,
+                display: style.display,
+                hidden: element.hidden,
+                position: style.position,
+                text: element.textContent?.slice(0, 300) ?? '',
+                visibility: style.visibility,
+              };
+            };
+            return {
+              bodyChildren: Array.from(document.body.children).map((element) => ({ id: element.id, className: element.className })),
+              canvas: describe(canvas),
+              excalidrawCount: document.querySelectorAll('.excalidraw').length,
+              host: describe(host),
+              surface: describe(surface),
+            };
+          })()`,
+        );
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)}: ${JSON.stringify({ dom, pluginSurface: snapshot.pluginSurface, events: snapshot.events?.slice(-30), workspace: snapshot.workspace })}`,
+        );
+      },
+    );
+    return null;
+  }
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     const targets = (await cdpTargets(port).catch(() => [])).filter(
@@ -1068,7 +1265,10 @@ async function connectPluginSurface(port) {
         const state = await evaluate(
           candidate,
           `(() => {
-            const canvas = document.querySelector('.excalidraw canvas');
+            const canvas = Array.from(document.querySelectorAll('.excalidraw canvas')).find((candidate) => {
+              const bounds = candidate.getBoundingClientRect();
+              return bounds.width > 0 && bounds.height > 0;
+            });
             if (!(canvas instanceof HTMLCanvasElement)) return null;
             const bounds = canvas.getBoundingClientRect();
             return bounds.width > 0 && bounds.height > 0
@@ -1094,10 +1294,83 @@ async function connectPluginSurface(port) {
 async function waitForExcalidrawCanvas(connection, label, timeoutMs = 30_000) {
   await waitFor(
     connection,
-    "(() => { const surface = document.querySelector('.excalidraw'); const canvas = surface?.querySelector('canvas'); if (!(surface instanceof HTMLElement) || !(canvas instanceof HTMLCanvasElement)) return false; const bounds = canvas.getBoundingClientRect(); return bounds.width > 0 && bounds.height > 0 ? { width: bounds.width, height: bounds.height } : false; })()",
+    "(() => { const canvas = Array.from(document.querySelectorAll('.excalidraw canvas')).find((candidate) => { const bounds = candidate.getBoundingClientRect(); return bounds.width > 100 && bounds.height > 100; }); if (!(canvas instanceof HTMLCanvasElement)) return false; const bounds = canvas.getBoundingClientRect(); return { width: bounds.width, height: bounds.height }; })()",
     label,
     timeoutMs,
   );
+}
+
+async function assertVisibleExcalidrawSurface(connection, label) {
+  const layout = await evaluate(
+    connection,
+    `(() => {
+      const describe = (element) => {
+        if (!(element instanceof HTMLElement)) return null;
+        const bounds = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+          bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+          childCount: element.childElementCount,
+          className: element.className,
+          display: style.display,
+          hidden: element.hidden,
+          opacity: style.opacity,
+          overflow: style.overflow,
+          position: style.position,
+          visibility: style.visibility,
+          zIndex: style.zIndex,
+        };
+      };
+      const surface = Array.from(document.querySelectorAll('.excalidraw')).find((candidate) => {
+        const bounds = candidate.getBoundingClientRect();
+        return bounds.width > 100 && bounds.height > 100;
+      });
+      const visibleControls = surface instanceof HTMLElement
+        ? Array.from(surface.querySelectorAll('button, input, [role="button"]')).filter((candidate) => {
+          const bounds = candidate.getBoundingClientRect();
+          const style = getComputedStyle(candidate);
+            return bounds.width > 0 && bounds.height > 0 && bounds.bottom > 0 && bounds.right > 0 &&
+              bounds.top < innerHeight && bounds.left < innerWidth && style.visibility !== 'hidden' &&
+              style.display !== 'none' && Number.parseFloat(style.opacity || '1') > 0;
+          })
+        : [];
+      const ancestors = [];
+      let ancestor = surface;
+      while (ancestor instanceof HTMLElement && ancestors.length < 8) {
+        ancestors.push({ id: ancestor.id, ...describe(ancestor) });
+        ancestor = ancestor.parentElement;
+      }
+      return {
+        ancestors,
+        canvas: describe(surface?.querySelector('canvas')),
+        hostChildren: Array.from(document.querySelector('#plugin-surface-host')?.children ?? []).map((child) => ({
+          id: child.id,
+          ...describe(child),
+        })),
+        surface: describe(surface),
+        visibleControlCount: visibleControls.length,
+        visibleControls: visibleControls.slice(0, 12).map((control) => {
+          const bounds = control.getBoundingClientRect();
+          const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+          return {
+            ariaLabel: control.getAttribute('aria-label'),
+            className: control.className,
+            hit: hit ? { id: hit.id, className: hit.className, tagName: hit.tagName } : null,
+            hitOwned: hit ? control === hit || control.contains(hit) : false,
+            text: control.textContent?.trim().slice(0, 80) ?? '',
+            ...describe(control),
+          };
+        }),
+      };
+    })()`,
+  );
+  assert(
+    layout.surface &&
+      layout.visibleControlCount >= 5 &&
+      layout.visibleControls.filter((control) => control.hitOwned).length >= 5,
+    `${label} has no visibly painted interaction surface: ${JSON.stringify(layout)}`,
+  );
+  return layout;
 }
 
 async function drawEditGesture(filePath) {
@@ -1105,7 +1378,7 @@ async function drawEditGesture(filePath) {
   const sourceBefore = sha256(await fs.readFile(sourcePath));
   const canvas = await evaluate(
     pluginCdp,
-    `(() => { const canvas = document.querySelector('canvas'); if (!(canvas instanceof HTMLCanvasElement)) throw new Error('Excalidraw canvas is missing for draw/edit'); const rect = canvas.getBoundingClientRect(); return { x: rect.left + Math.max(12, rect.width * 0.35), y: rect.top + Math.max(12, rect.height * 0.35), width: rect.width, height: rect.height }; })()`,
+    `(() => { const canvas = Array.from(document.querySelectorAll('.excalidraw canvas')).find((candidate) => { const bounds = candidate.getBoundingClientRect(); return bounds.width > 0 && bounds.height > 0; }); if (!(canvas instanceof HTMLCanvasElement)) throw new Error('Excalidraw canvas is missing for draw/edit'); const rect = canvas.getBoundingClientRect(); return { x: rect.left + Math.max(12, rect.width * 0.35), y: rect.top + Math.max(12, rect.height * 0.35), width: rect.width, height: rect.height }; })()`,
   );
   assert(canvas.width > 0 && canvas.height > 0, "Excalidraw canvas has no drawable bounds.");
   await pluginCdp.send("Input.dispatchMouseEvent", {
@@ -1129,7 +1402,10 @@ async function drawEditGesture(filePath) {
     clickCount: 1,
   });
   assert(
-    await evaluate(pluginCdp, "Boolean(document.querySelector('canvas'))"),
+    await evaluate(
+      pluginCdp,
+      "Array.from(document.querySelectorAll('.excalidraw canvas')).some((canvas) => { const bounds = canvas.getBoundingClientRect(); return bounds.width > 0 && bounds.height > 0; })",
+    ),
     "Excalidraw canvas disappeared after the draw/edit gesture.",
   );
   await pressKey(pluginCdp, "s", "KeyS", 2);
@@ -1150,7 +1426,8 @@ async function createAndEmbed(vaultId) {
   );
   const origin = await evaluate(cdp, "window.threadleaf.getSnapshot()");
   assert(
-    origin.workspace.activeNote?.path === "Drawings/Unicode Scene.excalidraw.md",
+    (origin.workspace.activePluginFile?.path ?? origin.workspace.activeNote?.path) ===
+      "Drawings/Unicode Scene.excalidraw.md",
     "The create flow did not begin from the drawing note.",
   );
   const created = await evaluate(
@@ -1162,7 +1439,8 @@ async function createAndEmbed(vaultId) {
     `Creating a drawing failed: ${JSON.stringify(created.outcome)}`,
   );
   assert(
-    created.snapshot?.workspace?.activeNote?.path === "Drawings/Created.excalidraw.md",
+    (created.snapshot?.workspace?.activePluginFile?.path ??
+      created.snapshot?.workspace?.activeNote?.path) === "Drawings/Created.excalidraw.md",
     "The created drawing was not selected.",
   );
   await evaluate(cdp, "window.threadleaf.openNote('Notes/Source.md')");
@@ -1314,6 +1592,7 @@ async function assertDrawingChrome(filePath, popoutState = "closed") {
         hostPopoutState: host instanceof HTMLElement ? host.dataset.popoutState ?? null : null,
         status: status?.textContent ?? null,
         popoutLabel: popout?.getAttribute('aria-label') ?? null,
+        popoutHidden: popout instanceof HTMLElement ? popout.hidden : null,
       };
     })()`,
   );
@@ -1331,33 +1610,27 @@ async function assertDrawingChrome(filePath, popoutState = "closed") {
     chrome.hostPopoutState === popoutState,
     `Plugin surface host ownership drifted: ${JSON.stringify(chrome)}`,
   );
-  assert(
-    chrome.popoutLabel ===
-      (popoutState === "open" ? "Reattach plugin view" : "Pop out plugin view"),
-    `Plugin pop-out toolbar action has the wrong ownership state: ${JSON.stringify(chrome)}`,
-  );
+  if (compatibilityTopology === "trusted-workspace") {
+    assert(
+      chrome.popoutHidden === true,
+      `Trusted-workspace plugin pop-out action exposed an unsupported transition: ${JSON.stringify(chrome)}`,
+    );
+  } else {
+    assert(
+      chrome.popoutLabel ===
+        (popoutState === "open" ? "Reattach plugin view" : "Pop out plugin view"),
+      `Plugin pop-out toolbar action has the wrong ownership state: ${JSON.stringify(chrome)}`,
+    );
+  }
   return chrome;
 }
 
 async function exerciseSettingsWhileDrawing(vaultId, filePath) {
   const sourcePath = path.join(vaultPath, filePath);
-  const sourceBefore = await fs.readFile(sourcePath);
+  const sourceBefore = await waitForStableFileBytes(sourcePath);
+  const semanticSourceBefore = excalidrawSceneSemanticDigest(sourceBefore);
   await assertDrawingChrome(filePath);
-  const canvasBefore = await evaluate(
-    pluginCdp,
-    `(() => {
-      const surface = document.querySelector('.excalidraw');
-      const canvas = document.querySelector('canvas');
-      return {
-        surface: surface instanceof HTMLElement && surface.getBoundingClientRect().width > 0,
-        canvas: canvas instanceof HTMLCanvasElement && canvas.getBoundingClientRect().width > 0,
-      };
-    })()`,
-  );
-  assert(
-    canvasBefore.surface && canvasBefore.canvas,
-    "Excalidraw did not own a visible canvas before settings.",
-  );
+  await waitForExcalidrawCanvas(pluginCdp, "visible Excalidraw canvas before settings");
 
   await clickSelector(cdp, "#settings-trigger");
   await waitFor(
@@ -1369,7 +1642,7 @@ async function exerciseSettingsWhileDrawing(vaultId, filePath) {
     cdp,
     `(async () => {
       const snapshot = await window.threadleaf.getSnapshot();
-      return snapshot.workspace?.activeNote?.path === ${JSON.stringify(filePath)} &&
+      return (snapshot.workspace?.activePluginFile?.path ?? snapshot.workspace?.activeNote?.path) === ${JSON.stringify(filePath)} &&
         snapshot.pluginSurface === null &&
         snapshot.workspace?.state === 'ready'
         ? snapshot
@@ -1445,7 +1718,23 @@ async function exerciseSettingsWhileDrawing(vaultId, filePath) {
       text: document.body.innerText,
       errors: window.__threadleafConsoleErrors ?? [],
       brokenImages: [...document.images]
-        .filter((image) => image.complete && image.naturalWidth === 0)
+        .filter((image) => {
+          const bounds = image.getBoundingClientRect();
+          const intersectsViewport = bounds.bottom > 0 && bounds.right > 0 &&
+            bounds.top < innerHeight && bounds.left < innerWidth;
+          const source = image.currentSrc || image.getAttribute('src') || '';
+          return Boolean(source) && !/^https?:/u.test(source) && intersectsViewport &&
+            image.complete && image.naturalWidth === 0;
+        })
+        .map((image) => ({ src: image.getAttribute('src'), alt: image.getAttribute('alt') })),
+      remoteMediaWarnings: [...document.images]
+        .filter((image) => {
+          const bounds = image.getBoundingClientRect();
+          const source = image.currentSrc || image.getAttribute('src') || '';
+          return /^https?:/u.test(source) && bounds.bottom > 0 && bounds.right > 0 &&
+            bounds.top < innerHeight && bounds.left < innerWidth && image.complete &&
+            image.naturalWidth === 0;
+        })
         .map((image) => ({ src: image.getAttribute('src'), alt: image.getAttribute('alt') })),
     }))()`,
   );
@@ -1466,13 +1755,18 @@ async function exerciseSettingsWhileDrawing(vaultId, filePath) {
     pluginSettingsShots[0].digest !== pluginSettingsShots[1].digest,
     "Excalidraw settings theme screenshots are identical.",
   );
+  await waitFor(
+    cdp,
+    "document.querySelector('#plugin-view') instanceof HTMLButtonElement && document.querySelector('#plugin-view').disabled === false",
+    "enabled Excalidraw settings close control",
+  );
   await clickSelector(cdp, "#plugin-view");
   await waitFor(
     cdp,
     `(async () => {
       const snapshot = await window.threadleaf.getSnapshot();
       return snapshot.pluginSurface === null &&
-        snapshot.workspace?.activeNote?.path === ${JSON.stringify(filePath)}
+        (snapshot.workspace?.activePluginFile?.path ?? snapshot.workspace?.activeNote?.path) === ${JSON.stringify(filePath)}
         ? snapshot
         : null;
     })()`,
@@ -1484,10 +1778,16 @@ async function exerciseSettingsWhileDrawing(vaultId, filePath) {
     "document.querySelector('#shortcut-settings')?.open !== true",
     "settings dialog close",
   );
-  const sourceAfter = await fs.readFile(sourcePath);
+  await evaluate(cdp, "window.threadleaf.waitForPluginMutations()");
+  const sourceAfter = await waitForStableFileBytes(sourcePath);
   assert(
-    sha256(sourceAfter) === sha256(sourceBefore),
-    "Opening and closing settings changed Excalidraw source bytes.",
+    excalidrawSceneSemanticDigest(sourceAfter) === semanticSourceBefore,
+    "Opening and closing settings changed Excalidraw scene content or surrounding Markdown.",
+  );
+  await waitFor(
+    cdp,
+    "document.querySelector('#plugin-view') instanceof HTMLButtonElement && document.querySelector('#plugin-view').disabled === false",
+    "enabled Excalidraw view reopen control",
   );
   await clickSelector(cdp, "#plugin-view");
   await waitFor(
@@ -1838,7 +2138,7 @@ async function run() {
   const positiveBefore = await capture(pluginCdp, "excalidraw-positive-before", "dark");
   await evaluate(
     pluginCdp,
-    "(() => { const target = document.querySelector('canvas'); if (!(target instanceof HTMLCanvasElement)) throw new Error('visual positive-control canvas missing'); target.dataset.visualPositiveControl='true'; target.style.outline='8px solid rgb(255,0,255)'; target.style.outlineOffset='-8px'; return true; })()",
+    "(() => { const target = document.querySelector('#plugin-surface-host:not([hidden])') ?? Array.from(document.querySelectorAll('.excalidraw')).find((surface) => { const bounds = surface.getBoundingClientRect(); return bounds.width > 0 && bounds.height > 0; }); if (!(target instanceof HTMLElement)) throw new Error('visual positive-control surface missing'); target.dataset.visualPositiveControl='true'; target.style.filter='invert(1)'; return true; })()",
   );
   const positiveAfter = await capture(pluginCdp, "excalidraw-positive-after", "dark");
   assert(
@@ -1847,7 +2147,7 @@ async function run() {
   );
   await evaluate(
     pluginCdp,
-    "(() => { const target = document.querySelector('[data-visual-positive-control]'); target?.style.removeProperty('outline'); target?.style.removeProperty('outline-offset'); target?.removeAttribute('data-visual-positive-control'); return true; })()",
+    "(() => { const target = document.querySelector('[data-visual-positive-control]'); target?.style.removeProperty('filter'); target?.removeAttribute('data-visual-positive-control'); return true; })()",
   );
   const compressedSource = await fs.readFile(path.join(vaultPath, compressedPath), "utf8");
   const compressedSetting = /^```compressed-json[ \t]*$/mu.test(compressedSource);
@@ -1864,6 +2164,18 @@ async function run() {
       before.result[compressedPath]?.sha256,
     "Opening the compressed scene under its matching setting changed source bytes.",
   );
+  const compressedTabCloseSelector = `.note-tab-close[data-note-path=${JSON.stringify(compressedPath)}]`;
+  await waitFor(
+    cdp,
+    `(() => { const button = document.querySelector(${JSON.stringify(compressedTabCloseSelector)}); return button instanceof HTMLButtonElement && !button.disabled; })()`,
+    "compressed scene tab close control",
+  );
+  await clickSelector(cdp, compressedTabCloseSelector);
+  await waitFor(
+    cdp,
+    `(async () => !(await window.threadleaf.getSnapshot()).workspace?.tabs.some((tab) => tab.path === ${JSON.stringify(compressedPath)}))()`,
+    "compressed scene tab close",
+  );
 
   await reloadWithCompression(first.vaultId, false);
   assert(
@@ -1879,24 +2191,31 @@ async function run() {
   await connectPluginSurface(targetPort);
   await drawEditGesture(filePath);
   await createAndEmbed(first.vaultId);
+  await openDrawing(filePath, first.vaultId);
+  await connectPluginSurface(targetPort);
   const exports = await exportPublicFixtures();
   await openDrawing(filePath, first.vaultId);
   await connectPluginSurface(port);
   const settings = await exerciseSettingsWhileDrawing(first.vaultId, filePath);
-  const popout = await exercisePopout(port, filePath);
-  const popoutCrash = await exercisePopoutCrash(port, filePath);
-  const pluginCrash = await exercisePluginRendererCrash(first.vaultId, filePath, port);
-  if (!pluginCrash.induced) {
+  const detachedSurfaceSupported = compatibilityTopology === "isolated";
+  const popout = detachedSurfaceSupported ? await exercisePopout(port, filePath) : null;
+  const popoutCrash = detachedSurfaceSupported ? await exercisePopoutCrash(port, filePath) : null;
+  const pluginCrash = detachedSurfaceSupported
+    ? await exercisePluginRendererCrash(first.vaultId, filePath, port)
+    : { induced: false, reason: "trusted-workspace-shared-renderer" };
+  if (detachedSurfaceSupported && !pluginCrash.induced) {
     console.error(`Excalidraw plugin renderer crash was not inducible: ${pluginCrash.reason}`);
     await assertDrawingChrome(filePath);
   }
 
-  await clickSelector(cdp, "#pop-out-plugin-view");
-  await waitFor(
-    cdp,
-    "(async () => (await window.threadleaf.getSnapshot()).workspaceLayout?.popout.state === 'open')()",
-    "Excalidraw pop-out before vault switch",
-  );
+  if (detachedSurfaceSupported) {
+    await clickSelector(cdp, "#pop-out-plugin-view");
+    await waitFor(
+      cdp,
+      "(async () => (await window.threadleaf.getSnapshot()).workspaceLayout?.popout.state === 'open')()",
+      "Excalidraw pop-out before vault switch",
+    );
+  }
   const firstSourceBeforeSwitch = sha256(await fs.readFile(path.join(vaultPath, filePath)));
   await fs.unlink(pickerLink);
   await fs.symlink(secondVaultPath, pickerLink);
@@ -1922,6 +2241,9 @@ async function run() {
     await delay(100);
   }
   await clickSelector(cdp, "#open-vault");
+  if (compatibilityTopology === "trusted-workspace") {
+    await reconnectMainRenderer(targetPort);
+  }
   let switched;
   try {
     switched = await waitFor(
@@ -1969,6 +2291,9 @@ async function run() {
   await fs.unlink(pickerLink);
   await fs.symlink(vaultPath, pickerLink);
   await clickSelector(cdp, "#open-vault");
+  if (compatibilityTopology === "trusted-workspace") {
+    await reconnectMainRenderer(targetPort);
+  }
   const returned = await waitFor(
     cdp,
     `(async () => {
@@ -1998,7 +2323,9 @@ async function run() {
   await openDrawing(filePath, returned.vault.id);
   await connectPluginSurface(port);
 
-  const restartSource = sha256(await fs.readFile(path.join(vaultPath, filePath)));
+  const restartSource = excalidrawSceneSemanticDigest(
+    await waitForStableFileBytes(path.join(vaultPath, filePath)),
+  );
   await openDrawing(nativePath, returned.vault.id, { viaNavigator: true });
   await connectPluginSurface(port);
   const nativeRestartSource = sha256(await fs.readFile(path.join(vaultPath, nativePath)));
@@ -2045,8 +2372,9 @@ async function run() {
     );
   }
   assert(
-    after.result[filePath]?.sha256 === restartSource,
-    "Restart changed the persisted Excalidraw source bytes.",
+    excalidrawSceneSemanticDigest(await waitForStableFileBytes(path.join(vaultPath, filePath))) ===
+      restartSource,
+    "Restart changed the persisted Excalidraw scene content or surrounding Markdown.",
   );
   await measureResponse(cdp, "main renderer after Excalidraw restart");
   await measureResponse(pluginCdp, "Excalidraw renderer after restart");
@@ -2054,6 +2382,7 @@ async function run() {
     JSON.stringify(
       {
         status: "passed",
+        compatibilityTopology,
         plugin: {
           id: pluginId,
           version: pluginVersion,
@@ -2078,8 +2407,9 @@ async function run() {
           "settings-open-close-while-drawing-active",
           "plugin-owned-settings-open-close",
           "ordinary-command-palette-create-and-open",
-          "popout-detach-reattach",
-          "popout-crash-degraded-recovery",
+          ...(detachedSurfaceSupported
+            ? ["popout-detach-reattach", "popout-crash-degraded-recovery"]
+            : []),
           ...(pluginCrash.induced ? ["plugin-renderer-crash-degraded-recovery"] : []),
           "vault-switch-popout-cleanup",
           "unload-reload",
@@ -2093,17 +2423,29 @@ async function run() {
         responsivenessMs: {
           settingsMain: settings.settingsResponseMs,
           settingsPlugin: settings.pluginSettingsResponseMs,
-          detachedMain: popout.mainResponseMs,
-          detachedPlugin: popout.detachedResponseMs,
-          popoutCrashMain: popoutCrash.responseMs,
-          popoutCrashPlugin: popoutCrash.recoveredSurfaceResponseMs,
+          ...(popout
+            ? {
+                detachedMain: popout.mainResponseMs,
+                detachedPlugin: popout.detachedResponseMs,
+              }
+            : {}),
+          ...(popoutCrash
+            ? {
+                popoutCrashMain: popoutCrash.responseMs,
+                popoutCrashPlugin: popoutCrash.recoveredSurfaceResponseMs,
+              }
+            : {}),
           ...(pluginCrash.induced ? { pluginCrashMain: pluginCrash.responseMs } : {}),
         },
-        popoutSizes: {
-          attached: popout.attachedSize,
-          detached: popout.detachedSize,
-          reattached: popout.reattachedSize,
-        },
+        ...(popout
+          ? {
+              popoutSizes: {
+                attached: popout.attachedSize,
+                detached: popout.detachedSize,
+                reattached: popout.reattachedSize,
+              },
+            }
+          : {}),
         pluginRendererCrash: pluginCrash,
         screenshotThemes: [
           ...new Set(
