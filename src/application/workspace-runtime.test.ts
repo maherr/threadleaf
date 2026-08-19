@@ -731,7 +731,63 @@ describe("WorkspaceRuntime", () => {
     }
   });
 
+  it("reuses a persisted index while reconciling changes made with the app closed", async () => {
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      deferWorkspaceCensus: true,
+    });
+    await runtime.waitForCensusCompletion();
+    await runtime.waitForDerivedIndexPersistence();
+    await runtime.close();
+    runtime = undefined;
+
+    await fs.writeFile(
+      path.join(vaultPath, "Welcome.md"),
+      "# Welcome\ncache-reconciled phrase\n",
+      "utf8",
+    );
+    await fs.rm(path.join(vaultPath, "Linked Note.md"));
+    await fs.writeFile(path.join(vaultPath, "Added.md"), "# Added\nnew cache row\n", "utf8");
+
+    const diagnostics = new WorkspaceOpenDiagnostics();
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      deferWorkspaceCensus: true,
+      diagnostics,
+    });
+    await runtime.waitForCensusCompletion();
+
+    await expect(runtime.searchVault("cache-reconciled")).resolves.toMatchObject({
+      total: 1,
+      results: [expect.objectContaining({ path: "Welcome.md" })],
+    });
+    await expect(runtime.searchVault("new cache row")).resolves.toMatchObject({
+      total: 1,
+      results: [expect.objectContaining({ path: "Added.md" })],
+    });
+    expect((await runtime.getSnapshot()).workspace?.files).not.toContainEqual(
+      expect.objectContaining({ path: "Linked Note.md" }),
+    );
+    const spans = diagnostics.snapshot().spans;
+    expect(spans).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "census.cache-load",
+          attributes: { documents: 2 },
+        }),
+        expect.objectContaining({
+          name: "watcher-rescan.capture",
+          attributes: expect.objectContaining({ reason: "startup" }),
+        }),
+      ]),
+    );
+    expect(spans.some((span) => span.name === "bootstrap.filesystem")).toBe(false);
+  });
+
   it("returns a bounded first-time workspace before choosing its first indexed note", async () => {
+    const store = new MemoryWorkspaceStateStore();
     let releaseCensus: (() => void) | undefined;
     const censusGate = new Promise<void>((resolve) => {
       releaseCensus = resolve;
@@ -739,6 +795,7 @@ describe("WorkspaceRuntime", () => {
     runtime = await WorkspaceRuntime.open({
       vaultRoot: vaultPath,
       stateRoot: new FixedStateRoot(statePath),
+      workspaceStateStore: store,
       deferWorkspaceCensus: true,
       beforeBackgroundCensus: () => censusGate,
     });
@@ -749,8 +806,37 @@ describe("WorkspaceRuntime", () => {
         files: [],
         tabs: [],
         filePage: { total: 0, complete: true },
-        inventory: { state: "warming", fileCount: 0, folderCount: 0, error: null },
+        inventory: { state: "lazy", fileCount: 0, folderCount: 0, error: null },
       });
+      if (!warming.workspace) throw new Error("Expected a warming workspace snapshot.");
+      const warmingTree = await runtime.getWorkspaceTreePage({
+        expectedVaultId: runtime.kernel.vaultId,
+        generation: warming.workspace.inventory.generation,
+        parentPath: null,
+        offset: 0,
+        limit: 100,
+      });
+      expect(warmingTree).toMatchObject({
+        status: "ready",
+        entries: [
+          { kind: "folder", path: "Boards", childCount: 1 },
+          { kind: "note", path: "Linked Note.md" },
+          { kind: "note", path: "Welcome.md" },
+        ],
+      });
+
+      const sharedIndexRefresh = vi.spyOn(runtime.indexReactor.index, "refresh");
+      await runtime.actions.dispatch("workspace.open-note", { path: "Linked Note.md" });
+      const openedWhileWarming = await runtime.getSnapshot();
+      expect(openedWhileWarming.workspace).toMatchObject({
+        state: "warming",
+        activeNote: { path: "Linked Note.md", content: expect.stringContaining("bounded UTF-8") },
+        census: { state: "warming" },
+      });
+      expect(store.value).toMatchObject({
+        panes: [expect.objectContaining({ activePath: "Linked Note.md" })],
+      });
+      expect(sharedIndexRefresh).not.toHaveBeenCalled();
 
       releaseCensus?.();
       await runtime.waitForCensusCompletion();
@@ -758,7 +844,7 @@ describe("WorkspaceRuntime", () => {
       expect(current.workspace).toMatchObject({
         state: "ready",
         census: { state: "current", total: 2, indexed: 2 },
-        inventory: { state: "current", fileCount: 3, folderCount: 1, error: null },
+        inventory: { state: "lazy", fileCount: 0, folderCount: 0, error: null },
         activeNote: { path: "Linked Note.md" },
       });
     } finally {
@@ -791,9 +877,9 @@ describe("WorkspaceRuntime", () => {
     const initialIndexGeneration = initial.workspace?.indexGeneration ?? "missing";
     expect(initialCensusGeneration).toBeGreaterThan(0);
     expect(initial.workspace?.inventory).toMatchObject({
-      state: "current",
-      fileCount: 3,
-      folderCount: 1,
+      state: "lazy",
+      fileCount: 0,
+      folderCount: 0,
     });
 
     await fs.writeFile(path.join(vaultPath, "External.md"), "# External\n", "utf8");
@@ -810,7 +896,7 @@ describe("WorkspaceRuntime", () => {
       filePage: { total: 3 },
     });
     expect(created.vault.markdownFileCount).toBe(3);
-    expect(created.workspace?.inventory).toMatchObject({ fileCount: 4, folderCount: 1 });
+    expect(created.workspace?.inventory).toMatchObject({ fileCount: 0, folderCount: 0 });
     expect(created.workspace?.inventory.generation).not.toBe(initialInventoryGeneration);
     expect(created.workspace?.indexGeneration).not.toBe(initialIndexGeneration);
     const createdInventoryGeneration = created.workspace?.inventory.generation ?? "missing";
@@ -836,19 +922,21 @@ describe("WorkspaceRuntime", () => {
       },
       filePage: { total: 3 },
     });
-    expect(attachment.workspace?.inventory).toMatchObject({ fileCount: 5, folderCount: 1 });
+    expect(attachment.workspace?.inventory).toMatchObject({ fileCount: 0, folderCount: 0 });
     expect(attachment.workspace?.inventory.generation).not.toBe(createdInventoryGeneration);
     const attachmentInventoryGeneration = attachment.workspace?.inventory.generation ?? "missing";
 
     await fs.writeFile(path.join(vaultPath, "Welcome.md"), "# Welcome changed\n", "utf8");
     const contentOnly = await runtime.reconcileNow();
     expect(contentOnly.workspace?.indexGeneration).not.toBe(attachment.workspace?.indexGeneration);
-    expect(contentOnly.workspace?.inventory.generation).toBe(attachmentInventoryGeneration);
-    expect(contentOnly.workspace?.inventory).toMatchObject({ fileCount: 5, folderCount: 1 });
+    expect(contentOnly.workspace?.inventory.generation).not.toBe(attachmentInventoryGeneration);
+    expect(contentOnly.workspace?.inventory).toMatchObject({ fileCount: 0, folderCount: 0 });
+    const contentInventoryGeneration = contentOnly.workspace?.inventory.generation ?? "missing";
 
     const noOp = await runtime.reconcileNow();
     expect(noOp.workspace?.indexGeneration).toBe(contentOnly.workspace?.indexGeneration);
-    expect(noOp.workspace?.inventory.generation).toBe(attachmentInventoryGeneration);
+    expect(noOp.workspace?.inventory.generation).not.toBe(contentInventoryGeneration);
+    const noOpInventoryGeneration = noOp.workspace?.inventory.generation ?? "missing";
 
     await fs.unlink(path.join(vaultPath, "External.md"));
     const deleted = await runtime.reconcileNow();
@@ -864,8 +952,8 @@ describe("WorkspaceRuntime", () => {
       filePage: { total: 2 },
     });
     expect(deleted.vault.markdownFileCount).toBe(2);
-    expect(deleted.workspace?.inventory).toMatchObject({ fileCount: 4, folderCount: 1 });
-    expect(deleted.workspace?.inventory.generation).not.toBe(attachmentInventoryGeneration);
+    expect(deleted.workspace?.inventory).toMatchObject({ fileCount: 0, folderCount: 0 });
+    expect(deleted.workspace?.inventory.generation).not.toBe(noOpInventoryGeneration);
   });
 
   it("keeps census and index baselines independent and protects cached pages from callers", async () => {
@@ -991,11 +1079,7 @@ describe("WorkspaceRuntime", () => {
       new Uint8Array([1, 2, 3]),
       runtime.vaultId,
     );
-    const mutatedBeforeScanRelease = await Promise.race([
-      mutation.then(() => true),
-      new Promise<false>((resolve) => setTimeout(() => resolve(false), 500)),
-    ]);
-    expect(mutatedBeforeScanRelease).toBe(true);
+    await mutation;
     releaseScan();
     const during = await overlappingSnapshot;
 
@@ -1141,7 +1225,7 @@ describe("WorkspaceRuntime", () => {
     expect(snapshot.workspace).toMatchObject({
       state: "degraded",
       census: { state: "degraded" },
-      inventory: { state: "current", fileCount: 3, folderCount: 1, error: null },
+      inventory: { state: "lazy", fileCount: 0, folderCount: 0, error: null },
     });
     await expect(
       runtime.getWorkspaceTreePage({
@@ -1276,6 +1360,41 @@ describe("WorkspaceRuntime", () => {
     });
     expect(second).toMatchObject({ status: "ready" });
     expect(listVisiblePaths).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps deferred startup lazy for direct attachment hydration", async () => {
+    await fs.mkdir(path.join(vaultPath, "Assets"), { recursive: true });
+    await fs.writeFile(
+      path.join(vaultPath, "Welcome.md"),
+      "# Welcome\n\n![[Assets/diagram.svg]]\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(vaultPath, "Assets", "diagram.svg"),
+      '<svg xmlns="http://www.w3.org/2000/svg"/>',
+      "utf8",
+    );
+    const workspace = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      deferWorkspaceCensus: true,
+    });
+    runtime = workspace;
+    await workspace.waitForCensusCompletion();
+    const listVisiblePaths = vi.spyOn(workspace.kernel, "listVisiblePaths");
+
+    await expect(
+      workspace.loadVaultAttachment("Welcome.md", "Assets/diagram.svg", workspace.vaultId),
+    ).resolves.toMatchObject({
+      status: "ready",
+      attachment: { path: "Assets/diagram.svg" },
+    });
+    expect(listVisiblePaths).not.toHaveBeenCalled();
+    expect((await workspace.getSnapshot()).workspace?.inventory).toMatchObject({
+      state: "lazy",
+      fileCount: 0,
+      folderCount: 0,
+    });
   });
 
   it("offers and commits one revision-bound missing attachment relink through the runtime", async () => {
@@ -1970,6 +2089,15 @@ describe("WorkspaceRuntime", () => {
       actions: [{ id: "external-command", name: "External command", source: "plugin" }],
       notices: commandRan ? ["External command ran."] : [],
       events: [],
+      ...(commandRan
+        ? {
+            pluginSurface: {
+              displayText: "Linked Note",
+              filePath: "Linked Note.md",
+              viewType: "external-view",
+            },
+          }
+        : {}),
     });
     const externalRuntime: PluginRuntimePort = {
       close: async () => {
@@ -2011,6 +2139,8 @@ describe("WorkspaceRuntime", () => {
     const commanded = await runtime.runPluginCommand("external-command");
     expect(commanded.plugin?.compatibilityLevel).toBe(3);
     expect(commanded.notices).toEqual(["External command ran."]);
+    expect(commanded.workspace?.activeNote?.path).toBe("Linked Note.md");
+    expect(commanded.workspace?.tabs.at(-1)?.path).toBe("Linked Note.md");
 
     await runtime.close();
     runtime = undefined;

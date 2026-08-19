@@ -426,6 +426,9 @@ describe("Obsidian keymap and scope compatibility", () => {
       const liveSecondCommand = app.commands.commands[secondCommand.id];
       if (!liveSecondCommand) throw new Error("Expected the qualified hotkey command to be live.");
       liveSecondCommand.callback = liveSecondCallback;
+      expect(app.hotkeyManager.getDefaultHotkeys("first:run")).toEqual([
+        { modifiers: ["Mod"], key: "k" },
+      ]);
 
       const collisionEvent = new dom.window.KeyboardEvent("keydown", {
         key: "k",
@@ -457,6 +460,42 @@ describe("Obsidian keymap and scope compatibility", () => {
       );
       expect(firstCallback).toHaveBeenCalledOnce();
       expect(app.commands.commands["first:run"]).toBeUndefined();
+      expect(app.hotkeyManager.getDefaultHotkeys("first:run")).toBeUndefined();
+    } finally {
+      restore();
+    }
+  });
+
+  it("applies late default and custom hotkey changes to live plugin commands", () => {
+    const { dom, restore } = installDom();
+    try {
+      const app = createApp();
+      const plugin = new Plugin(app, { id: "drawing", name: "Drawing", version: "0.1.0" });
+      const callback = vi.fn();
+      plugin.addCommand({ id: "save", name: "Save", callback });
+
+      app.hotkeyManager.addDefaultHotkeys("drawing:save", [{ modifiers: ["Ctrl"], key: "s" }]);
+      dom.window.document.dispatchEvent(
+        new dom.window.KeyboardEvent("keydown", { bubbles: true, ctrlKey: true, key: "s" }),
+      );
+      expect(callback).toHaveBeenCalledTimes(1);
+      expect(app.hotkeyManager.printHotkeyForCommand("drawing:save")).toBe("Ctrl+s");
+
+      app.hotkeyManager.setHotkeys("drawing:save", [{ modifiers: ["Alt"], key: "s" }]);
+      dom.window.document.dispatchEvent(
+        new dom.window.KeyboardEvent("keydown", { bubbles: true, ctrlKey: true, key: "s" }),
+      );
+      expect(callback).toHaveBeenCalledTimes(1);
+      dom.window.document.dispatchEvent(
+        new dom.window.KeyboardEvent("keydown", { altKey: true, bubbles: true, key: "s" }),
+      );
+      expect(callback).toHaveBeenCalledTimes(2);
+
+      app.hotkeyManager.removeHotkeys("drawing:save");
+      dom.window.document.dispatchEvent(
+        new dom.window.KeyboardEvent("keydown", { bubbles: true, ctrlKey: true, key: "s" }),
+      );
+      expect(callback).toHaveBeenCalledTimes(3);
     } finally {
       restore();
     }

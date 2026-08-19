@@ -915,6 +915,100 @@ export abstract class SettingPage {
   }
 }
 
+type SettingDynamicFlag = boolean | (() => boolean);
+
+interface SettingDefinitionBaseLike {
+  aliases?: string[];
+  desc?: string | DocumentFragment;
+  name: string;
+  searchable?: SettingDynamicFlag;
+  visible?: SettingDynamicFlag;
+}
+
+interface SettingControlLike {
+  defaultValue?: unknown;
+  disabled?: SettingDynamicFlag;
+  displayFormat?: (value: number) => string;
+  key: string;
+  max?: number;
+  min?: number;
+  options?: Record<string, string>;
+  placeholder?: string;
+  rows?: number;
+  step?: number | "any";
+  type: string;
+  validate?: (value: never) => string | void | Promise<string | void>;
+}
+
+interface SettingDefinitionLike extends SettingDefinitionBaseLike {
+  action?: (element: HTMLElement, index: number) => void;
+  control?: SettingControlLike;
+  disabled?: SettingDynamicFlag;
+  render?: (setting: Setting, group: SettingGroup) => void | (() => void);
+}
+
+interface SettingPageDefinitionLike {
+  desc?: string | DocumentFragment;
+  displayValue?: string | (() => string);
+  items?: SettingDefinitionItemLike[];
+  name: string;
+  page?: () => SettingPage;
+  status?: "warning" | null | (() => "warning" | null);
+  type: "page";
+  visible?: SettingDynamicFlag;
+}
+
+interface SettingGroupDefinitionLike {
+  addItem?: { action: (element: HTMLElement) => void; name: string };
+  cls?: string;
+  emptyState?: string | DocumentFragment;
+  extraButtons?: Array<(component: ExtraButtonComponent) => unknown>;
+  heading?: string;
+  items?: Array<SettingDefinitionLike | SettingPageDefinitionLike>;
+  onDelete?: (index: number) => void;
+  onReorder?: (oldIndex: number, newIndex: number) => void;
+  search?: {
+    match: (definition: SettingDefinitionLike, query: string) => boolean;
+    placeholder?: string;
+  };
+  type: "group" | "list";
+  visible?: SettingDynamicFlag;
+}
+
+type SettingDefinitionItemLike =
+  | SettingDefinitionLike
+  | SettingGroupDefinitionLike
+  | SettingPageDefinitionLike;
+
+interface SettingDomStateBinding {
+  disabled?: SettingDynamicFlag | undefined;
+  element: HTMLElement;
+  setting?: Setting;
+  visible?: SettingDynamicFlag | undefined;
+}
+
+function resolveSettingFlag(flag: SettingDynamicFlag | undefined, fallback: boolean): boolean {
+  return typeof flag === "function" ? flag() : (flag ?? fallback);
+}
+
+function isSettingGroupDefinition(value: unknown): value is SettingGroupDefinitionLike {
+  if (!value || typeof value !== "object") return false;
+  const type = (value as { type?: unknown }).type;
+  return type === "group" || type === "list";
+}
+
+function isSettingPageDefinition(value: unknown): value is SettingPageDefinitionLike {
+  return Boolean(
+    value && typeof value === "object" && (value as { type?: unknown }).type === "page",
+  );
+}
+
+function settingSearchText(definition: SettingDefinitionBaseLike): string {
+  const description =
+    typeof definition.desc === "string" ? definition.desc : (definition.desc?.textContent ?? "");
+  return [definition.name, description, ...(definition.aliases ?? [])].join(" ").trim();
+}
+
 export interface Instruction {
   command: string;
   purpose: string;
@@ -1548,6 +1642,10 @@ export class SettingTab {
   app: App;
   containerEl: HTMLElement;
   settingItems: unknown[] = [];
+  private definitionCleanups: Array<() => void> = [];
+  private definitionRenderingActive = false;
+  private domStateBindings: SettingDomStateBinding[] = [];
+  private selectedPage: SettingPageDefinitionLike | null = null;
 
   constructor(app: App) {
     this.app = app;
@@ -1565,6 +1663,9 @@ export class SettingTab {
       throw new TypeError("SettingTab.getSettingDefinitions() must return an array.");
     }
     this.settingItems = [...definitions];
+    if (this.definitionRenderingActive) {
+      this.renderSettingDefinitions();
+    }
   }
 
   getControlValue(key: string): unknown {
@@ -1583,14 +1684,363 @@ export class SettingTab {
     return vault.setConfig(key, value);
   }
 
-  refreshDomState(): void {}
+  refreshDomState(): void {
+    for (const binding of this.domStateBindings) {
+      const visible = resolveSettingFlag(binding.visible, true);
+      binding.element.hidden = !visible;
+      if (binding.setting) {
+        binding.setting.setDisabled(resolveSettingFlag(binding.disabled, false));
+      }
+    }
+  }
+
+  renderSettingDefinitions(): void {
+    const selectedPage = this.selectedPage;
+    this.disposeDefinitionRendering();
+    this.definitionRenderingActive = true;
+    this.selectedPage = selectedPage;
+    this.containerEl.replaceChildren();
+    const definitions = this.settingItems as SettingDefinitionItemLike[];
+    if (this.selectedPage) {
+      this.renderPage(this.selectedPage);
+      return;
+    }
+    this.renderDefinitionItems(this.containerEl, definitions);
+    this.refreshDomState();
+  }
+
+  disposeDefinitionRendering(): void {
+    for (const cleanup of this.definitionCleanups.splice(0).reverse()) {
+      cleanup();
+    }
+    this.domStateBindings = [];
+    this.definitionRenderingActive = false;
+    this.selectedPage = null;
+  }
 
   display(): void {
     this.update();
   }
 
   hide(): void {
+    this.disposeDefinitionRendering();
+    this.selectedPage = null;
     this.containerEl.replaceChildren();
+  }
+
+  private renderDefinitionItems(
+    container: HTMLElement,
+    definitions: SettingDefinitionItemLike[],
+  ): void {
+    definitions.forEach((definition, index) => {
+      if (isSettingGroupDefinition(definition)) {
+        this.renderGroupDefinition(container, definition);
+      } else if (isSettingPageDefinition(definition)) {
+        this.renderPageLink(container, definition);
+      } else {
+        const group = new SettingGroup(container);
+        this.renderSettingDefinition(group, definition, index);
+      }
+    });
+  }
+
+  private renderGroupDefinition(
+    container: HTMLElement,
+    definition: SettingGroupDefinitionLike,
+  ): void {
+    const group = new SettingGroup(container);
+    group.addClass("setting-definition-group", `setting-definition-${definition.type}`);
+    if (definition.cls) group.addClass(definition.cls);
+    if (definition.heading) group.setHeading(definition.heading);
+    for (const configure of definition.extraButtons ?? []) {
+      group.addExtraButton(configure);
+    }
+    if (definition.type === "list" && definition.addItem) {
+      group.addExtraButton((button) =>
+        button
+          .setIcon("plus")
+          .setTooltip(definition.addItem?.name ?? "Add")
+          .onClick(() => definition.addItem?.action(button.extraSettingsEl)),
+      );
+    }
+    const items = definition.items ?? [];
+    const renderedItems: HTMLElement[] = [];
+    items.forEach((item, index) => {
+      let element: HTMLElement;
+      if (isSettingPageDefinition(item)) {
+        element = this.renderPageLink(group.listEl, item);
+      } else {
+        element = this.renderSettingDefinition(group, item, index).settingEl;
+      }
+      renderedItems.push(element);
+      if (definition.type === "list") {
+        element.classList.add("setting-list-item");
+        if (definition.onReorder) {
+          const controls = element.querySelector<HTMLElement>(".setting-item-control");
+          if (controls) {
+            new ExtraButtonComponent(controls)
+              .setIcon("chevron-up")
+              .setTooltip("Move up")
+              .setDisabled(index === 0)
+              .onClick(() => definition.onReorder?.(index, index - 1));
+            new ExtraButtonComponent(controls)
+              .setIcon("chevron-down")
+              .setTooltip("Move down")
+              .setDisabled(index === items.length - 1)
+              .onClick(() => definition.onReorder?.(index, index + 1));
+          }
+        }
+        if (definition.onDelete) {
+          const controls = element.querySelector<HTMLElement>(".setting-item-control");
+          if (controls) {
+            new ExtraButtonComponent(controls)
+              .setIcon("trash")
+              .setTooltip("Delete")
+              .onClick(() => definition.onDelete?.(index));
+          }
+          element.addEventListener("keydown", (event) => {
+            if (event.key === "Delete" || event.key === "Backspace") {
+              event.preventDefault();
+              definition.onDelete?.(index);
+            }
+          });
+        }
+      }
+    });
+    if (items.length === 0 && definition.type === "list" && definition.emptyState) {
+      const empty = group.listEl.ownerDocument.createElement("div");
+      empty.className = "setting-list-empty";
+      replaceElementContent(empty, definition.emptyState);
+      group.listEl.append(empty);
+    }
+    if (definition.search) {
+      group.addSearch((search) => {
+        search.setPlaceholder(definition.search?.placeholder ?? "Search").onChange((query) => {
+          items.forEach((item, index) => {
+            const searchable = !isSettingPageDefinition(item)
+              ? resolveSettingFlag(item.searchable, true)
+              : true;
+            const renderedItem = renderedItems[index];
+            if (!renderedItem) return;
+            renderedItem.hidden =
+              searchable &&
+              query.length > 0 &&
+              !definition.search?.match(item as SettingDefinitionLike, query);
+          });
+        });
+      });
+    }
+    this.domStateBindings.push({ element: group.listEl, visible: definition.visible });
+  }
+
+  private renderSettingDefinition(
+    group: SettingGroup,
+    definition: SettingDefinitionLike,
+    index: number,
+  ): Setting {
+    const setting = new Setting(group.listEl).setName(definition.name);
+    if (definition.desc) setting.setDesc(definition.desc);
+    const searchText = settingSearchText(definition);
+    setting.settingEl.dataset.settingSearch = searchText;
+    setting.settingEl.dataset.settingName = definition.name;
+    setting.settingEl.dataset.settingSearchable = String(
+      resolveSettingFlag(definition.searchable, true),
+    );
+    if (definition.control) {
+      this.renderControl(setting, definition.control);
+    } else if (definition.render) {
+      const cleanup = definition.render(setting, group);
+      if (typeof cleanup === "function") this.definitionCleanups.push(cleanup);
+    } else if (definition.action) {
+      setting.settingEl.classList.add("setting-item-action");
+      setting.settingEl.tabIndex = 0;
+      setting.settingEl.setAttribute("role", "button");
+      const invoke = () => definition.action?.(setting.settingEl, index);
+      setting.settingEl.addEventListener("click", invoke);
+      setting.settingEl.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          invoke();
+        }
+      });
+    }
+    this.domStateBindings.push({
+      disabled: definition.control?.disabled ?? definition.disabled,
+      element: setting.settingEl,
+      setting,
+      visible: definition.visible,
+    });
+    return setting;
+  }
+
+  private renderControl(setting: Setting, control: SettingControlLike): void {
+    const value = this.getControlValue(control.key) ?? this.defaultControlValue(control);
+    const persist = async (candidate: unknown): Promise<void> => {
+      const message = control.validate ? await control.validate(candidate as never) : undefined;
+      if (message) {
+        setting.setErrorMessage(message);
+        return;
+      }
+      setting.setErrorMessage(null);
+      await this.setControlValue(control.key, candidate);
+      this.refreshDomState();
+    };
+    const validateSeed = () => {
+      if (!control.validate) return;
+      void Promise.resolve(control.validate(value as never)).then((message) => {
+        setting.setErrorMessage(message || null);
+      });
+    };
+    switch (control.type) {
+      case "toggle":
+        setting.addToggle((component) =>
+          component.setValue(Boolean(value)).onChange((next) => void persist(next)),
+        );
+        break;
+      case "dropdown":
+        setting.addDropdown((component) =>
+          component
+            .addOptions(control.options ?? {})
+            .setValue(String(value))
+            .onChange((next) => void persist(next)),
+        );
+        break;
+      case "textarea":
+        setting.addTextArea((component) => {
+          component.setValue(String(value)).setPlaceholder(control.placeholder ?? "");
+          if (control.rows !== undefined) component.inputEl.rows = control.rows;
+          component.onChange((next) => void persist(next));
+        });
+        break;
+      case "number":
+        setting.addText((component) => {
+          component.inputEl.type = "number";
+          component.inputEl.min = control.min === undefined ? "" : String(control.min);
+          component.inputEl.max = control.max === undefined ? "" : String(control.max);
+          component.inputEl.step = control.step === undefined ? "" : String(control.step);
+          component.setValue(String(value)).setPlaceholder(control.placeholder ?? "");
+          component.onChange((next) => {
+            const parsed = Number(next);
+            void persist(Number.isFinite(parsed) ? parsed : (control.defaultValue ?? 0));
+          });
+        });
+        break;
+      case "slider":
+        setting.addSlider((component) => {
+          component
+            .setLimits(control.min ?? 0, control.max ?? 100, control.step ?? 1)
+            .setValue(Number(value));
+          if (control.displayFormat) component.setDisplayFormat(control.displayFormat);
+          component.onChange((next) => void persist(next));
+        });
+        break;
+      case "color":
+        setting.addColorPicker((component) =>
+          component.setValue(String(value)).onChange((next) => void persist(next)),
+        );
+        break;
+      case "secret": {
+        const reference = typeof value === "string" ? value : "";
+        const secret = reference ? this.app.secretStorage.getSecret(reference) : null;
+        const component = new SecretComponent(this.app, setting.controlEl).setValue(secret ?? "");
+        setting.components.push(component);
+        component.onChange((next) => {
+          if (next === null) return;
+          const secretId = reference || this.secretIdForKey(control.key);
+          this.app.secretStorage.setSecret(secretId, next);
+          void persist(secretId);
+        });
+        break;
+      }
+      case "file":
+      case "folder":
+      case "text":
+      default:
+        setting.addText((component) =>
+          component
+            .setValue(String(value))
+            .setPlaceholder(control.placeholder ?? "")
+            .onChange((next) => void persist(next)),
+        );
+        break;
+    }
+    validateSeed();
+  }
+
+  private defaultControlValue(control: SettingControlLike): unknown {
+    if (control.defaultValue !== undefined) return control.defaultValue;
+    if (control.type === "toggle") return false;
+    if (control.type === "number" || control.type === "slider") return 0;
+    return "";
+  }
+
+  protected secretIdForKey(key: string): string {
+    return `threadleaf-${key}`
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/gu, "-")
+      .replace(/^-|-$/gu, "");
+  }
+
+  private renderPageLink(
+    container: HTMLElement,
+    definition: SettingPageDefinitionLike,
+  ): HTMLElement {
+    const group = new SettingGroup(container);
+    const setting = new Setting(group.listEl).setName(definition.name);
+    if (definition.desc) setting.setDesc(definition.desc);
+    setting.settingEl.classList.add("setting-item-page");
+    setting.settingEl.tabIndex = 0;
+    setting.settingEl.setAttribute("role", "button");
+    const displayValue =
+      typeof definition.displayValue === "function"
+        ? definition.displayValue()
+        : definition.displayValue;
+    if (displayValue) setting.addDisplayValue((component) => component.setValue(displayValue));
+    const status =
+      typeof definition.status === "function" ? definition.status() : definition.status;
+    if (status) setting.settingEl.dataset.status = status;
+    setting.addExtraButton((button) => button.setIcon("chevron-right").setTooltip("Open"));
+    const open = () => {
+      this.selectedPage = definition;
+      this.renderSettingDefinitions();
+    };
+    setting.settingEl.addEventListener("click", open);
+    setting.settingEl.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        open();
+      }
+    });
+    this.domStateBindings.push({ element: setting.settingEl, visible: definition.visible });
+    return setting.settingEl;
+  }
+
+  private renderPage(definition: SettingPageDefinitionLike): void {
+    const header = this.containerEl.ownerDocument.createElement("div");
+    header.className = "setting-page-titlebar";
+    const back = this.containerEl.ownerDocument.createElement("button");
+    back.type = "button";
+    back.className = "clickable-icon setting-page-back";
+    back.setAttribute("aria-label", "Back");
+    setElementIcon(back, "arrow-left");
+    const title = this.containerEl.ownerDocument.createElement("h2");
+    title.textContent = definition.name;
+    header.append(back, title);
+    this.containerEl.append(header);
+    back.addEventListener("click", () => {
+      this.selectedPage = null;
+      this.renderSettingDefinitions();
+    });
+    if (definition.items) {
+      this.renderDefinitionItems(this.containerEl, definition.items);
+    } else if (definition.page) {
+      const page = definition.page();
+      page.title = definition.name;
+      page.display();
+      this.containerEl.append(page.rootEl);
+      this.definitionCleanups.push(() => page.hide());
+    }
+    this.refreshDomState();
   }
 }
 
@@ -1624,6 +2074,13 @@ export class PluginSettingTab extends SettingTab {
     }
     (settings as Record<string, unknown>)[key] = value;
     await this.plugin.saveData(settings);
+  }
+
+  protected override secretIdForKey(key: string): string {
+    return `${this.plugin.manifest.id}-${key}`
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/gu, "-")
+      .replace(/^-|-$/gu, "");
   }
 }
 

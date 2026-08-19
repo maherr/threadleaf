@@ -327,6 +327,7 @@ async function run(options: KernelOptions): Promise<void> {
         duplicateNameCount: snapshot.duplicateNames.length,
       };
     });
+    const totalReadinessMs = performance.now() - started;
     const visibleFiles = await measure(() => currentVisibleFileCount(kernel));
     const bootstrapDocumentCount = bootstrap.value.documents.length;
     if (
@@ -347,7 +348,6 @@ async function run(options: KernelOptions): Promise<void> {
       manifest,
     );
     const settledRssBytes = process.memoryUsage().rss;
-    const totalReadinessMs = performance.now() - started;
     const eventLoopPauses = [
       bootstrap.maxBlockingPauseMs,
       index.maxBlockingPauseMs,

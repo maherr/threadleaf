@@ -52,6 +52,7 @@ export const defaultPluginResourcePolicy: PluginResourcePolicy = {
     "reload-plugin": 30_000,
     "render-markdown": 15_000,
     "run-command": 30_000,
+    "seed-vault-markdown-paths": 30_000,
     "unload-all": 10_000,
     "unload-plugin": 10_000,
     "wait-for-mutations": 10_000,

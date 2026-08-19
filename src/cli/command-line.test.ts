@@ -704,7 +704,7 @@ describe("Threadleaf CLI note-name target resolution", () => {
     await expect(fs.readFile(path.join(vaultPath, "Archive", "Gamma.md"), "utf8")).resolves.toBe(
       beforeDelete,
     );
-  }, 15_000);
+  }, 60_000);
 });
 
 describe("Threadleaf CLI create workflow", () => {

@@ -429,6 +429,10 @@ export class VaultKernel implements VaultMutationPort {
     return this.paths.listMarkdownPaths(relativeDirectory);
   }
 
+  async listWorkspaceDocumentPaths(relativeDirectory = "") {
+    return this.paths.listWorkspaceDocumentPaths(relativeDirectory);
+  }
+
   private async readStableCorpus(
     listPaths: () => Promise<string[]>,
     readRevision: (relativePath: string) => Promise<string>,
@@ -536,6 +540,10 @@ export class VaultKernel implements VaultMutationPort {
 
   async listVisiblePaths(relativeDirectory = ""): Promise<VisibleVaultPaths> {
     return this.paths.listVisiblePaths(relativeDirectory);
+  }
+
+  async listVisibleChildren(relativeDirectory = ""): Promise<VisibleVaultPaths> {
+    return this.paths.listVisibleChildren(relativeDirectory);
   }
 
   async readText(relativePath: string): Promise<TextFileSnapshot> {

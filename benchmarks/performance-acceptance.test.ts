@@ -45,21 +45,23 @@ describe("performance acceptance options", () => {
 });
 
 describe("Electron timeout cleanup", () => {
-  it("requests a graceful Browser.close and falls back silently on a dead CDP port", async () => {
+  it("requests a real renderer window close and falls back silently on a dead CDP port", async () => {
     const requests: string[] = [];
-    await closeElectronGracefully({
-      async send(method) {
-        requests.push(method);
-        return {};
-      },
-    });
+    await expect(
+      closeElectronGracefully({
+        async send(method) {
+          requests.push(method);
+          return {};
+        },
+      }),
+    ).resolves.toBe(true);
     await expect(
       closeElectronGracefully({
         async send() {
           throw new Error("CDP disconnected");
         },
       }),
-    ).resolves.toBeUndefined();
-    expect(requests).toEqual(["Browser.close"]);
+    ).resolves.toBe(false);
+    expect(requests).toEqual(["Runtime.evaluate"]);
   });
 });

@@ -79,6 +79,7 @@ class FakePluginRuntime implements PluginRuntimePort {
     {};
   readonly constructionPaths: string[] = [];
   readonly environmentSequences: number[] = [];
+  readonly vaultPathSeeds: string[][] = [];
   readonly trace: string[] = [];
 
   closePluginView(): Promise<RuntimeSnapshot> {
@@ -118,6 +119,11 @@ class FakePluginRuntime implements PluginRuntimePort {
         ...this.environmentAcknowledgementOverrides,
       },
     };
+  }
+
+  async seedVaultMarkdownPaths(paths: readonly string[]): Promise<void> {
+    this.vaultPathSeeds.push([...paths]);
+    this.trace.push(`seed:${paths.length}`);
   }
 
   markLayoutReady(): Promise<RuntimeSnapshot> {
@@ -183,6 +189,24 @@ describe("RecoveringPluginRuntime", () => {
       reducedTransparency: false,
     },
   };
+
+  it("restores the authoritative vault census before the environment and plugin replay", async () => {
+    const first = new FakePluginRuntime();
+    first.fatalLoadId = "bad";
+    const replacement = new FakePluginRuntime();
+    const runtimes = [first, replacement];
+    const runtime = await RecoveringPluginRuntime.open({
+      create: async () => runtimes.shift() ?? replacement,
+    });
+    await runtime.seedVaultMarkdownPaths(["Notes/One.md", "Notes/Two.md"]);
+    await runtime.applyEnvironment(environment);
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/good"));
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/bad"));
+
+    expect(replacement.vaultPathSeeds).toEqual([["Notes/One.md", "Notes/Two.md"]]);
+    expect(replacement.trace.slice(0, 3)).toEqual(["seed:2", "environment:4", "load:good"]);
+    await runtime.close();
+  });
 
   it("restores the last acknowledged environment before replaying plugins", async () => {
     const first = new FakePluginRuntime();
@@ -350,7 +374,7 @@ describe("RecoveringPluginRuntime", () => {
     await runtime.close();
   });
 
-  it("labels renderer-exit reconstruction separately from ordinary automatic recovery", async () => {
+  it("leaves plugins stopped after renderer exit until an explicit reload", async () => {
     const first = new FakePluginRuntime();
     first.fatalLoadId = "bad";
     first.fatalLoadOperation = "renderer-exit";
@@ -360,8 +384,14 @@ describe("RecoveringPluginRuntime", () => {
       create: async () => runtimes.shift() ?? replacement,
     });
     await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/good"));
-    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/bad"));
-    expect(replacement.constructionPaths).toEqual(["renderer-death-restoration"]);
+    const recovered = await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/bad"));
+    expect(replacement.constructionPaths).toEqual([]);
+    expect(recovered.plugins).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "bad", state: "failed" }),
+        expect.objectContaining({ id: "good", state: "failed" }),
+      ]),
+    );
     await runtime.close();
   });
 

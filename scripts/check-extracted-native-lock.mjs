@@ -232,7 +232,7 @@ try {
   const moveSource = path.join(parent, "move-source");
   const moveTarget = path.join(parent, "move-target");
   const moveClaimant = path.join(parent, "move-claimant");
-  if (expectedPlatform === "linux") {
+  if (expectedPlatform === "linux" || expectedPlatform === "darwin") {
     writeFileSync(moveSource, "source");
     addon.renameNoReplace(moveSource, moveTarget);
     writeFileSync(moveClaimant, "claimant");
@@ -248,7 +248,7 @@ try {
       readFileSync(moveTarget, "utf8") === "source" &&
       readFileSync(moveClaimant, "utf8") === "claimant";
     assert(collisionPreserved, "Extracted no-clobber rename changed a target claimant.");
-    noClobberRename = "renameat2-noreplace";
+    noClobberRename = expectedPlatform === "linux" ? "renameat2-noreplace" : "renameatx-excl";
   } else {
     let unsupportedCode = null;
     try {
@@ -268,7 +268,7 @@ try {
   let anonymousNoStage = false;
   let anonymousProbe = "unsupported";
   let anonymousProbeNoName = false;
-  if (expectedPlatform === "linux") {
+  if (expectedPlatform === "linux" || expectedPlatform === "darwin") {
     const entriesBeforeProbe = readdirSync(parent);
     const probeDirectoryFd = openSync(parent, constants.O_RDONLY | constants.O_DIRECTORY);
     try {
@@ -279,7 +279,7 @@ try {
     anonymousProbeNoName =
       JSON.stringify(readdirSync(parent)) === JSON.stringify(entriesBeforeProbe);
     assert(anonymousProbeNoName, "Extracted anonymous publication probe created a vault pathname.");
-    anonymousProbe = "otmpfile-no-name";
+    anonymousProbe = expectedPlatform === "linux" ? "otmpfile-no-name" : "held-directory-no-name";
     const publishBytes = Buffer.from([0, 1, 2, 255, 10]);
     const publishName = "anonymous-published.bin";
     const directoryFd = openSync(parent, constants.O_RDONLY | constants.O_DIRECTORY);
@@ -305,7 +305,7 @@ try {
       "Extracted anonymous publication did not preserve an existing target claimant.",
     );
     assert(anonymousNoStage, "Extracted anonymous publication exposed a target-side stage name.");
-    anonymousPublish = "otmpfile-linkat";
+    anonymousPublish = expectedPlatform === "linux" ? "otmpfile-linkat" : "staged-renameatx-excl";
   } else {
     let unsupportedCode = null;
     try {

@@ -339,6 +339,7 @@ export const pluginRendererOperations = [
   "reload-plugin",
   "render-markdown",
   "run-command",
+  "seed-vault-markdown-paths",
   "unload-all",
   "unload-plugin",
   "wait-for-mutations",
@@ -713,6 +714,25 @@ export function requirePayloadContent(request: PluginRendererRequest, key: strin
     throw new Error(`${request.operation} requires a ${key} string.`);
   }
   return value;
+}
+
+export function requirePayloadStringArray(request: PluginRendererRequest, key: string): string[] {
+  const value = request.payload?.[key];
+  if (!Array.isArray(value) || value.length > 500_000) {
+    throw new Error(`${request.operation} requires a bounded ${key} string array.`);
+  }
+  let totalBytes = 0;
+  const strings = value.map((item) => {
+    if (typeof item !== "string" || item.length === 0 || item.length > 4_096) {
+      throw new Error(`${request.operation} requires valid ${key} strings.`);
+    }
+    totalBytes += new TextEncoder().encode(item).byteLength;
+    if (totalBytes > 64 * 1024 * 1024) {
+      throw new Error(`${request.operation} ${key} exceeds its byte limit.`);
+    }
+    return item;
+  });
+  return strings;
 }
 
 export function optionalPayloadString(

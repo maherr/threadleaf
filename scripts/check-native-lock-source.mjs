@@ -40,6 +40,8 @@ for (const required of [
   "napi_define_properties",
   "napi_create_string_utf8",
   "napi_get_value_int32",
+  "napi_get_value_bool",
+  "napi_create_int32",
   "napi_get_buffer_info",
 ]) {
   assert(
@@ -94,7 +96,12 @@ for (const required of [
 for (const required of [
   "SYS_renameat2",
   "RENAME_NOREPLACE",
+  "renameatx_np",
+  "RENAME_EXCL",
   '"renameNoReplace"',
+  '"renameNoReplaceAt"',
+  '"openDirectoryNoFollowAt"',
+  '"openFileNoFollowAt"',
   '"exists"',
   '"cross-device"',
 ]) {
@@ -277,9 +284,9 @@ console.log(
       "early Electron single-instance admission plus one same-process settings/package queue; OS lock remains authoritative",
     pathSafety: "O_NOFOLLOW plus ancestor validation",
     noClobberRename:
-      "Linux renameat2(RENAME_NOREPLACE), target collision preserves both names; other platforms fail closed",
+      "Linux renameat2(RENAME_NOREPLACE) and macOS renameatx_np(RENAME_EXCL); target collisions preserve both names",
     anonymousPublication:
-      "Linux O_TMPFILE plus linkat, exact bytes and target collision verified without a target-side stage; other platforms fail closed",
+      "Linux O_TMPFILE plus linkat; macOS held-directory staging plus renameatx_np(RENAME_EXCL); exact bytes and target collisions verified",
     permissions: "POSIX 0600 repair plus Windows owner-only DACL",
   }),
 );

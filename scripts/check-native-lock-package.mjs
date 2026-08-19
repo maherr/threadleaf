@@ -137,7 +137,7 @@ try {
     extractedReceipt.anonymousExactBytes &&
       extractedReceipt.anonymousCollisionPreserved &&
       extractedReceipt.anonymousNoStage,
-    "The extracted package did not prove anonymous exact-byte no-clobber publication.",
+    "The extracted package did not prove exact-byte no-clobber publication without stage residue.",
   );
   console.log(
     JSON.stringify({
@@ -148,7 +148,7 @@ try {
       packagedOverride: "ignored",
       cliLock01: "independent-process extracted addon proof",
       anonymousPublication: extractedReceipt.anonymousPublish,
-      runtimePlatforms: "Linux focused locally; macOS and Windows require native CI",
+      runtimePlatforms: `${process.platform}/${process.arch} proved locally; other targets require native CI`,
     }),
   );
 } finally {

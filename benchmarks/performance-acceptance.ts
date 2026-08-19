@@ -113,6 +113,7 @@ interface ElectronWorkspaceLeg {
   backgroundCompletionMs: number | null;
   indexingWindowMs?: number;
   responsivenessProbes: Array<Record<string, unknown>>;
+  runtimeDiagnostics: string[];
   rss: {
     samples: RssSample[];
     peakMainRssBytes: number;
@@ -500,6 +501,7 @@ async function readReadySnapshot(cdp: CdpClient) {
   return evaluate<{
     vaultPath: string | null;
     vaultState: string | null;
+    censusState: string | null;
     indexedMarkdownCount: number | null;
     watcherError: string | null;
   }>(
@@ -509,7 +511,8 @@ async function readReadySnapshot(cdp: CdpClient) {
       return {
         vaultPath: snapshot.vault?.path ?? null,
         vaultState: snapshot.workspace?.state ?? null,
-        indexedMarkdownCount: snapshot.workspace?.files?.length ?? null,
+        censusState: snapshot.workspace?.census?.state ?? null,
+        indexedMarkdownCount: snapshot.workspace?.census?.indexed ?? null,
         watcherError: snapshot.workspace?.watcher?.error ?? null,
       };
     })()`,
@@ -550,8 +553,29 @@ async function probeSearchLatency(cdp: CdpClient, elapsedMs: number) {
   }
 }
 
-async function stopChild(child: ChildProcess | undefined): Promise<void> {
+async function waitForChildExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
+  if (child.exitCode !== null) return true;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      child.off("exit", onExit);
+      resolve(false);
+    }, timeoutMs);
+    const onExit = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    child.once("exit", onExit);
+    if (child.exitCode !== null) {
+      child.off("exit", onExit);
+      clearTimeout(timer);
+      resolve(true);
+    }
+  });
+}
+
+async function stopChild(child: ChildProcess | undefined, gracefulWaitMs = 0): Promise<void> {
   if (!child?.pid || child.exitCode !== null) return;
+  if (gracefulWaitMs > 0 && (await waitForChildExit(child, gracefulWaitMs))) return;
   try {
     process.kill(-child.pid, "SIGTERM");
   } catch {
@@ -571,12 +595,23 @@ async function stopChild(child: ChildProcess | undefined): Promise<void> {
   }
 }
 
-export async function closeElectronGracefully(cdp: ElectronClosePort | undefined): Promise<void> {
-  if (!cdp) return;
+export async function closeElectronGracefully(
+  cdp: ElectronClosePort | undefined,
+): Promise<boolean> {
+  if (!cdp) return false;
   try {
-    await withTimeout(cdp.send("Browser.close"), 5_000, "Electron graceful close");
+    await withTimeout(
+      cdp.send("Runtime.evaluate", {
+        expression: "window.close(); true",
+        returnByValue: true,
+      }),
+      5_000,
+      "Electron window close",
+    );
+    return true;
   } catch {
     // The child-kill fallback below owns a browser that has already stopped responding.
+    return false;
   }
 }
 
@@ -586,6 +621,8 @@ interface ElectronObserverOptions {
   timeoutMs: number;
   outputPath: string;
   forceElectronTimeout: boolean;
+  mode: "cold" | "warm";
+  userDataPath: string;
 }
 
 async function runElectronWorkspaceOpen(
@@ -596,9 +633,8 @@ async function runElectronWorkspaceOpen(
   const startedAt = Date.now();
   const deadline = startedAt + timeoutMs;
   const port = await availablePort();
-  const userDataPath = await fs.mkdtemp(
-    path.join(os.tmpdir(), "threadleaf-performance-acceptance-"),
-  );
+  const userDataPath = options.userDataPath;
+  await fs.mkdir(userDataPath, { recursive: true, mode: 0o700 });
   let child: ChildProcess | undefined;
   let cdp: CdpClient | undefined;
   let sampler: ReturnType<typeof startRssSampler> | undefined;
@@ -606,6 +642,20 @@ async function runElectronWorkspaceOpen(
   let shellReadyMs: number | null = null;
   let readyMs: number | null = null;
   const probes: Array<Record<string, unknown>> = [];
+  const runtimeDiagnostics: string[] = [];
+  const recordRuntimeDiagnostics = (chunk: Buffer | string): void => {
+    for (const rawLine of String(chunk).split(/\r?\n/u)) {
+      const line = rawLine.trim();
+      if (!line || !/threadleaf|error|warn|fail/iu.test(line)) continue;
+      runtimeDiagnostics.push(
+        line
+          .replaceAll(appRoot, "<app-root>")
+          .replaceAll(vaultPath, "<corpus-vault>")
+          .replace(/\/tmp\/threadleaf-[^\s:]*/gu, "<threadleaf-temp>"),
+      );
+      while (runtimeDiagnostics.length > 80) runtimeDiagnostics.shift();
+    }
+  };
   const machine = await machineState();
   const snapshot = (status: "complete" | "aborted", reason?: string): ElectronWorkspaceLeg => {
     const rss = sampler?.summary() ?? {
@@ -625,8 +675,17 @@ async function runElectronWorkspaceOpen(
         ? { indexingWindowMs: Math.max(0, readyMs - (shellReadyMs ?? readyMs)) }
         : {}),
       responsivenessProbes: [...probes],
+      // Keep this array live through the finally block so shutdown-time cache diagnostics become
+      // part of the observer's returned receipt, not only an earlier ready checkpoint.
+      runtimeDiagnostics,
       rss,
-      finalSurface: lastSurface,
+      finalSurface: lastSurface
+        ? {
+            ...lastSurface,
+            targetPath:
+              lastSurface.targetPath === vaultPath ? "<corpus-vault>" : "<non-corpus-target>",
+          }
+        : null,
       ...(reason ? { reason } : {}),
     };
   };
@@ -657,9 +716,11 @@ async function runElectronWorkspaceOpen(
           ELECTRON_OZONE_PLATFORM_HINT: "x11",
           THREADLEAF_VAULT_PATH: vaultPath,
         },
-        stdio: "ignore",
+        stdio: ["ignore", "pipe", "pipe"],
       },
     );
+    child.stdout?.on("data", recordRuntimeDiagnostics);
+    child.stderr?.on("data", recordRuntimeDiagnostics);
     sampler = startRssSampler(port, startedAt, () =>
       persist(snapshot("aborted", "Electron observation checkpoint is still in progress.")),
     );
@@ -679,9 +740,14 @@ async function runElectronWorkspaceOpen(
             : lastSurface.shellTimeOrigin + lastSurface.shellMark - startedAt;
         await persist(snapshot("aborted", "Electron observation checkpoint is still in progress."));
       }
+      const activeSnapshot =
+        lastSurface.targetPath === vaultPath
+          ? await withTimeout(readReadySnapshot(cdp), 5_000, "Active vault snapshot")
+          : null;
       const scheduledProbeAt = probeSchedule[nextProbe];
       if (
         shellReadyMs !== null &&
+        activeSnapshot?.vaultPath === vaultPath &&
         scheduledProbeAt !== undefined &&
         elapsedMs >= scheduledProbeAt
       ) {
@@ -689,13 +755,19 @@ async function runElectronWorkspaceOpen(
         nextProbe += 1;
       }
       if (lastSurface.targetPath === vaultPath && lastSurface.runtimeState === "Ready") {
-        const readySnapshot = await withTimeout(readReadySnapshot(cdp), 5_000, "Ready snapshot");
+        const readySnapshot =
+          activeSnapshot ?? (await withTimeout(readReadySnapshot(cdp), 5_000, "Ready snapshot"));
         if (
           readySnapshot.vaultPath === vaultPath &&
           readySnapshot.vaultState === "ready" &&
+          readySnapshot.censusState === "current" &&
           readySnapshot.indexedMarkdownCount === expectedMarkdownCount &&
           readySnapshot.watcherError === null
         ) {
+          lastSurface = {
+            ...lastSurface,
+            indexedMarkdownCount: readySnapshot.indexedMarkdownCount,
+          };
           if (!forceElectronTimeout) {
             readyMs = Date.now() - startedAt;
             await persist(
@@ -734,11 +806,12 @@ async function runElectronWorkspaceOpen(
     await persist(result);
     return result;
   } finally {
-    await closeElectronGracefully(cdp);
+    const gracefulCloseRequested = await closeElectronGracefully(cdp);
     cdp?.close();
     if (sampler) await sampler.stop();
-    await stopChild(child);
-    await fs.rm(userDataPath, { recursive: true, force: true });
+    // A renderer window close reaches Electron's window-all-closed and before-quit lifecycle.
+    // Browser.close bypassed that lifecycle and made the required warm leg silently cold.
+    await stopChild(child, gracefulCloseRequested ? 120_000 : 0);
   }
 }
 
@@ -814,6 +887,7 @@ function initialElectronLeg(timeoutMs: number, machine: MachineState): ElectronW
     usableShellMs: null,
     backgroundCompletionMs: null,
     responsivenessProbes: [],
+    runtimeDiagnostics: [],
     rss: { samples: [], peakMainRssBytes: 0, peakRendererRssBytes: 0 },
     finalSurface: null,
   };
@@ -839,6 +913,7 @@ function initialKernelLeg(timeoutMs: number, machine: MachineState): KernelAbort
 async function writeElectronCheckpoint(
   outputPath: string,
   electron: ElectronWorkspaceLeg,
+  mode: "cold" | "warm",
 ): Promise<void> {
   const result = JSON.parse(await fs.readFile(outputPath, "utf8")) as {
     generatedAt: string;
@@ -847,6 +922,11 @@ async function writeElectronCheckpoint(
   };
   result.generatedAt = new Date().toISOString();
   result.status = "aborted";
+  if (mode === "warm") {
+    result.legs.warmPersistedIndex = electron;
+    await writeResultAtomically(outputPath, result);
+    return;
+  }
   result.legs.electronWorkspaceOpen = electron;
   result.legs.timeToUsableShell = {
     status: electron.usableShellMs === null ? "aborted" : "complete",
@@ -895,13 +975,20 @@ function parseElectronObserverOptions(argv: readonly string[]): ElectronObserver
   }
   const vaultPath = stringArgument(argv, "--vault", "");
   const outputPath = stringArgument(argv, "--output", "");
-  if (!vaultPath || !outputPath) throw new Error("--vault and --output are required.");
+  const userDataPath = stringArgument(argv, "--user-data", "");
+  const mode = stringArgument(argv, "--mode", "");
+  if (!vaultPath || !outputPath || !userDataPath) {
+    throw new Error("--vault, --output, and --user-data are required.");
+  }
+  if (mode !== "cold" && mode !== "warm") throw new Error("--mode must be cold or warm.");
   return {
     vaultPath: path.resolve(vaultPath),
     expectedMarkdownCount,
     timeoutMs,
     outputPath: path.resolve(outputPath),
     forceElectronTimeout: argv.includes("--force-electron-timeout"),
+    mode,
+    userDataPath: path.resolve(userDataPath),
   };
 }
 
@@ -934,12 +1021,19 @@ async function stopIsolatedObserver(child: ChildProcess): Promise<void> {
 async function readElectronCheckpoint(
   outputPath: string,
   fallback: ElectronWorkspaceLeg,
+  mode: "cold" | "warm",
 ): Promise<ElectronWorkspaceLeg> {
   try {
     const result = JSON.parse(await fs.readFile(outputPath, "utf8")) as {
-      legs?: { electronWorkspaceOpen?: ElectronWorkspaceLeg };
+      legs?: {
+        electronWorkspaceOpen?: ElectronWorkspaceLeg;
+        warmPersistedIndex?: ElectronWorkspaceLeg;
+      };
     };
-    return result.legs?.electronWorkspaceOpen ?? fallback;
+    return (
+      (mode === "warm" ? result.legs?.warmPersistedIndex : result.legs?.electronWorkspaceOpen) ??
+      fallback
+    );
   } catch {
     return fallback;
   }
@@ -966,6 +1060,10 @@ async function runElectronObserverIsolated(
       String(options.timeoutMs),
       "--output",
       options.outputPath,
+      "--mode",
+      options.mode,
+      "--user-data",
+      options.userDataPath,
       ...(options.forceElectronTimeout ? ["--force-electron-timeout"] : []),
     ],
     { cwd: appRoot, detached: true, env: process.env, stdio: "ignore" },
@@ -979,7 +1077,7 @@ async function runElectronObserverIsolated(
     );
   } catch {
     await stopIsolatedObserver(child);
-    const checkpoint = await readElectronCheckpoint(options.outputPath, fallback);
+    const checkpoint = await readElectronCheckpoint(options.outputPath, fallback, options.mode);
     return {
       ...checkpoint,
       status: "aborted",
@@ -987,7 +1085,7 @@ async function runElectronObserverIsolated(
       reason: `Electron observer exceeded its ${options.timeoutMs + 30_000} ms supervision window.`,
     };
   }
-  const checkpoint = await readElectronCheckpoint(options.outputPath, fallback);
+  const checkpoint = await readElectronCheckpoint(options.outputPath, fallback, options.mode);
   if (exit.code === 0 || checkpoint.status === "aborted") return checkpoint;
   return {
     ...checkpoint,
@@ -1000,7 +1098,7 @@ async function runElectronObserverIsolated(
 async function runElectronObserverMain(): Promise<void> {
   const options = parseElectronObserverOptions(process.argv.slice(2));
   const electron = await runElectronWorkspaceOpen(options, (leg) =>
-    writeElectronCheckpoint(options.outputPath, leg),
+    writeElectronCheckpoint(options.outputPath, leg, options.mode),
   );
   process.stdout.write(
     `${JSON.stringify({ status: electron.status, outputPath: options.outputPath })}\n`,
@@ -1048,9 +1146,10 @@ function initialResult(
     legs: {
       electronWorkspaceOpen: electron,
       coldKernel,
-      warmPersistedIndex: notStarted(
-        "The warm-persisted-index precondition has not been evaluated.",
-      ),
+      warmPersistedIndex: {
+        ...initialElectronLeg(options.timeoutMs, machine),
+        reason: "The persisted-index warm restart has not started yet.",
+      },
       incremental: notStarted("The cold kernel leg has not started yet."),
       timeToUsableShell: {
         ...notStarted("The isolated Electron observer has not deposited a checkpoint yet."),
@@ -1101,13 +1200,39 @@ async function main(): Promise<void> {
     options.outputPath,
     initialResult(options, corpus.manifest, initialMachine),
   );
-  const electron = await runElectronObserverIsolated({
+  const electronUserDataPath = await fs.mkdtemp(
+    path.join(os.tmpdir(), "threadleaf-performance-acceptance-profile-"),
+  );
+  const electronOptions = {
     vaultPath: corpus.vaultPath,
     expectedMarkdownCount: corpus.manifest.markdownFileCount,
     timeoutMs: options.timeoutMs,
     outputPath: options.outputPath,
-    forceElectronTimeout: options.forceElectronTimeout,
-  });
+    userDataPath: electronUserDataPath,
+  };
+  let electron: ElectronWorkspaceLeg;
+  let warmPersistedIndex: ElectronWorkspaceLeg;
+  try {
+    electron = await runElectronObserverIsolated({
+      ...electronOptions,
+      mode: "cold",
+      forceElectronTimeout: options.forceElectronTimeout,
+    });
+    warmPersistedIndex =
+      electron.status === "complete"
+        ? await runElectronObserverIsolated({
+            ...electronOptions,
+            mode: "warm",
+            forceElectronTimeout: false,
+          })
+        : {
+            ...initialElectronLeg(options.timeoutMs, await machineState()),
+            reason:
+              "The cold Electron launch aborted, so the persisted-index restart could not begin.",
+          };
+  } finally {
+    await fs.rm(electronUserDataPath, { recursive: true, force: true });
+  }
   const stateRoot = await fs.mkdtemp(
     path.join(os.tmpdir(), "threadleaf-performance-acceptance-state-"),
   );
@@ -1129,18 +1254,13 @@ async function main(): Promise<void> {
     ? (coldKernel.responsiveness as Record<string, unknown>)
     : ({} as Record<string, unknown>);
   const incremental = kernelComplete ? (coldKernel.incremental as Record<string, unknown>) : null;
-  const warmPersistedIndex = {
-    status: "aborted" as const,
-    timeoutMs: options.timeoutMs,
-    machine: await machineState(),
-    reason:
-      "Current main has no persisted metadata-index artifact to reopen. This lane records the unmet precondition rather than substituting an in-memory warm run.",
-  };
+  const complete =
+    electron.status === "complete" && warmPersistedIndex.status === "complete" && kernelComplete;
   const result = {
     schemaVersion: 1,
     suite: "threadleaf-performance-acceptance",
     generatedAt: new Date().toISOString(),
-    status: "aborted" as const,
+    status: complete ? ("complete" as const) : ("aborted" as const),
     runtime: {
       node: process.version,
       electron: (
@@ -1173,10 +1293,14 @@ async function main(): Promise<void> {
       heavyGate: options.requireHeavyGate ? "primary-flock" : "not-required",
       minimumMemAvailableKiB: performanceAcceptanceMinimumMemAvailableKiB,
       hardTimeoutMs: options.timeoutMs,
-      order: ["electron-workspace-open", "kernel-cold-and-incremental", "warm-precondition"],
+      order: [
+        "electron-workspace-open",
+        "electron-persisted-index-restart",
+        "kernel-cold-and-incremental",
+      ],
       coldDefinition: "Fresh Node process and empty private state root.",
       warmDefinition:
-        "A restart that reopens a persisted metadata index. Current main has no such artifact, so this required leg is an explicit abort.",
+        "A second Electron process reopens the first launch's user-data profile and persisted derived-index cache.",
       incrementalDefinition:
         "The cold kernel process independently touches, adds, and deletes exactly 100 notes per mutation kind, observes and indexes each delta, then restores the corpus bytes.",
     },
@@ -1232,7 +1356,7 @@ async function main(): Promise<void> {
       "The corpus is synthetic and the real daily-driver vault is never read.",
       "Cold here means fresh Threadleaf private state and process. The operating-system filesystem cache is intentionally not flushed.",
       "The Electron workspace-open leg uses Linux/Xvfb with GPU disabled and is not a cross-platform desktop SLA.",
-      "Current main does not persist a metadata index, so a compliant persisted-index warm start is unavailable and is recorded as an abort rather than approximated.",
+      "The warm leg reuses the cold Electron profile and derived-index cache. The operating-system filesystem cache is intentionally not flushed.",
       "Electron RSS is Linux /proc VmRSS for the browser plus descendants. Kernel RSS is Node process RSS, not a JavaScript-heap proof.",
     ],
   };

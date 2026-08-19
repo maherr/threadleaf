@@ -6,13 +6,15 @@ Longstitch ships three variable families, each with one job.
 
 | Face | Job | Rule |
 | --- | --- | --- |
-| Literata | Note titles, Markdown headings, reading prose, callout titles | Carries the book. Never use it for dense control chrome or machine facts. |
-| Hanken Grotesk | Navigation, controls, labels, ordinary application prose | Carries the quiet workspace. It should recede beside note content. |
+| Literata | Optional reading prose and long-form display accents | Use only where a document benefits from a literary voice. Never use it for dense control chrome or machine facts. |
+| Hanken Grotesk | Note titles, Markdown headings, navigation, controls, labels, and ordinary application prose | Carries the default workspace and keeps the hierarchy coherent. |
 | JetBrains Mono | Paths, counts, statuses, tags, code, compact metadata | Carries machine truth. Keep it small but readable, and do not use it as the default voice. |
 
 Reading hierarchy scales with `--threadleaf-text-font-scale`, including the inline title and all
 Markdown heading levels. The scale changes the hierarchy proportionally instead of enlarging only
-body text. Code and machine metadata keep their separate roles.
+body text. At the default scale, reading-view H1 and H2 cap at 38px and 29px so document hierarchy
+does not overpower the workspace. Code and machine metadata keep their separate roles, with 11px
+as the absolute floor for visible application chrome.
 
 ## Color semantics
 
@@ -20,12 +22,10 @@ The exact values live only in [`tokens.css`](tokens.css).
 
 | Role | Meaning |
 | --- | --- |
-| Paper and walnut surfaces | Depth and working material. Raised and sunken layers are structural, not status colors. |
-| Ink and parchment | Primary content. Soft and muted inks retain hierarchy without becoming disabled-state camouflage. |
-| Blue interaction ink | Links, focus, selection, and actions. This is the only general interactive accent. |
-| Brass | Binding hardware, active knot, and tag frames. It marks identity, not success or approval. |
-| Red brand cloth | The Threadleaf mark and Pressroom headband. It is never a destructive-state code by itself. |
-| Thread | Navigator hierarchy. The active brass knot and row state make the hierarchy readable without color alone. |
+| Paper and graphite surfaces | Depth and working material. Raised and sunken layers are structural, not status colors. |
+| Primary, muted, and faint ink | Content hierarchy. Muted ink remains readable and faint ink is never used for load-bearing controls. |
+| Violet interaction ink | Links, focus, selection, and actions. This is the only general interactive accent. |
+| Borders and rails | Structure, active rows, and keyboard focus. Shape and labels accompany color. |
 | Callout inks | Category border, icon, and focus ring only. Every category also has a glyph and visible title. |
 
 Callout body and title grounds are shared across categories. A pale tint cannot safely distinguish
@@ -37,15 +37,14 @@ measured pairwise in both themes. See [`accessibility.md`](accessibility.md).
 - Corners are cut and restrained: 3px, 5px, and 8px are the system radii.
 - Tags are square foil labels, not pills.
 - Callouts are bounded sheets with a 4px categorical spine and a sunken title band.
-- Navigator rows are 40px high and tag rows are 44px high, preserving reliable pointer targets.
-- The navigator heading is intentionally two rows: identity first, actions second. It must not
-  compress Tree, Tags, and New into a clipped single row.
+- Navigator rows are 28px high, with full-row pointer targets and visible keyboard focus.
+- The navigator header keeps identity and primary actions compact without clipping or hiding the
+  current mode.
 - Main reading width follows the existing Threadleaf content rail. Decorative marks cannot expand
   the document or create horizontal overflow.
 
-One-off geometry is allowed only where the bindery metaphor carries information, such as the
-headband, stitched spine, active knot, and lamp pool. Ordinary dialogs, menus, and controls continue
-to use the shared spacing and radius rules.
+One-off geometry is allowed only where a distinct workflow needs it, such as the image lightbox or
+graph canvas. Ordinary dialogs, menus, and controls use the shared spacing and radius rules.
 
 ## State grammar
 
@@ -60,6 +59,5 @@ Task state is redundant by design:
 Native `checked` state is reserved for `x` and `X`. A custom marker is never exposed as completed
 merely because it is non-empty.
 
-Pressroom and Lampside must preserve the same information architecture, target sizes, and state
-grammar. Their signatures may differ, but capability and reading order do not.
-
+Paper and Graphite preserve the same information architecture, target sizes, and state grammar.
+Capability and reading order never depend on the selected theme.

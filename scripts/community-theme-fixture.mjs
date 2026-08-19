@@ -20,7 +20,7 @@ const COMMUNITY_FIXTURE_REQUIRED_FILES = Object.freeze([
   ".obsidian/themes/Threadleaf Visual/theme.css",
 ]);
 const COMMUNITY_FIXTURE_TREE_SHA256 =
-  "9370b30e931406358fdaaeed38b16d8aef3cc6626bd8898811522ba9bd65b3ff";
+  "b75362cd9fc3ec4a852b42c0a2e743b4bf271a673091dc98ec4d5aa988493e62";
 const CACHE_FILE_LIMITS = Object.freeze({
   "theme.css": 2 * 1024 * 1024,
   "manifest.json": 64 * 1024,

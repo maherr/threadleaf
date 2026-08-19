@@ -28,6 +28,16 @@
       "requiredSelectors": ["#note-preview", "#read-view[aria-pressed=\"true\"]"],
       "regions": [{ "id": "reading", "x": 0.24, "y": 0.13, "width": 0.52, "height": 0.82 }]
     },
+    "image-lightbox-dark": {
+      "requiredSelectors": [
+        ".image-lightbox[open]",
+        "[data-image-lightbox-image]",
+        "[data-image-lightbox-title]",
+        "[data-image-lightbox-counter]",
+        "[data-image-lightbox-zoom]"
+      ],
+      "regions": [{ "id": "image-viewer", "x": 0, "y": 0, "width": 1, "height": 1 }]
+    },
     "settings-appearance-dark": {
       "requiredSelectors": [
         "#shortcut-settings[open]",
@@ -45,6 +55,15 @@
         ".plugin-row[data-plugin-id=\"threadleaf-fixture\"]"
       ],
       "regions": [{ "id": "plugins", "x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8 }]
+    },
+    "settings-search-light": {
+      "requiredSelectors": [
+        "#shortcut-settings[open]",
+        "#settings-search:focus",
+        "#settings-search-results:not([hidden])",
+        ".settings-search-result"
+      ],
+      "regions": [{ "id": "search", "x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8 }]
     },
     "accessibility-high-contrast-dark": {
       "requiredSelectors": [

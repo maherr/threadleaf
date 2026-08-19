@@ -56,6 +56,20 @@ const service = new PluginRendererService({
     ) as Promise<PluginVaultWriteResponse>,
 });
 
+function rendererErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (process.env.THREADLEAF_PLUGIN_E2E_DIAGNOSTICS !== "1" || !(error instanceof Error)) {
+    return message;
+  }
+  const causes: string[] = [];
+  let cause: unknown = error.cause;
+  while (cause instanceof Error && causes.length < 6) {
+    causes.push(`${cause.name}: ${cause.message}`);
+    cause = cause.cause;
+  }
+  return causes.length > 0 ? `${message} Developer cause: ${causes.join(" <- ")}` : message;
+}
+
 ipcRenderer.on(pluginRendererChannels.request, async (_event, value: unknown) => {
   let response: PluginRendererResponse;
   let requestId = "invalid-request";
@@ -67,7 +81,7 @@ ipcRenderer.on(pluginRendererChannels.request, async (_event, value: unknown) =>
     response = {
       id: requestId,
       ok: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: rendererErrorMessage(error),
     };
   }
   ipcRenderer.send(pluginRendererChannels.response, response);

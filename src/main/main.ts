@@ -346,13 +346,7 @@ let pluginSurfaceAccessibility: EffectiveAccessibilityPreferences = {
   reducedMotion: false,
   reducedTransparency: false,
 };
-const pluginSurfaceEnvironmentBridge = new PluginSurfaceEnvironmentBridge({
-  theme: pluginSurfaceTheme,
-  appearanceCss: pluginSurfaceAppearanceCss,
-  pluginCss: pluginSurfaceCss,
-  accessibilityCss: pluginAccessibilityCss(),
-  accessibility: pluginSurfaceAccessibility,
-});
+const pluginSurfaceEnvironmentBridges = new Map<string, PluginSurfaceEnvironmentBridge>();
 let migrationTransactionManager: ObsidianMigrationTransactionManager | null = null;
 const migrationStartupNotices = new Map<
   string,
@@ -446,6 +440,16 @@ function pluginAccessibilityCss(): string {
   `;
 }
 
+function createPluginSurfaceEnvironmentBridge(): PluginSurfaceEnvironmentBridge {
+  return new PluginSurfaceEnvironmentBridge({
+    theme: pluginSurfaceTheme,
+    appearanceCss: pluginSurfaceAppearanceCss,
+    pluginCss: pluginSurfaceCss,
+    accessibilityCss: pluginAccessibilityCss(),
+    accessibility: pluginSurfaceAccessibility,
+  });
+}
+
 function pluginSurfaceEnvironmentIdentity(): { vaultId: string; vaultGeneration: number } | null {
   const vaultId = workspaceController?.vaultId;
   if (!vaultId) {
@@ -459,18 +463,23 @@ async function publishPluginSurfaceEnvironment(
   patch: Partial<PluginRendererEnvironment>,
 ): Promise<void> {
   const identity = pluginSurfaceEnvironmentIdentity();
-  if (!identity && pluginSurfaceEnvironmentBridge.targetCount > 0) {
+  if (
+    !identity &&
+    [...pluginSurfaceEnvironmentBridges.values()].some((bridge) => bridge.targetCount > 0)
+  ) {
     throw new Error("Live compatibility renderers have no active vault identity.");
   }
-  await pluginSurfaceEnvironmentBridge.update({
+  if (!identity) return;
+  const bridge = pluginSurfaceEnvironmentBridges.get(identity.vaultId);
+  if (!bridge) return;
+  await bridge.update({
     ...patch,
-    ...(identity ?? {}),
+    ...identity,
   });
 }
 
 async function applyPluginSurfaceTheme(theme: "dark" | "light"): Promise<void> {
   pluginSurfaceTheme = theme;
-  pluginSurfaceEnvironmentBridge.setSources({ theme });
   await publishPluginSurfaceEnvironment({ theme });
 }
 
@@ -478,10 +487,6 @@ async function applyPluginSurfaceAccessibility(
   preferences: EffectiveAccessibilityPreferences,
 ): Promise<void> {
   pluginSurfaceAccessibility = preferences;
-  pluginSurfaceEnvironmentBridge.setSources({
-    accessibility: preferences,
-    accessibilityCss: pluginAccessibilityCss(),
-  });
   await publishPluginSurfaceEnvironment({
     accessibility: preferences,
     accessibilityCss: pluginAccessibilityCss(),
@@ -490,7 +495,6 @@ async function applyPluginSurfaceAccessibility(
 
 async function applyPluginSurfaceCss(css: string): Promise<void> {
   pluginSurfaceCss = css;
-  pluginSurfaceEnvironmentBridge.setSources({ pluginCss: css });
   await publishPluginSurfaceEnvironment({ pluginCss: css });
 }
 
@@ -571,6 +575,17 @@ async function registerCompatibilityPluginView(runtime: ElectronPluginRuntime): 
   const view = runtime.view;
   const webContents = view.webContents;
   compatibilityPluginViews.add(view);
+  webContents.once("render-process-gone", (_event, details) => {
+    if (details.reason === "clean-exit") return;
+    queueMicrotask(() => {
+      void workspaceController
+        .getSnapshot()
+        .then((snapshot) => broadcastWorkspaceSnapshot(snapshot))
+        .catch((error) =>
+          console.error("Could not publish compatibility renderer recovery:", error),
+        );
+    });
+  });
   webContents.once("destroyed", () => {
     compatibilityPluginViews.delete(view);
     visiblePluginViews.delete(view);
@@ -1489,7 +1504,6 @@ async function currentAppearance(expectedVaultId: string): Promise<AppearanceRes
     return { status: "stale-vault", vaultId: workspaceController.vaultId };
   }
   pluginSurfaceAppearanceCss = appearance.css;
-  pluginSurfaceEnvironmentBridge.setSources({ appearanceCss: appearance.css });
   const authoritySession = pluginConstructionAuthoritySessions.get(expectedVaultId);
   if (authoritySession) {
     await publishPluginSurfaceEnvironment({
@@ -1937,10 +1951,12 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
       });
       pluginSurfaceAppearanceCss = appearance.css;
       pluginSurfaceCss = surfaceCatalog.css;
+      const pluginSurfaceEnvironmentBridge = createPluginSurfaceEnvironmentBridge();
       pluginSurfaceEnvironmentBridge.setSources({
         appearanceCss: appearance.css,
         pluginCss: surfaceCatalog.css,
       });
+      pluginSurfaceEnvironmentBridges.set(vaultId, pluginSurfaceEnvironmentBridge);
       const isolatedRuntime = await IsolatedPluginRuntime.open({
         create: () =>
           RecoveringPluginRuntime.open({
@@ -3458,9 +3474,14 @@ function registerIpcHandlers(): void {
       }
     }
     try {
+      const previousVaultId = workspaceController.vaultId;
       const transition = serializePluginOperation(async () => {
         await requestWindowAutosaveFlush(mainWindow, "vault-switch");
         const opened = await workspaceController.switchVault(selectedPath);
+        if (previousVaultId !== opened.vault.id) {
+          pluginSurfaceEnvironmentBridges.get(previousVaultId)?.clear();
+          pluginSurfaceEnvironmentBridges.delete(previousVaultId);
+        }
         if (opened.vault.mode === "kernel-backed" && opened.vault.id) {
           await themePackageManager.recoverVault(workspaceController.vaultPath, opened.vault.id);
         }
@@ -4605,7 +4626,8 @@ const gracefulShutdownHandler = createGracefulShutdownHandler({
   },
   finalize: () => {
     compatibilityPluginViews.clear();
-    pluginSurfaceEnvironmentBridge.clear();
+    for (const bridge of pluginSurfaceEnvironmentBridges.values()) bridge.clear();
+    pluginSurfaceEnvironmentBridges.clear();
     visiblePluginViews.clear();
   },
   quit: () => {

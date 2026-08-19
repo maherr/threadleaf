@@ -4,39 +4,41 @@
 **Owner:** Threadleaf  
 **Status:** live  
 **Maturity:** bespoke  
-**Signature:** A sewn navigator binds every note to a visible thread, with a brass knot marking the open leaf.  
-**Themes:** Pressroom / Lampside  
+**Signature:** A quiet file tree, neutral writing surface, and violet focus rail keep the active note obvious without competing with it.
+**Themes:** Paper / Graphite
 **Runtime authority:** `tokens.css`  
 **Reference implementation:** `../src/renderer/styles.css`  
 **Adoption:** bespoke, not an adoption target; 1 owning app  
-**Last verified:** 2026-08-18, 16-state live Electron matrix plus both-theme package preview
+**Last verified:** 2026-08-19, 18-state live Electron matrix plus both-theme package preview
 
 ## Identity and referent
 
-Longstitch is Threadleaf's bespoke design language: a working knowledge desk built with the visual
-logic of a hand-bound book. Thread shows hierarchy, paper layers show depth, brass marks durable
-identity, and machine text stays visibly separate from prose. Action state remains blue and never
-depends on the decorative brass or red brand cloth.
+Longstitch is Threadleaf's bespoke design language: a quiet, familiar desktop knowledge workspace
+that keeps file truth close without turning the interface into a developer tool. Neutral layers
+show depth, compact rows preserve information density, and violet marks focus and interaction.
+Machine text stays visibly separate from prose, but ordinary interface copy remains comfortably
+readable instead of shrinking into metadata.
 
-The arrival question is: **which leaf am I working on, and how do I begin without surrendering file
+The arrival question is: **which note am I working on, and how do I begin without surrendering file
 truth?** The open note answers with title and path; an empty pane answers with a direct, shortcut-
 labeled creation action instead of a dead end. A fresh install arrives on a read-only welcome leaf
 with **Open folder** beside the clearly labeled demo identity.
 
 ## Signature
 
-A sewn navigator binds every note to a visible thread, with a brass knot marking the open leaf.
-The metaphor changes structure rather than decorating a generic workspace: tree rows hang from the
-thread, the current note is tied to it, and note content reads as the working leaf beside the spine.
+The signature is restraint with an inspectable file boundary: a compact tree, one clear active-row
+rail, a calm document canvas, and controls that appear where the work happens. The interface should
+feel immediately legible to an experienced Markdown-workspace user while remaining recognizably
+Threadleaf through its typography, violet interaction channel, and explicit file-state language.
 
 ## Themes
 
-- **Pressroom:** warm paper, ink blue, brass, and an alternating two-color cloth headband.
-- **Lampside:** walnut, parchment ink, quiet blue, and a low pool of lamplight in the status bar.
+- **Paper:** a neutral near-white canvas with quiet grey chrome and a restrained violet accent.
+- **Graphite:** a layered charcoal workspace with soft text and a clearer violet focus state.
 
-They are related bindings, not a light theme with a dark inversion. Pressroom alone carries the
-headband; Lampside alone carries the lamp pool. Information architecture and state semantics stay
-the same.
+They share one information architecture, density, typography, and state grammar. Their difference
+is working condition, not decoration. Neither theme adds ornamental structure or changes control
+placement.
 
 ## Folder map
 
@@ -59,7 +61,7 @@ the live rendered verification. Do not copy values into another stylesheet.
 
 ## Boundaries
 
-Longstitch is not a generic vintage skin and is not a fleet adoption target. Do not borrow the sewn
-spine, brass knot, headband, or lamp pool as isolated decoration. Callouts use shared paper or
-walnut materials; their category is carried by one measured strong ink, a distinct glyph, and the
-written title rather than unsafe pale categorical tints.
+Longstitch is not a generic Obsidian skin and is not a fleet adoption target. Its value is the
+complete density, type, spacing, focus, and file-truth system rather than any isolated color token.
+Callouts use shared neutral materials; their category is carried by one measured strong ink, a
+distinct glyph, and the written title rather than unsafe pale categorical tints.

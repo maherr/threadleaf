@@ -28,6 +28,9 @@ import trustedStateFixtureProfileJson from "../../scripts/compatibility/trust/th
 import trustedViewFixtureProfileJson from "../../scripts/compatibility/trust/threadleaf-trusted-view-fixture-0.1.0.authority-profile.json" with {
   type: "json",
 };
+import workspaceDocksFixtureProfileJson from "../../scripts/compatibility/trust/threadleaf-workspace-docks-fixture-0.1.0.authority-profile.json" with {
+  type: "json",
+};
 import {
   type ExactPluginPackageIdentity,
   type PluginCapabilityId,
@@ -265,6 +268,7 @@ const parsedProfiles = [
   parseReviewedAuthorityProfile(excalidraw2264ProfileJson),
   parseReviewedAuthorityProfile(trustedStateFixtureProfileJson),
   parseReviewedAuthorityProfile(trustedViewFixtureProfileJson),
+  parseReviewedAuthorityProfile(workspaceDocksFixtureProfileJson),
 ];
 
 if (

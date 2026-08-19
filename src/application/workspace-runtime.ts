@@ -1,8 +1,15 @@
 import moment, { type Moment } from "moment";
+import { DerivedIndexCache } from "../kernel/derived-index-cache";
 import { SearchQueryError } from "../kernel/full-text-search";
-import { type DocumentMetadataSnapshot, VaultIndexReactor } from "../kernel/metadata-index";
+import {
+  type DocumentMetadataSnapshot,
+  MetadataIndex,
+  VaultIndexReactor,
+} from "../kernel/metadata-index";
 import {
   captureVaultBootstrap,
+  captureVaultSnapshot,
+  diffVaultSnapshots,
   NodeVaultWatcher,
   watchedPathExists,
 } from "../kernel/node-vault-watcher";
@@ -21,7 +28,7 @@ import type {
   VaultWriteResult,
 } from "../kernel/ports";
 import { type KernelFaultInjector, VaultKernel } from "../kernel/vault-kernel";
-import type { VaultChangeBatch } from "../kernel/watch-protocol";
+import type { VaultChange, VaultChangeBatch } from "../kernel/watch-protocol";
 import { PluginHost, type PluginModuleResolver } from "../runtime/plugin-host";
 import {
   isFatalPluginRuntimeError,
@@ -118,11 +125,7 @@ import {
   parseVaultWorkspaceSettings,
   type VaultWorkspaceSettings,
 } from "../shared/workspace-settings";
-import {
-  buildWorkspaceTreeIndex,
-  compareWorkspaceInventoryPaths,
-  type WorkspaceTreeIndex,
-} from "../shared/workspace-tree";
+import { buildWorkspaceTreeIndex, type WorkspaceTreeIndex } from "../shared/workspace-tree";
 import { ActionRegistry } from "./action-registry";
 import {
   type AttachmentBatchInsertItemRequest,
@@ -161,7 +164,7 @@ import {
   vaultTrashDirectory,
 } from "./note-trash";
 import { renderPluginMarkdownProjection } from "./plugin-markdown-projection-service";
-import { loadVaultAttachment } from "./vault-attachment-service";
+import { loadVaultAttachment, parseVaultAttachmentTarget } from "./vault-attachment-service";
 import { loadVaultFilePreview } from "./vault-file-preview-service";
 import { projectVaultGraph } from "./vault-graph";
 import { loadVaultImage } from "./vault-image-service";
@@ -320,8 +323,8 @@ function visibleInventoryProjection(
 ): Omit<WorkspaceInventoryProjection, "generation"> {
   const tree = buildWorkspaceTreeIndex(visible);
   return {
-    files: [...tree.filePaths].sort(compareWorkspaceInventoryPaths),
-    folders: [...tree.folderPaths].sort(compareWorkspaceInventoryPaths),
+    files: [...tree.filePaths],
+    folders: [...tree.folderPaths],
     tree,
   };
 }
@@ -349,6 +352,37 @@ function cloneWorkspaceNoteSnapshot(note: WorkspaceNoteSnapshot): WorkspaceNoteS
       value: Array.isArray(property.value) ? [...property.value] : property.value,
     })),
     propertyEditor: { ...note.propertyEditor },
+  };
+}
+
+function standaloneWorkspaceNoteSnapshot(note: VaultTextSnapshot): WorkspaceNoteSnapshot {
+  const index = MetadataIndex.fromSnapshots([note]).snapshot();
+  const metadata = index.documents[0];
+  if (!metadata) {
+    throw new Error(`Could not parse the selected Markdown note: ${note.path}`);
+  }
+  const propertyInspection = inspectMarkdownNoteProperties(note.content, metadata.properties);
+  return {
+    path: note.path,
+    title: displayTitleFromVaultPath(note.path),
+    content: note.content,
+    revision: note.revision,
+    tags: metadata.tags,
+    headings: metadata.headings,
+    outgoing: metadata.links.filter(isWorkspaceNoteLink).map(
+      (link): WorkspaceLinkSummary => ({
+        label: link.alias ?? `${link.target}${link.subpath ?? ""}`,
+        status: link.resolution.status,
+        target: link.target,
+        subpath: link.subpath,
+        embed: link.embed,
+        syntax: link.syntax,
+        ...(link.resolution.path ? { path: link.resolution.path } : {}),
+      }),
+    ),
+    backlinks: [],
+    properties: propertyInspection.properties,
+    propertyEditor: propertyInspection.editor,
   };
 }
 
@@ -1368,6 +1402,8 @@ export class WorkspaceRuntime {
   readonly #retainedPluginFiles = new Map<string, WorkspacePluginFileSnapshot>();
   readonly #now: () => number;
   readonly #diagnostics: WorkspaceOpenDiagnostics | undefined;
+  #derivedIndexCache: DerivedIndexCache | null;
+  #derivedIndexPersistence: Promise<void> = Promise.resolve();
   #census: WorkspaceCensusSnapshot = {
     state: "current",
     generation: 1,
@@ -1424,6 +1460,7 @@ export class WorkspaceRuntime {
     workspaceLoadWarning: string | null,
     workspaceSettings: VaultWorkspaceSettings,
     diagnostics: WorkspaceOpenDiagnostics | undefined,
+    derivedIndexCache: DerivedIndexCache | null,
     deferredCensus: boolean,
     warmingVisiblePaths: Iterable<string>,
     activateFirstNoteAfterCensus: boolean,
@@ -1443,9 +1480,14 @@ export class WorkspaceRuntime {
     this.#workspaceSettings = workspaceSettings;
     this.#workspaceLoadWarning = workspaceLoadWarning;
     this.#diagnostics = diagnostics;
+    this.#derivedIndexCache = derivedIndexCache;
+    // The physical file tree is paged directly from one visible directory at a time. Deferred
+    // workspaces therefore never need a whole-vault folder projection just to populate the
+    // navigator; operations that require global attachment ambiguity resolution opt into it.
     this.#inventoryScanAllowed = !deferredCensus;
     this.#inventoryState = {
       ...this.#inventoryState,
+      state: deferredCensus ? "lazy" : this.#inventoryState.state,
       generation: this.workspaceInventoryGeneration(),
     };
     for (const filePath of warmingVisiblePaths) this.#warmingVisiblePaths.add(filePath);
@@ -1666,6 +1708,9 @@ export class WorkspaceRuntime {
     const deferredCensus = Boolean(
       options.deferWorkspaceCensus && (options.selectionSource ?? "direct") !== "bundled",
     );
+    const derivedIndexCache = deferredCensus
+      ? new DerivedIndexCache(kernel.stateRoot, kernel.vaultId)
+      : null;
     const warmingVisiblePaths = new Set<string>();
     let initialDocuments: VaultTextSnapshot[];
     let initialWatcherSnapshot = new Map();
@@ -1729,6 +1774,7 @@ export class WorkspaceRuntime {
       workspaceLoadWarning,
       workspaceSettings,
       options.diagnostics,
+      derivedIndexCache,
       deferredCensus,
       warmingVisiblePaths,
       deferredCensus && restoredWorkspace === null,
@@ -1914,11 +1960,91 @@ export class WorkspaceRuntime {
   ): Promise<WorkspaceTreePageResponse> {
     while (true) {
       await this.ensureVisibleInventory();
+      if (this.#inventoryState.state === "lazy" || this.#inventoryState.state === "warming") {
+        return this.getFilesystemWorkspaceTreePage(request);
+      }
       const response = await this.withIndexStateLock(async () =>
         this.inventoryCaptureNeedsRetry() ? null : this.getWorkspaceTreePageLocked(request),
       );
       if (response) return response;
     }
+  }
+
+  private async getFilesystemWorkspaceTreePage(
+    request: WorkspaceTreePageRequest,
+  ): Promise<WorkspaceTreePageResponse> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      return { status: "stale-vault", vaultId: this.kernel.vaultId };
+    }
+    if (
+      !Number.isSafeInteger(request.offset) ||
+      request.offset < 0 ||
+      !Number.isSafeInteger(request.limit) ||
+      request.limit < 1 ||
+      request.limit > maximumWorkspaceFilePageSize
+    ) {
+      throw new Error(
+        `Workspace tree pages require a non-negative offset and a limit from 1 to ${maximumWorkspaceFilePageSize}.`,
+      );
+    }
+    const parentPath = normalizeWorkspaceTreeParentPath(request.parentPath);
+    const generation = this.workspaceTreePageGeneration();
+    if (request.generation !== generation) {
+      return {
+        status: "stale-generation",
+        vaultId: this.kernel.vaultId,
+        generation,
+        inventory: this.inventorySnapshot(),
+      };
+    }
+    const visible = await this.kernel.listVisibleChildren(parentPath ?? "");
+    if (this.workspaceTreePageGeneration() !== generation) {
+      return {
+        status: "stale-generation",
+        vaultId: this.kernel.vaultId,
+        generation: this.workspaceTreePageGeneration(),
+        inventory: this.inventorySnapshot(),
+      };
+    }
+    if (!visible.exists) {
+      return {
+        status: "missing-parent",
+        vaultId: this.kernel.vaultId,
+        generation,
+        parentPath: parentPath ?? "",
+      };
+    }
+    const ancestors = parentPath
+      ? parentPath.split("/").map((_, index, segments) => segments.slice(0, index + 1).join("/"))
+      : [];
+    const tree = buildWorkspaceTreeIndex({
+      files: visible.files,
+      folders: [...ancestors, ...visible.folders],
+    });
+    const entries = tree.childrenByParent.get(parentPath) ?? [];
+    const pageEntries = entries
+      .slice(request.offset, request.offset + request.limit)
+      .map(cloneWorkspaceTreeEntry);
+    await Promise.all(
+      pageEntries.map(async (entry) => {
+        if (entry.kind !== "folder") return;
+        const children = await this.kernel.listVisibleChildren(entry.path);
+        entry.childCount = children.exists ? children.files.length + children.folders.length : 0;
+      }),
+    );
+    return {
+      status: "ready",
+      vaultId: this.kernel.vaultId,
+      page: {
+        generation,
+        parentPath,
+        offset: request.offset,
+        limit: request.limit,
+        total: entries.length,
+        complete: request.offset + pageEntries.length >= entries.length,
+      },
+      entries: pageEntries,
+    };
   }
 
   private async getWorkspaceTreePageLocked(
@@ -1950,7 +2076,7 @@ export class WorkspaceRuntime {
     }
     if (this.#inventoryState.state !== "current") {
       return {
-        status: this.#inventoryState.state,
+        status: this.#inventoryState.state === "lazy" ? "warming" : this.#inventoryState.state,
         vaultId: this.kernel.vaultId,
         generation,
         inventory: this.inventorySnapshot(),
@@ -2027,11 +2153,70 @@ export class WorkspaceRuntime {
   ): Promise<WorkspaceTreePathResponse> {
     while (true) {
       await this.ensureVisibleInventory();
+      if (this.#inventoryState.state === "lazy" || this.#inventoryState.state === "warming") {
+        return this.getLazyWorkspaceTreePath(request);
+      }
       const response = await this.withIndexStateLock(async () =>
         this.inventoryCaptureNeedsRetry() ? null : this.getWorkspaceTreePathLocked(request),
       );
       if (response) return response;
     }
+  }
+
+  private async getLazyWorkspaceTreePath(
+    request: WorkspaceTreePathRequest,
+  ): Promise<WorkspaceTreePathResponse> {
+    if (request.expectedVaultId !== this.kernel.vaultId) {
+      return { status: "stale-vault", vaultId: this.kernel.vaultId };
+    }
+    const filePath = normalizeWorkspaceTreePath(request.path);
+    const generation = this.workspaceTreePageGeneration();
+    if (request.generation !== generation) {
+      return {
+        status: "stale-generation",
+        vaultId: this.kernel.vaultId,
+        generation,
+        inventory: this.inventorySnapshot(),
+      };
+    }
+
+    const pages: Array<{ parentPath: string | null; offset: number }> = [];
+    const segments = filePath.split("/");
+    let parentPath: string | null = null;
+    for (let index = 0; index < segments.length; index += 1) {
+      const childPath = segments.slice(0, index + 1).join("/");
+      const visible = await this.kernel.listVisibleChildren(parentPath ?? "");
+      if (this.workspaceTreePageGeneration() !== generation) {
+        return {
+          status: "stale-generation",
+          vaultId: this.kernel.vaultId,
+          generation: this.workspaceTreePageGeneration(),
+          inventory: this.inventorySnapshot(),
+        };
+      }
+      if (!visible.exists) return { status: "missing", vaultId: this.kernel.vaultId };
+      const ancestors = parentPath
+        ? parentPath
+            .split("/")
+            .map((_, ancestorIndex, parentSegments) =>
+              parentSegments.slice(0, ancestorIndex + 1).join("/"),
+            )
+        : [];
+      const tree = buildWorkspaceTreeIndex({
+        files: visible.files,
+        folders: [...ancestors, ...visible.folders],
+      });
+      const entries = tree.childrenByParent.get(parentPath) ?? [];
+      const offset = entries.findIndex((entry) => entry.path === childPath);
+      if (offset < 0) return { status: "missing", vaultId: this.kernel.vaultId };
+      pages.push({ parentPath, offset });
+      parentPath = childPath;
+    }
+    return {
+      status: "ready",
+      vaultId: this.kernel.vaultId,
+      location: { path: filePath, pages },
+    };
   }
 
   private async getWorkspaceTreePathLocked(
@@ -2052,7 +2237,7 @@ export class WorkspaceRuntime {
     }
     if (this.#inventoryState.state !== "current") {
       return {
-        status: this.#inventoryState.state,
+        status: this.#inventoryState.state === "lazy" ? "warming" : this.#inventoryState.state,
         vaultId: this.kernel.vaultId,
         generation,
         inventory: this.inventorySnapshot(),
@@ -2076,6 +2261,12 @@ export class WorkspaceRuntime {
     await this.#censusPromise;
   }
 
+  /** Wait for the optional derived-index write registered by the completed census. A test seam. */
+  async waitForDerivedIndexPersistence(): Promise<void> {
+    await this.#censusPromise;
+    await this.#derivedIndexPersistence;
+  }
+
   private workspaceInventoryGeneration(): string {
     return `${this.#indexGenerationInstanceNonce}:files:${this.#inventoryGenerationEpoch}`;
   }
@@ -2086,6 +2277,23 @@ export class WorkspaceRuntime {
 
   private invalidateVisibleInventory(): void {
     this.#inventoryInvalidationSequence += 1;
+    if (!this.#inventoryScanAllowed) {
+      this.#inventoryGenerationEpoch += 1;
+      this.#inventoryState = {
+        ...this.#inventoryState,
+        generation: this.workspaceInventoryGeneration(),
+      };
+    }
+  }
+
+  private async ensureCompleteVisibleInventory(): Promise<void> {
+    await this.withIndexStateLock(async () => {
+      if (this.#inventoryScanAllowed) return;
+      this.#inventoryScanAllowed = true;
+      this.#inventoryState = { ...this.#inventoryState, state: "warming", error: null };
+      this.invalidateVisibleInventory();
+    });
+    await this.ensureVisibleInventory();
   }
 
   private seedVisibleInventory(visible: VisibleVaultPaths): void {
@@ -2627,6 +2835,13 @@ export class WorkspaceRuntime {
       return { status: "stale-vault", vaultId: this.kernel.vaultId };
     }
     try {
+      const direct = parseVaultAttachmentTarget(sourceNotePath, target);
+      if (direct.status === "local" && (await this.visibleFileExists(direct.path))) {
+        return loadVaultAttachment(this.kernel, sourceNotePath, target, expectedVaultId, {
+          visiblePaths: [direct.path],
+        });
+      }
+      await this.ensureCompleteVisibleInventory();
       let visiblePaths: readonly string[] | null = null;
       while (visiblePaths === null) {
         await this.ensureVisibleInventory();
@@ -2674,30 +2889,15 @@ export class WorkspaceRuntime {
       return { status: "stale-vault", vaultId: this.kernel.vaultId };
     }
     try {
-      let inventory: { generation: string; files: readonly string[] } | null = null;
-      while (inventory === null) {
-        await this.ensureVisibleInventory();
-        inventory = await this.withIndexStateLock(async () => {
-          if (this.inventoryCaptureNeedsRetry()) return null;
-          if (this.#inventoryState.state !== "current" || !this.#inventoryProjection) {
-            throw new Error("The visible file inventory is unavailable.");
-          }
-          return {
-            generation: this.#inventoryProjection.generation,
-            files: this.#inventoryProjection.files,
-          };
-        });
-      }
+      const inventory = this.inventorySnapshot();
+      const visible = await this.visibleFileExists(filePath);
       const response = await loadVaultFilePreview(this.kernel, filePath, expectedVaultId, {
-        visiblePaths: inventory.files,
+        visiblePaths: visible ? [filePath] : [],
         expectedInventoryGeneration,
         inventoryGeneration: inventory.generation,
       });
       const inventoryStillCurrent = await this.withIndexStateLock(
-        async () =>
-          !this.inventoryCaptureNeedsRetry() &&
-          this.#inventoryState.state === "current" &&
-          this.#inventoryProjection?.generation === inventory.generation,
+        async () => this.#inventoryState.generation === inventory.generation,
       );
       if (!inventoryStillCurrent && response.status !== "stale-vault") {
         return {
@@ -3235,7 +3435,12 @@ export class WorkspaceRuntime {
     commandId: string,
     editorContext?: PluginEditorContext,
   ): Promise<RuntimeSnapshot> {
-    return this.publishSnapshot(await this.pluginHost.runCommand(commandId, editorContext));
+    const pluginSnapshot = await this.pluginHost.runCommand(commandId, editorContext);
+    const surfacedPath = pluginSnapshot.pluginSurface?.filePath;
+    if (surfacedPath) {
+      await this.selectNote({ path: surfacedPath });
+    }
+    return this.publishSnapshot(pluginSnapshot);
   }
 
   async waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {
@@ -3308,12 +3513,15 @@ export class WorkspaceRuntime {
   async close(): Promise<void> {
     this.#closed = true;
     this.#censusAbort.abort();
+    this.#derivedIndexCache?.cancelPendingReplace();
     if (this.#censusProgressTimer) {
       clearTimeout(this.#censusProgressTimer);
       this.#censusProgressTimer = undefined;
     }
     await this.#censusPromise?.catch(() => undefined);
     await this.#indexStateTail.catch(() => undefined);
+    await this.#derivedIndexPersistence.catch(() => undefined);
+    await this.#derivedIndexCache?.flush().catch(() => undefined);
     this.clearAbsenceWake();
     this.#unconfirmedAbsences.clear();
     this.#retainedNotes.clear();
@@ -3417,7 +3625,16 @@ export class WorkspaceRuntime {
       return;
     }
     try {
-      const persisted = await this.#workspaceStateStore.save(state, expectedCurrent);
+      // The store's compare value is the last state read from or committed to disk, not the
+      // current in-memory layout. A first-time deferred workspace has a real empty layout in
+      // memory but no private state document yet, so comparing the disk against that layout makes
+      // the first click fail as a phantom concurrent edit. Preserve the stricter fallback when the
+      // original state could not be read: in that case we must not overwrite unknown disk bytes.
+      const expectedPersisted =
+        this.#workspacePersistedState === undefined
+          ? expectedCurrent
+          : this.#workspacePersistedState;
+      const persisted = await this.#workspaceStateStore.save(state, expectedPersisted);
       this.#workspacePersistedState = persisted;
       this.#workspaceLoadWarning = null;
       this.#workspaceSaveWarning = null;
@@ -3480,14 +3697,30 @@ export class WorkspaceRuntime {
     await operation;
   }
 
+  private async visibleFileExists(filePath: string): Promise<boolean> {
+    const separator = filePath.lastIndexOf("/");
+    const parentPath = separator < 0 ? "" : filePath.slice(0, separator);
+    const visible = await this.kernel.listVisibleChildren(parentPath);
+    return visible.exists && visible.files.includes(filePath);
+  }
+
   private async selectNote(request: OpenNoteRequest): Promise<void> {
     const filePath = normalizeVaultPath(request.path);
+    await this.ensureVisibleInventory();
     const captured = await this.withIndexStateLock(async () => ({
       censusState: this.#census.state,
       indexedPaths: new Set(
         this.indexReactor.index.snapshot().documents.map((document) => document.path),
       ),
+      visiblePaths: new Set(this.#inventoryProjection?.files ?? []),
     }));
+    if (
+      captured.censusState !== "current" &&
+      !captured.visiblePaths.has(filePath) &&
+      (await this.visibleFileExists(filePath))
+    ) {
+      captured.visiblePaths.add(filePath);
+    }
     // A tab the workspace is deliberately holding through an unconfirmed absence
     // is one the user can see, so it is one they will click. Both branches below
     // prove the file is there by reading it, which for such a path throws out of
@@ -3495,25 +3728,38 @@ export class WorkspaceRuntime {
     // allowed; the pane reports it as unavailable until its file is back or its
     // absence is confirmed, and either way the answer arrives on its own.
     const retained = this.#unconfirmedAbsences.has(filePath) && this.tracksWorkspacePath(filePath);
-    const warmingUnknown =
+    const warmingUnavailable =
       captured.censusState !== "current" &&
       this.tracksWorkspacePath(filePath) &&
+      !captured.visiblePaths.has(filePath) &&
       !this.#warmingVisiblePaths.has(filePath) &&
       !captured.indexedPaths.has(filePath);
-    if (retained || warmingUnknown) {
+    if (retained || warmingUnavailable) {
       // Nothing to read.
     } else if (isCanvasPath(filePath)) {
-      const visible = await this.kernel.listVisiblePaths();
-      if (!visible.files.includes(filePath)) {
+      if (!(await this.visibleFileExists(filePath))) {
         throw new Error(`Canvas is not present in the active vault: ${filePath}`);
       }
       await this.kernel.readBinary(filePath, 8 * 1024 * 1024);
       this.#warmingVisiblePaths.add(filePath);
     } else if (isMarkdownPath(filePath)) {
       if (!captured.indexedPaths.has(filePath)) {
-        throw new Error(`Markdown note is not indexed in the active vault: ${filePath}`);
+        if (captured.censusState === "current" || !captured.visiblePaths.has(filePath)) {
+          throw new Error(`Markdown note is not indexed in the active vault: ${filePath}`);
+        }
+        // A warming census is not a reason to make a visible note inert. Parse only the note the
+        // user selected and retain that payload without touching the shared index. Mutating that
+        // index can queue behind background snapshot work; the eventual census swap remains the
+        // authority for complete link and backlink resolution.
+        const note = await this.kernel.readText(filePath);
+        const retained = standaloneWorkspaceNoteSnapshot(note);
+        await this.withIndexStateLock(async () => {
+          this.#retainedNotes.set(filePath, retained);
+          this.#activePayloadEpoch += 1;
+        });
+      } else {
+        await this.kernel.readText(filePath);
       }
-      await this.kernel.readText(filePath);
       this.#warmingVisiblePaths.add(filePath);
     } else {
       if (!isNativeExcalidrawPath(filePath)) {
@@ -3526,8 +3772,7 @@ export class WorkspaceRuntime {
       if (!viewType) {
         throw new Error(`No loaded plugin registered a document view for: ${filePath}`);
       }
-      const visible = await this.kernel.listVisiblePaths();
-      if (!visible.files.includes(filePath)) {
+      if (!(await this.visibleFileExists(filePath))) {
         throw new Error(`Plugin document is not present in the active vault: ${filePath}`);
       }
       const source = await this.kernel.readBinary(filePath, maximumWorkspacePluginFileBytes);
@@ -3538,7 +3783,7 @@ export class WorkspaceRuntime {
       }
       this.#warmingVisiblePaths.add(filePath);
     }
-    if (!retained && !warmingUnknown) {
+    if (!retained && !warmingUnavailable) {
       this.justifyWorkspacePathPresence(filePath);
     }
     const paneId = request.paneId ?? this.#activePaneId;
@@ -4643,6 +4888,16 @@ export class WorkspaceRuntime {
     // opposite choice would leave the index claiming a document whose bytes
     // cannot be read, which turns a lost tab into a failing snapshot.
     const result = await this.indexReactor.accept(batch);
+    const cache = this.#derivedIndexCache;
+    if (cache) {
+      if (result.mode === "incremental") {
+        void cache
+          .applyChanges(batch.changes, this.indexReactor.index, this.indexReactor.index.snapshot())
+          .catch((error) => this.disableDerivedIndexCache(cache, error));
+      } else {
+        void this.disableDerivedIndexCache(cache, new Error("The vault index required a rebuild."));
+      }
+    }
     let workspaceChanged = false;
     if (result.mode === "incremental") {
       for (const change of batch.changes) {
@@ -4662,6 +4917,14 @@ export class WorkspaceRuntime {
     }
     this.#lastWatchSequence = batch.sequence;
     this.#lastRescanReason = result.mode === "rebuild" ? (result.reason ?? "unknown") : null;
+  }
+
+  private async disableDerivedIndexCache(cache: DerivedIndexCache, error: unknown): Promise<void> {
+    if (this.#derivedIndexCache === cache) this.#derivedIndexCache = null;
+    console.warn("Threadleaf derived index cache was disabled:", error);
+    await cache.invalidate().catch((invalidateError) => {
+      console.warn("Threadleaf derived index cache could not be removed:", invalidateError);
+    });
   }
 
   /** Whether any pane holds this path as a tab or in its navigation history. */
@@ -5570,54 +5833,168 @@ export class WorkspaceRuntime {
     this.#censusProgressTimer.unref?.();
   }
 
+  private replaceWarmingCanvasPaths(paths: readonly string[]): void {
+    for (const filePath of this.#warmingVisiblePaths) {
+      if (isCanvasPath(filePath)) this.#warmingVisiblePaths.delete(filePath);
+    }
+    for (const filePath of paths) this.#warmingVisiblePaths.add(filePath);
+    this.scheduleCensusProgressPublish();
+  }
+
   private startBackgroundCensus(beforeStart?: () => Promise<void>): void {
     if (this.#censusPromise || this.#census.state === "current") {
       return;
     }
     this.#censusPromise = (async () => {
       try {
+        // Hand the constructed runtime back to Electron before any synchronous
+        // SQLite hydration can occupy the main process. A microtask-only yield
+        // still lets the census continuation run ahead of WorkspaceRuntime.open's
+        // caller; setImmediate crosses that scheduling boundary deliberately.
+        await new Promise<void>((resolve) => setImmediate(resolve));
         await beforeStart?.();
         if (this.#closed || this.#censusAbort.signal.aborted) return;
+        const watcherBufferStartedAt = this.#diagnostics?.now();
+        this.watcher.startBuffering();
+        if (this.#diagnostics && watcherBufferStartedAt !== undefined) {
+          this.#diagnostics.addSpan("census.watcher-buffer", watcherBufferStartedAt);
+        }
         this.#census = { ...this.#census, state: "scanning", error: null };
         this.scheduleCensusProgressPublish();
-        const bootstrap = await captureVaultBootstrap(this.kernel.paths, this.#diagnostics, {
-          signal: this.#censusAbort.signal,
-          onProgress: ({ scanned, total }) => {
-            this.#census = {
-              ...this.#census,
-              state: "scanning",
-              discovered: scanned,
-              total,
-            };
-            this.scheduleCensusProgressPublish();
-          },
-        });
-        this.#census = {
-          ...this.#census,
-          state: "indexing",
-          discovered: bootstrap.documents.length,
-          indexed: 0,
-          total: bootstrap.documents.length,
-        };
-        this.scheduleCensusProgressPublish();
+        let bootstrap: Awaited<ReturnType<typeof captureVaultBootstrap>>;
+        let nextReactor: VaultIndexReactor;
+        let cacheChanges: VaultChange[] = [];
+        let loadedFromCache = false;
+        let discoveredCanvasPaths: string[] = [];
+        const cache = this.#derivedIndexCache;
+        let loadedCache: Awaited<ReturnType<DerivedIndexCache["load"]>> = null;
+        if (cache) {
+          try {
+            const cacheLoadStartedAt = this.#diagnostics?.now();
+            loadedCache = await cache.load();
+            if (this.#diagnostics && cacheLoadStartedAt !== undefined) {
+              this.#diagnostics.addSpan("census.cache-load", cacheLoadStartedAt, {
+                documents: loadedCache?.documentCount ?? 0,
+              });
+            }
+          } catch (error) {
+            console.warn("Threadleaf derived index cache was discarded:", error);
+            await cache.invalidate().catch(() => undefined);
+          }
+        }
         const censusIndexStartedAt = this.#diagnostics?.now();
-        const nextReactor = await VaultIndexReactor.fromSnapshotsAsync(
-          this.kernel,
-          bootstrap.documents,
-          {
+        if (loadedCache) {
+          const currentSnapshotPromise = captureVaultSnapshot(
+            this.kernel.paths,
+            loadedCache.snapshot,
+            "",
+            {
+              signal: this.#censusAbort.signal,
+              ...(this.#diagnostics ? { diagnostics: this.#diagnostics } : {}),
+              reason: "startup",
+              onProgress: ({ scanned, total }) => {
+                this.#census = {
+                  ...this.#census,
+                  state: "scanning",
+                  discovered: scanned,
+                  total,
+                };
+                this.scheduleCensusProgressPublish();
+              },
+              onCanvasPaths: (paths) => {
+                discoveredCanvasPaths = [...paths];
+                this.replaceWarmingCanvasPaths(paths);
+              },
+            },
+          );
+          const cachedReactorPromise = VaultIndexReactor.fromCachedDocumentsAsync(
+            this.kernel,
+            loadedCache.documents(),
+            loadedCache.documentCount,
+            loadedCache.projection(),
+            { signal: this.#censusAbort.signal, contentStore: loadedCache.searchStore },
+          );
+          const [currentSnapshot, cachedReactor] = await Promise.all([
+            currentSnapshotPromise,
+            cachedReactorPromise,
+          ]);
+          const cacheReconcileStartedAt = this.#diagnostics?.now();
+          const difference = diffVaultSnapshots(loadedCache.snapshot, currentSnapshot);
+          cacheChanges = difference.rescan
+            ? [
+                ...[...loadedCache.snapshot.keys()].map(
+                  (filePath): VaultChange => ({ kind: "delete", path: filePath }),
+                ),
+                ...[...currentSnapshot.values()].map(
+                  (state): VaultChange => ({ kind: "upsert", state }),
+                ),
+              ]
+            : difference.changes;
+          await cachedReactor.reconcileCachedChanges(cacheChanges);
+          if (this.#diagnostics && cacheReconcileStartedAt !== undefined) {
+            this.#diagnostics.addSpan("census.cache-reconcile", cacheReconcileStartedAt, {
+              changes: cacheChanges.length,
+            });
+          }
+          bootstrap = {
+            documents: [],
+            snapshot: currentSnapshot,
+            canvasPaths: discoveredCanvasPaths,
+          };
+          nextReactor = cachedReactor;
+          loadedFromCache = true;
+          const total = cachedReactor.index.documentCount;
+          this.#census = {
+            ...this.#census,
+            state: "indexing",
+            discovered: total,
+            indexed: total,
+            total,
+          };
+        } else {
+          bootstrap = await captureVaultBootstrap(this.kernel.paths, this.#diagnostics, {
             signal: this.#censusAbort.signal,
-            onProgress: (indexed, total) => {
-              this.#census = { ...this.#census, state: "indexing", indexed, total };
+            onCanvasPaths: (paths) => this.replaceWarmingCanvasPaths(paths),
+            onProgress: ({ scanned, total }) => {
+              this.#census = {
+                ...this.#census,
+                state: "scanning",
+                discovered: scanned,
+                total,
+              };
               this.scheduleCensusProgressPublish();
             },
-          },
-        );
+          });
+          this.#census = {
+            ...this.#census,
+            state: "indexing",
+            discovered: bootstrap.documents.length,
+            indexed: 0,
+            total: bootstrap.documents.length,
+          };
+          this.scheduleCensusProgressPublish();
+          nextReactor = await VaultIndexReactor.fromSnapshotsAsync(
+            this.kernel,
+            bootstrap.documents,
+            {
+              signal: this.#censusAbort.signal,
+              onProgress: (indexed, total) => {
+                this.#census = { ...this.#census, state: "indexing", indexed, total };
+                this.scheduleCensusProgressPublish();
+              },
+            },
+          );
+        }
         if (this.#diagnostics && censusIndexStartedAt !== undefined) {
           this.#diagnostics.addSpan("census.parse-index", censusIndexStartedAt, {
-            documents: bootstrap.documents.length,
+            documents: nextReactor.index.documentCount,
           });
         }
+        await this.pluginHost.seedVaultMarkdownPaths?.([...bootstrap.snapshot.keys()]);
+        const censusInstallStartedAt = this.#diagnostics?.now();
         bootstrap.documents.length = 0;
+        const cachedDocuments =
+          cache && !loadedFromCache ? [...nextReactor.index.cachedDocuments()] : [];
         let activatedFirstNote = false;
         const installed = await this.withIndexStateLock(async () => {
           if (this.#closed || this.#censusAbort.signal.aborted) return false;
@@ -5642,16 +6019,24 @@ export class WorkspaceRuntime {
           return true;
         });
         if (!installed) return;
+        if (this.#diagnostics && censusInstallStartedAt !== undefined) {
+          this.#diagnostics.addSpan("census.install-index", censusInstallStartedAt);
+        }
         if (activatedFirstNote) {
           await this.persistWorkspaceStateBestEffort();
         }
-        await this.watcher.startWithInitialScan((batch) => this.handleWatchBatch(batch), {
+        const watcherFinishStartedAt = this.#diagnostics?.now();
+        await this.watcher.finishBufferedStart((batch) => this.handleWatchBatch(batch), {
           signal: this.#censusAbort.signal,
           onProgress: ({ scanned, total }) => {
             this.#census = { ...this.#census, state: "reconciling", discovered: scanned, total };
             this.scheduleCensusProgressPublish();
           },
         });
+        if (this.#diagnostics && watcherFinishStartedAt !== undefined) {
+          this.#diagnostics.addSpan("census.watcher-finish", watcherFinishStartedAt);
+        }
+        const censusPublishStartedAt = this.#diagnostics?.now();
         const completed = await this.withIndexStateLock(async () => {
           if (this.#closed || this.#censusAbort.signal.aborted) return false;
           const total = this.indexReactor.index.documentCount;
@@ -5664,12 +6049,37 @@ export class WorkspaceRuntime {
             error: null,
           };
           this.#reconcileStartupPathsAfterCensus = true;
-          this.#inventoryScanAllowed = true;
-          this.invalidateVisibleInventory();
           return true;
         });
         if (!completed) return;
-        await this.publishSnapshot();
+        let releaseCachePersistence: (() => void) | undefined;
+        if (cache) {
+          const persistenceGate = new Promise<void>((resolve) => {
+            releaseCachePersistence = resolve;
+          });
+          const persistence = persistenceGate.then(() =>
+            !loadedFromCache
+              ? cache.replace(bootstrap.snapshot, cachedDocuments, nextReactor.index.snapshot())
+              : cacheChanges.length > 0
+                ? cache.applyChanges(cacheChanges, nextReactor.index, nextReactor.index.snapshot())
+                : undefined,
+          );
+          this.#derivedIndexPersistence = persistence.catch((error) => {
+            if (this.#closed && error instanceof Error && error.name === "AbortError") return;
+            return this.disableDerivedIndexCache(cache, error);
+          });
+        }
+        try {
+          await this.publishSnapshot();
+        } finally {
+          // Register the pending write before readiness is observable, then release it only after
+          // the ready snapshot. Shutdown can now await the exact persistence promise without
+          // putting SQLite work on the critical rendering path.
+          releaseCachePersistence?.();
+        }
+        if (this.#diagnostics && censusPublishStartedAt !== undefined) {
+          this.#diagnostics.addSpan("census.publish-ready", censusPublishStartedAt);
+        }
         this.requestRestoredAbsenceFollowUp();
       } catch (error) {
         if (
@@ -5683,8 +6093,6 @@ export class WorkspaceRuntime {
         await this.withIndexStateLock(async () => {
           this.#census = { ...this.#census, state: "degraded", error: message };
           this.recordWatcherError(error);
-          this.#inventoryScanAllowed = true;
-          this.invalidateVisibleInventory();
         });
         await this.publishSnapshot();
       }

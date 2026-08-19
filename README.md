@@ -13,9 +13,10 @@ inspectable compatibility matter more than mobile, hosted sync, or ecosystem bre
 Threadleaf is not affiliated with or endorsed by Obsidian.
 
 The desktop interface uses the bespoke [Longstitch design language](longstitch/README.md), with
-Pressroom and Lampside themes grounded in the structure of a hand-bound working book.
+neutral Paper and Graphite themes, compact file navigation, and one restrained violet interaction
+channel.
 
-![Threadleaf Live Preview in the Lampside dark appearance](visual/baselines/workspace-live-dark.png)
+![Threadleaf Live Preview in the Graphite dark appearance](visual/baselines/workspace-live-dark.png)
 
 The screenshot is a committed visual-regression baseline captured from the real Electron
 application. It is checked for pixel drift rather than maintained as a separate marketing mockup.
@@ -66,10 +67,15 @@ Markdown folder, restore the last successful selection, edit through CodeMirror,
 tags, links, and backlinks, search saved Markdown with contextual line matches, and reflect external
 changes without giving the renderer filesystem access. Search results identify the vault and index
 generation that produced them, so a late response cannot cross a vault switch or overwrite newer
-derived state. The Files navigator separately inventories visible physical folders, Markdown notes,
-JSON Canvas documents, and ordinary files, including empty folders. It uses its own generation,
-keeps the last complete tree if a scan fails, and opens ordinary files in a transient read-only
-inspector without changing the active document, panes, tabs, or history. The inspector displays
+derived state. On large vaults, a private SQLite cache restores parsed metadata and full-text search
+while a concurrent fingerprint scan reparses only changed notes. Note bodies are retained once;
+the contentless trigram index returns candidates while Threadleaf's exact matcher still verifies
+results and context. The Files navigator separately
+pages visible physical folders, Markdown notes, JSON Canvas documents, and ordinary files directly
+from the contained filesystem. It does not materialize the whole folder tree at startup; Reveal
+Active Note resolves only the required ancestor pages. A complete inventory is built only for the
+few operations that require vault-wide ambiguity resolution. Ordinary files open in a transient
+read-only inspector without changing the active document, panes, tabs, or history. The inspector displays
 bounded inert UTF-8 text and byte-sniffed PNG, JPEG, GIF, and WebP images; other formats remain
 explicit metadata-only results. The first window no longer waits for a complete restored-vault scan: it names the
 target, shows indexing state, blocks bootstrap writes, and lets a user choose another vault while
@@ -84,8 +90,10 @@ matching committed draft, and replaces a stopped main renderer with a fresh wind
 that state as an undoable transaction. If the disk changed while the renderer was down, recovery
 keeps the changed disk note untouched and routes autosave through the same conflict-copy path. Core
 actions and dynamically registered compatibility-plugin commands share a searchable,
-keyboard-navigable command palette. Versioned application settings now keep remappable keyboard
-shortcuts outside every vault, reject collisions, and persist changes before activating them.
+keyboard-navigable command palette. The full Settings window is searchable, supports keyboard
+navigation and focus restoration, and indexes both Threadleaf controls and compatible declarative
+plugin settings. Versioned application settings keep remappable keyboard shortcuts outside every
+vault, reject collisions, and persist changes before activating them.
 Compatibility plugins
 in selected and restored vaults stay off by default. Live Preview is the fresh-install editing
 default, with explicit Live, Source, and Read modes in each pane. It keeps canonical Markdown and
@@ -104,7 +112,11 @@ render recursively through a separate read-only service with exact source contro
 cycle, depth, count, byte, containment, and stale-vault limits. A headless CLI now inspects vaults,
 lists and reads notes, returns either ranked search paths or grep-style matching lines, and creates
 notes through the recoverable writer with stable JSON and explicit exit codes, without requiring the
-Electron application. Search supports folder, limit, case, count, and text/JSON controls. Read-only
+Electron application. Reading-view raster images open in a full-screen lightbox with filename and
+position, previous and next navigation, keyboard controls, zoom, reset, drag pan, and focus
+restoration. The lightbox remains a bounded projection of already hydrated vault images and adds no
+filesystem or network authority.
+Search supports folder, limit, case, count, and text/JSON controls. Read-only
 graph commands report outgoing links, grouped backlinks, non-resolved links, orphans, syntax-level
 dead ends, and line-aware outlines through the same metadata index as the desktop, with count and
 structured output modes. The desktop New action,
@@ -501,8 +513,12 @@ release into private staging and shows the full hashes and retained license. Onl
 change writes the package. Review update, Review reinstall, Uninstall, and Review restore use the
 same two-step contract. Every applied package stays disabled, and any later managed-byte change
 locks its enable control until another reviewed install.
-When a loaded plugin registers its own settings tab, an Options control opens that unchanged tab in
-the compatibility surface. Closing it runs the plugin's normal settings cleanup and save lifecycle.
+When a loaded plugin registers its own settings tab, an Options control opens it in the compatibility
+surface. Threadleaf supports both the established imperative settings API and Obsidian 1.13's
+declarative `getSettingDefinitions()` path. Declarative rows participate in global search and cover
+validation, conditional visibility and disabled state, common controls, lists, nested pages,
+reordering, secret values, persistence, and the older `display()` fallback. Closing a tab runs the
+plugin's normal settings cleanup lifecycle.
 
 The Migration section reads known `.obsidian` metadata without loading community code. It shows what
 could be carried into Threadleaf and what still needs review. Plugin settings values stay hidden,

@@ -142,7 +142,7 @@ describe("ElectronPluginRuntime", () => {
     expect(webContents?.listenerCount("render-process-gone")).toBe(0);
     await expect(runtime.getSnapshot()).rejects.toMatchObject({
       name: "FatalPluginRuntimeError",
-      operation: "get-snapshot",
+      operation: "renderer-exit",
     });
   });
 

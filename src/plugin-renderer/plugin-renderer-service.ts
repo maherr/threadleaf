@@ -25,6 +25,7 @@ import {
   type PluginVaultWriteResponse,
   requirePayloadContent,
   requirePayloadString,
+  requirePayloadStringArray,
   requirePluginConstructionDispatch,
   requirePluginRendererEnvironment,
 } from "../shared/plugin-runtime-protocol";
@@ -221,6 +222,7 @@ export class PluginRendererService {
               }
             : undefined,
         );
+        await this.host.seedVaultMarkdownPaths([]);
         if (typeof document !== "undefined" && document.head) {
           this.hostStyleNodes = new Set(
             Array.from(document.head.querySelectorAll("style")) as HTMLStyleElement[],
@@ -266,6 +268,11 @@ export class PluginRendererService {
             optionalPluginEditorContext(request),
           ),
         );
+      case "seed-vault-markdown-paths":
+        await this.requireHost().seedVaultMarkdownPaths(
+          requirePayloadStringArray(request, "paths"),
+        );
+        return this.snapshot();
       case "wait-for-mutations":
         return this.withEnvironment(
           await this.requireHost().waitForPluginMutations(

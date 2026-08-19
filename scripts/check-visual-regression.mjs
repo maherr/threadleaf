@@ -593,6 +593,7 @@ async function scrollSelectorIntoView(selector) {
 
 const keyCodes = {
   ArrowDown: 40,
+  ArrowRight: 39,
   Backspace: 8,
   Escape: 27,
   Enter: 13,
@@ -789,6 +790,40 @@ async function structuralSnapshot(testCase, regionDefinition) {
       .filter((element) => element instanceof HTMLElement)
       .map((element) => ({ id: element.id, overflow: element.scrollWidth - element.clientWidth }))
       .filter((entry) => entry.overflow > 1);
+    const textBearing = (element) => {
+      if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) return false;
+      if (element.closest("#note-preview, .cm-editor")) return false;
+      const ownText = [...element.childNodes]
+        .filter((node) => node.nodeType === Node.TEXT_NODE)
+        .map((node) => node.textContent ?? "")
+        .join("")
+        .trim();
+      if (!ownText && !element.matches("input, textarea")) return false;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return !element.hidden && style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+    };
+    const undersizedChrome = [...document.querySelectorAll("body *")]
+      .filter(textBearing)
+      .map((element) => ({
+        selector: element.id ? "#" + element.id : element.classList.length > 0 ? "." + [...element.classList].join(".") : element.tagName.toLowerCase(),
+        text: (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement ? element.value || element.placeholder : element.textContent ?? "").trim().slice(0, 80),
+        fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
+      }))
+      .filter((entry) => Number.isFinite(entry.fontSize) && entry.fontSize < 11);
+    const readingScale = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--threadleaf-text-font-scale")) || 1;
+    const readingHeadings = [...document.querySelectorAll(".preview-block > h1, .preview-block > h2")]
+      .filter((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      })
+      .map((element) => ({
+        tag: element.tagName,
+        text: (element.textContent ?? "").trim().slice(0, 80),
+        fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
+        maximum: (element.tagName === "H1" ? 38 : 29) * readingScale,
+      }))
+      .filter((entry) => entry.fontSize > entry.maximum + 0.25);
     return {
       url: location.href,
       title: document.title,
@@ -796,6 +831,8 @@ async function structuralSnapshot(testCase, regionDefinition) {
       viewport: { width: innerWidth, height: innerHeight, deviceScaleFactor: devicePixelRatio },
       required: Object.fromEntries(required.map((selector) => [selector, visible(selector)])),
       overflow,
+      undersizedChrome,
+      oversizedReadingHeadings: readingHeadings,
       openDialogs: [...document.querySelectorAll("dialog[open]")].map((dialog) => dialog.id),
       bodyTextLength: document.body.textContent?.length ?? 0,
     };
@@ -806,6 +843,14 @@ async function structuralSnapshot(testCase, regionDefinition) {
   assert(
     result.overflow.length === 0,
     `Case ${testCase.id} overflowed: ${JSON.stringify(result.overflow)}`,
+  );
+  assert(
+    result.undersizedChrome.length === 0,
+    `Case ${testCase.id} rendered chrome below the 11px legibility floor: ${JSON.stringify(result.undersizedChrome)}`,
+  );
+  assert(
+    result.oversizedReadingHeadings.length === 0,
+    `Case ${testCase.id} exceeded the reading-heading ceiling: ${JSON.stringify(result.oversizedReadingHeadings)}`,
   );
   assert(
     result.bodyTextLength > 80,
@@ -958,6 +1003,44 @@ async function runVisualCases(matrix, regionManifest) {
       captures,
       structural,
     );
+    await waitFor(
+      async () =>
+        (await evaluate("document.querySelectorAll('.preview-local-image').length === 2"))
+          ? true
+          : null,
+      "Reading view images did not hydrate",
+    );
+    await scrollSelectorIntoView(".preview-local-image");
+    await clickSelector(".preview-local-image");
+    await waitFor(
+      async () =>
+        (await evaluate("document.querySelector('.image-lightbox')?.open === true")) ? true : null,
+      "Image lightbox did not open",
+    );
+    await pressKey("ArrowRight", "ArrowRight");
+    await pressKey("+", "Equal");
+    await waitFor(
+      async () =>
+        (await evaluate(
+          "document.querySelector('[data-image-lightbox-counter]')?.textContent === '2 of 2' && document.querySelector('[data-image-lightbox-zoom]')?.value === '125%'",
+        ))
+          ? true
+          : null,
+      "Image lightbox keyboard navigation and zoom did not settle",
+    );
+    await captureCase(
+      matrix.cases.find((testCase) => testCase.id === "image-lightbox-dark"),
+      matrix,
+      regionManifest,
+      captures,
+      structural,
+    );
+    await pressKey("Escape", "Escape");
+    await waitFor(
+      async () =>
+        (await evaluate("document.querySelector('.image-lightbox')?.open !== true")) ? true : null,
+      "Image lightbox did not close",
+    );
 
     await setTheme("dark");
     await closeOpenDialogs();
@@ -993,6 +1076,59 @@ async function runVisualCases(matrix, regionManifest) {
       regionManifest,
       captures,
       structural,
+    );
+
+    await pressKey("f", "KeyF", 2);
+    await waitFor(
+      async () =>
+        (await evaluate("document.activeElement?.id")) === "settings-search" ? true : null,
+      "Ctrl-F did not focus Settings search",
+    );
+    await cdp.send("Input.insertText", { text: "permissions" });
+    await waitFor(
+      async () =>
+        (await evaluate(
+          "document.querySelectorAll('.settings-search-result').length > 0 && document.querySelector('#settings-search-results')?.hidden === false",
+        ))
+          ? true
+          : null,
+      "Settings search did not expose matching permission controls",
+    );
+    await captureCase(
+      matrix.cases.find((testCase) => testCase.id === "settings-search-light"),
+      matrix,
+      regionManifest,
+      captures,
+      structural,
+    );
+    await pressKey("Escape", "Escape");
+    await waitFor(
+      async () =>
+        (await evaluate(
+          "document.querySelector('#settings-search')?.value === '' && document.querySelector('#settings-search-results')?.hidden === true",
+        ))
+          ? true
+          : null,
+      "Escape did not clear Settings search",
+    );
+    await pressKey("f", "KeyF", 2);
+    await cdp.send("Input.insertText", { text: "permissions" });
+    await waitFor(
+      async () =>
+        (await evaluate("document.querySelectorAll('.settings-search-result').length > 0"))
+          ? true
+          : null,
+      "Settings search did not repopulate after keyboard clear",
+    );
+    await clickSelector(".settings-search-result");
+    await waitFor(
+      async () =>
+        (await evaluate(
+          "document.querySelector('[data-settings-page=\"plugins\"]')?.hidden === false && document.querySelector('[data-settings-page=\"plugins\"]')?.contains(document.activeElement)",
+        ))
+          ? true
+          : null,
+      "Settings search result did not reveal and focus its plugin control",
     );
 
     await setTheme("dark");

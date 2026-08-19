@@ -60,23 +60,23 @@ function nativeFilesystemBinding() {
   }
 }
 
-/** Proves that this runtime can attempt Linux's atomic no-clobber rename. */
+/** Proves that this runtime can attempt an atomic no-clobber rename. */
 export function assertRenameNoReplaceAvailable(): void {
-  if (process.platform !== "linux") {
+  if (process.platform !== "linux" && process.platform !== "darwin") {
     throw new NativeFilesystemError(
       "unsupported",
-      "Atomic no-clobber rename is currently available only on Linux.",
+      "Atomic no-clobber rename is unavailable on this platform.",
     );
   }
   nativeFilesystemBinding();
 }
 
-/** Proves that this runtime can attempt Linux anonymous-inode publication. */
+/** Proves that this runtime can attempt strict no-clobber publication. */
 export function assertAnonymousPublishAvailable(): void {
-  if (process.platform !== "linux") {
+  if (process.platform !== "linux" && process.platform !== "darwin") {
     throw new NativeFilesystemError(
       "unsupported",
-      "Anonymous no-clobber publication is currently available only on Linux.",
+      "Strict no-clobber publication is unavailable on this platform.",
     );
   }
   nativeFilesystemBinding();
@@ -119,6 +119,75 @@ export function renameNoReplace(sourcePath: string, targetPath: string): void {
     if (error instanceof NativeFilesystemError) throw error;
     const message =
       error instanceof Error ? error.message : "Native no-clobber rename did not complete.";
+    throw new NativeFilesystemError(nativeCode(error), message, { cause: error });
+  }
+}
+
+function assertDescriptor(value: number, operation: string): void {
+  if (!Number.isSafeInteger(value) || value < 0 || value > 0x7fffffff) {
+    throw new NativeFilesystemError("invalid", `${operation} requires an open descriptor.`);
+  }
+}
+
+function assertBasename(value: string, operation: string): void {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > 32_768 ||
+    value.includes("\u0000") ||
+    value === "." ||
+    value === ".." ||
+    value.includes("/")
+  ) {
+    throw new NativeFilesystemError("invalid", `${operation} requires one safe basename.`);
+  }
+}
+
+/** Open one real child directory relative to a held parent descriptor. */
+export function openDirectoryNoFollowAt(parentDirectoryFd: number, name: string): number {
+  assertDescriptor(parentDirectoryFd, "Contained directory open");
+  assertBasename(name, "Contained directory open");
+  try {
+    return nativeFilesystemBinding().openDirectoryNoFollowAt(parentDirectoryFd, name);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Contained directory open failed.";
+    throw new NativeFilesystemError(nativeCode(error), message, { cause: error });
+  }
+}
+
+/** Open one non-symlink file relative to a held directory descriptor. */
+export function openFileNoFollowAt(directoryFd: number, name: string, create: boolean): number {
+  assertDescriptor(directoryFd, "Contained file open");
+  assertBasename(name, "Contained file open");
+  try {
+    return nativeFilesystemBinding().openFileNoFollowAt(directoryFd, name, create);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Contained file open failed.";
+    throw new NativeFilesystemError(nativeCode(error), message, { cause: error });
+  }
+}
+
+/** Atomically rename one held-directory child without replacing a claimant. */
+export function renameNoReplaceAt(
+  sourceDirectoryFd: number,
+  sourceName: string,
+  targetDirectoryFd: number,
+  targetName: string,
+): void {
+  assertDescriptor(sourceDirectoryFd, "Contained rename");
+  assertDescriptor(targetDirectoryFd, "Contained rename");
+  assertBasename(sourceName, "Contained rename");
+  assertBasename(targetName, "Contained rename");
+  assertRenameNoReplaceAvailable();
+  try {
+    nativeFilesystemBinding().renameNoReplaceAt(
+      sourceDirectoryFd,
+      sourceName,
+      targetDirectoryFd,
+      targetName,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Contained rename failed.";
     throw new NativeFilesystemError(nativeCode(error), message, { cause: error });
   }
 }

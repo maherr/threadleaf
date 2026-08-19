@@ -353,7 +353,9 @@ export class PluginHost implements PluginRuntimePort {
       const canRunInCurrentView = await this.app.commands.canRun(commandId);
       const shouldUseEditorContext =
         editorContext &&
-        (!canRunInCurrentView || this.app.workspace.activeLeaf === this.nativeMarkdownLeaf);
+        (!canRunInCurrentView ||
+          (this.nativeMarkdownLeaf !== null &&
+            this.app.workspace.activeLeaf === this.nativeMarkdownLeaf));
       if (shouldUseEditorContext) {
         await this.openNativeEditorContext(editorContext);
       } else {
@@ -373,6 +375,9 @@ export class PluginHost implements PluginRuntimePort {
       }
       return this.getSnapshot();
     } catch (error) {
+      if (process.env.THREADLEAF_PLUGIN_E2E_DIAGNOSTICS === "1") {
+        console.error(`Compatibility command failed: ${commandId}`, error);
+      }
       throw pluginDiagnosticError(
         "runtime-command-failed",
         ownerId ? { pluginId: ownerId } : {},
@@ -576,7 +581,21 @@ export class PluginHost implements PluginRuntimePort {
     this.activeSettingTabContainer = container;
     this.activeSettingTabPluginId = pluginId;
     try {
-      await Promise.resolve(settingTab.display());
+      const declarativeTab = settingTab as typeof settingTab & {
+        renderSettingDefinitions?: () => void;
+        settingItems?: unknown[];
+        update?: () => void;
+      };
+      declarativeTab.update?.();
+      if (
+        Array.isArray(declarativeTab.settingItems) &&
+        declarativeTab.settingItems.length > 0 &&
+        typeof declarativeTab.renderSettingDefinitions === "function"
+      ) {
+        declarativeTab.renderSettingDefinitions();
+      } else {
+        await Promise.resolve(settingTab.display());
+      }
       this.record("runtime", `Opened ${record.summary.name} settings.`);
       return this.getSnapshot();
     } catch (error) {
@@ -766,6 +785,10 @@ export class PluginHost implements PluginRuntimePort {
               }
             : null,
     };
+  }
+
+  seedVaultMarkdownPaths(paths: readonly string[]): Promise<void> {
+    return this.vault.seedMarkdownPaths(paths);
   }
 
   private async evaluatePlugin(

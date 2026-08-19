@@ -210,6 +210,21 @@ describe("PluginHost", () => {
     expect(after).toEqual(before);
   });
 
+  it("does not force a global command through a native editor when no native leaf exists", async () => {
+    const host = new PluginHost(fixtureVault);
+    await loadPlugin(host, fixturePlugin);
+
+    const snapshot = await host.runCommand("threadleaf-fixture:threadleaf-fixture-confirm", {
+      path: "Welcome.md",
+      content: "unchanged",
+      revision: "a".repeat(64),
+      selection: { anchor: 0, head: 0 },
+    });
+
+    expect(snapshot.notices).toContain("Fixture command crossed the compatibility bridge.");
+    expect(snapshot.editorUpdate).toBeNull();
+  });
+
   it("rechecks the exact bundle bytes immediately before plugin execution", async () => {
     const bundleBytes = await fs.readFile(path.join(fixturePlugin, "main.js"));
     expect(createHash("sha256").update(bundleBytes).digest("hex")).toMatch(/^[a-f0-9]{64}$/u);
@@ -1091,6 +1106,126 @@ module.exports = class UiApiPlugin extends Plugin {
       } else {
         globalThis.MouseEvent = previousMouseEvent;
       }
+      dom.window.close();
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
+  it("renders 1.13 declarative plugin settings instead of the legacy display fallback", async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-settings-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    const dom = new JSDOM("<!doctype html><body></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    const previousWindow = globalThis.window;
+    const previousDocument = globalThis.document;
+    const previousElement = globalThis.Element;
+    const previousMouseEvent = globalThis.MouseEvent;
+    try {
+      installObsidianDomCompatibility(dom.window);
+      Object.assign(globalThis, {
+        window: dom.window,
+        document: dom.window.document,
+        Element: dom.window.Element,
+        MouseEvent: dom.window.MouseEvent,
+      });
+      const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "settings-fixture");
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({ id: "settings-fixture", name: "Settings fixture", version: "0.1.0" }),
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        `const { Plugin, PluginSettingTab } = require("obsidian");
+module.exports = class SettingsFixture extends Plugin {
+  async onload() {
+    this.settings = Object.assign({ enabled: false, threshold: 2, mode: "focus" }, await this.loadData());
+    this.addSettingTab(new (class extends PluginSettingTab {
+      getSettingDefinitions() {
+        return [
+          {
+            name: "Enable canvas helpers",
+            desc: "Adds drawing-aware controls.",
+            aliases: ["drawing"],
+            control: { type: "toggle", key: "enabled" },
+          },
+          {
+            name: "Canvas threshold",
+            desc: "Visible only while helpers are enabled.",
+            visible: () => this.plugin.settings.enabled,
+            control: {
+              type: "number",
+              key: "threshold",
+              min: 1,
+              max: 8,
+              validate: (value) => value < 1 || value > 8 ? "Choose a value from 1 to 8." : undefined,
+            },
+          },
+          {
+            type: "group",
+            heading: "Drawing mode",
+            search: {
+              placeholder: "Filter drawing modes",
+              match: (definition, query) => definition.name.toLowerCase().includes(query.toLowerCase()),
+            },
+            items: [{
+              name: "Default mode",
+              control: { type: "dropdown", key: "mode", options: { focus: "Focus", review: "Review" } },
+            }],
+          },
+          {
+            type: "page",
+            name: "Advanced canvas",
+            displayValue: () => this.plugin.settings.enabled ? "On" : "Off",
+            items: [{ name: "Native renderer", control: { type: "toggle", key: "enabled" } }],
+          },
+        ];
+      }
+      display() {
+        window.__threadleafLegacySettingsFallback = (window.__threadleafLegacySettingsFallback || 0) + 1;
+      }
+    })(this.app, this));
+  }
+};
+`,
+        "utf8",
+      );
+
+      const host = new PluginHost(vaultPath);
+      await loadPlugin(host, pluginPath);
+      await host.openPluginSettings("settings-fixture");
+
+      expect(dom.window.eval("window.__threadleafLegacySettingsFallback || 0")).toBe(0);
+      const enabledRow = dom.window.document.querySelector<HTMLElement>(
+        '[data-setting-name="Enable canvas helpers"]',
+      );
+      const thresholdRow = dom.window.document.querySelector<HTMLElement>(
+        '[data-setting-name="Canvas threshold"]',
+      );
+      expect(enabledRow?.dataset.settingSearch).toContain("drawing");
+      expect(thresholdRow?.hidden).toBe(true);
+
+      const pageRow = [
+        ...dom.window.document.querySelectorAll<HTMLElement>(".setting-item-page"),
+      ].find((element) => element.textContent?.includes("Advanced canvas"));
+      pageRow?.click();
+      expect(dom.window.document.querySelector(".setting-page-titlebar")?.textContent).toContain(
+        "Advanced canvas",
+      );
+      expect(
+        dom.window.document.querySelector('[data-setting-name="Native renderer"]'),
+      ).not.toBeNull();
+    } finally {
+      if (previousWindow === undefined) Reflect.deleteProperty(globalThis, "window");
+      else globalThis.window = previousWindow;
+      if (previousDocument === undefined) Reflect.deleteProperty(globalThis, "document");
+      else globalThis.document = previousDocument;
+      if (previousElement === undefined) Reflect.deleteProperty(globalThis, "Element");
+      else globalThis.Element = previousElement;
+      if (previousMouseEvent === undefined) Reflect.deleteProperty(globalThis, "MouseEvent");
+      else globalThis.MouseEvent = previousMouseEvent;
       dom.window.close();
       await fs.rm(sandboxPath, { recursive: true, force: true });
     }

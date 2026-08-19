@@ -1,6 +1,6 @@
 # Longstitch adoption boundary
 
-**Last updated:** 2026-08-15
+**Last updated:** 2026-08-19
 
 **Status:** bespoke to Threadleaf; not a fleet adoption target.
 
@@ -16,9 +16,9 @@ These are principles, not permission to copy Longstitch's visual identity.
 
 ## Identity-bound signature
 
-The hand-bound working-book referent, sewn navigator, brass knot, foil-label tags, Pressroom
-headband, Lampside lamp pool, and callout folios belong to Threadleaf. They derive from its job of
-keeping a local vault legible while exposing file truth.
+The compact file tree, neutral document canvas, restrained violet focus system, typography, and
+explicit file-state language belong together. They derive from Threadleaf's job of keeping a local
+vault legible while exposing file truth.
 
 ## Inspiration versus adoption
 
@@ -39,9 +39,8 @@ a fleet skin.
 
 ## Forbidden borrowing
 
-Do not extract the sewn spine, knot, headband, lamp pool, or brass labels as decorative widgets.
-Do not turn the package into a shared token dependency, and do not use its red cloth and brass as
-success or failure semantics.
+Do not extract one color or row treatment and call it the design system. Do not turn the package
+into a shared token dependency, and do not use the violet accent as pass or failure semantics.
 
 ## Rollback
 

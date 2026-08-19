@@ -212,10 +212,12 @@ RPM toolchain. Hosted CI installs the FUSE 2 compatibility library and runs the 
 
 Native state locking is built as a direct Node-API addon before the TypeScript main bundle. The
 focused `test:native-lock-source`, `test:native-lock-electron`, `test:native-lock`, and
-`test:native-lock-package` gates cover ABI surface, target-Electron loading, Linux child-process
-behavior, atomic no-clobber rename, anonymous exact-byte publication without a target-side stage,
-and the unpacked Electron module path. Native CI separately proves macOS and Windows runtime and
-installer behavior without promoting those unsigned packages to public downloads.
+`test:native-lock-package` gates cover ABI surface, target-Electron loading, child-process behavior,
+atomic no-clobber rename, exact-byte publication with target-collision preservation, and the
+unpacked Electron module path. Linux proves unnamed-inode publication without a target-side stage;
+macOS proves held-directory exclusive staging with no successful-publication residue. Native CI
+separately proves macOS and Windows runtime and installer behavior without promoting those unsigned
+packages to public downloads.
 
 ```sh
 pnpm install --frozen-lockfile

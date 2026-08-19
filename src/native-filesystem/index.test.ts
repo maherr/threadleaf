@@ -8,6 +8,7 @@ import {
   probeAnonymousPublishNoName,
   publishBufferNoReplace,
   renameNoReplace,
+  renameNoReplaceAt,
 } from "./index.js";
 
 const temporaryRoots: string[] = [];
@@ -25,7 +26,7 @@ afterEach(async () => {
 });
 
 describe("native filesystem", () => {
-  it.runIf(process.platform === "linux")(
+  it.runIf(process.platform === "linux" || process.platform === "darwin")(
     "moves an exact source without replacing an existing target",
     async () => {
       const root = await temporaryRoot();
@@ -47,7 +48,7 @@ describe("native filesystem", () => {
     },
   );
 
-  it.runIf(process.platform === "linux")(
+  it.runIf(process.platform === "linux" || process.platform === "darwin")(
     "publishes through a held directory descriptor without replacing a claimant",
     async () => {
       const root = await temporaryRoot();
@@ -56,11 +57,7 @@ describe("native filesystem", () => {
       await fs.writeFile(source, "source", "utf8");
       const directory = await fs.open(root, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY);
       try {
-        const heldRoot = path.join("/proc/self/fd", String(directory.fd));
-        renameNoReplace(
-          path.join(heldRoot, path.basename(source)),
-          path.join(heldRoot, path.basename(target)),
-        );
+        renameNoReplaceAt(directory.fd, path.basename(source), directory.fd, path.basename(target));
       } finally {
         await directory.close();
       }
@@ -69,7 +66,7 @@ describe("native filesystem", () => {
     },
   );
 
-  it.runIf(process.platform === "linux")(
+  it.runIf(process.platform === "linux" || process.platform === "darwin")(
     "probes anonymous publication through a held directory descriptor without creating a name",
     async () => {
       const root = await temporaryRoot();
@@ -84,7 +81,7 @@ describe("native filesystem", () => {
     },
   );
 
-  it.runIf(process.platform === "linux")(
+  it.runIf(process.platform === "linux" || process.platform === "darwin")(
     "publishes Buffer bytes from an anonymous inode without exposing a stage name",
     async () => {
       const root = await temporaryRoot();

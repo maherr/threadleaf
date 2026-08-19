@@ -550,7 +550,8 @@ async function readReadySummary(cdp) {
         vaultPath: snapshot.vault?.path ?? null,
         vaultState: snapshot.workspace?.state ?? null,
         indexGeneration: snapshot.workspace?.indexGeneration ?? null,
-        indexedMarkdownCount: snapshot.workspace?.files?.length ?? null,
+        censusState: snapshot.workspace?.census?.state ?? null,
+        indexedMarkdownCount: snapshot.workspace?.census?.indexed ?? null,
         watcherSequence: snapshot.workspace?.watcher?.lastSequence ?? null,
         watcherError: snapshot.workspace?.watcher?.error ?? null,
       };
@@ -593,6 +594,7 @@ async function waitForStartup(cdp, vaultPath, expectedMarkdownCount, startedAt) 
         if (
           summary.vaultPath === vaultPath &&
           summary.vaultState === "ready" &&
+          summary.censusState === "current" &&
           summary.indexedMarkdownCount === expectedMarkdownCount &&
           summary.watcherError === null
         ) {
@@ -1034,7 +1036,7 @@ function buildResult(
       gpuDisabled: true,
       coldDefinition: "Fresh Electron user-data root per run; OS page cache is not flushed.",
       warmDefinition:
-        "Relaunch of the same user-data root after the cold launch; workspace state and OS caches persist, while the base branch has no persisted metadata-index cache.",
+        "Relaunch of the same user-data root after the cold launch; workspace state, the derived-index cache, and OS caches persist.",
       incrementalDefinition:
         "External file edits while the real watcher is active; convergence ends when search observes the marker and the index generation includes every changed note.",
     },
@@ -1046,7 +1048,7 @@ function buildResult(
       "This lane measures only synthetic corpora and never reads the real daily-driver vault.",
       "These are Linux/Xvfb observations with Electron GPU disabled; they are not Windows, macOS, or universal desktop SLAs.",
       "Cold launches create fresh user-data roots but do not flush the kernel filesystem cache.",
-      "Warm restart persists Threadleaf user-data/workspace state, but this base revision does not persist or reload a metadata index; the warm number therefore isolates restart behavior plus warm filesystem/runtime state, not an on-disk index-cache hit.",
+      "Warm restart persists Threadleaf user-data/workspace state and reopens the on-disk derived-index cache; the kernel filesystem cache is intentionally not flushed.",
       "The usable-shell timestamp is the renderer shell-ready mark. The separate opening-surface timestamp records when the target vault became visible, while background completion is the target DOM Ready state after index and workspace projection converge.",
       "Memory is Linux /proc VmRSS for the Electron browser and descendant renderer processes. It is not a JavaScript heap or leak proof.",
       "Renderer heartbeat pauses measure the renderer event loop. The headless kernel record separately measures Node event-loop pauses during scan, index, projection, and incremental work.",

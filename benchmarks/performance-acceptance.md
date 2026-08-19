@@ -13,16 +13,16 @@ default). The result is
 written atomically even when a leg aborts. A nonzero command exit after a written result means that
 at least one required leg aborted; it does not discard partial samples.
 
-The runner never overlaps legs. It generates or verifies the corpus, measures one Electron
-workspace open, then runs one fresh kernel process for cold startup plus sequential 100-file
-touch, add, and delete mutations. The Electron observer runs in its own detached process group
+The runner never overlaps legs. It generates or verifies the corpus, measures a cold Electron
+workspace open and a second restart against the same persisted profile, then runs one fresh kernel
+process for cold startup plus sequential 100-file touch, add, and delete mutations. Each Electron
+observer runs in its own detached process group
 and atomically rewrites the schema-valid result after every surface observation, search probe, and
 RSS sample. The runner writes an initial aborted record before launching that observer, so an
 Electron coredump or runner death still leaves the last honest checkpoint on disk. Each mutation
 is index-observed and reversed before the next one, leaving the corpus's bytes as it found them.
-The current product does not persist a metadata index, so the required
-warm-persisted-index leg is recorded as an explicit `aborted` precondition rather than presented as
-an in-memory approximation.
+The warm-persisted-index leg is a real second process opening the cold launch's on-disk derived
+index cache. It is required: if the cold launch or restart aborts, the suite aborts.
 
 ## Deterministic full corpus
 
@@ -50,7 +50,7 @@ produce the same values and fails before any timing is accepted if its corpus sh
 | Leg | Instrument | Result evidence |
 | --- | --- | --- |
 | Cold start | New Node process, empty private state root | Kernel-open, bootstrap scan, metadata-index, projection, and ready timings; Node RSS and event-loop heartbeat. |
-| Warm persisted index | Restart with on-disk index required | Completed timing, or explicit abort if no persisted index exists. |
+| Warm persisted index | Second Electron process, same private profile and on-disk derived index | Shell, ready, search-probe, and RSS evidence from the real restart. |
 | Incremental N=100 | Cold kernel's watcher/index after restore-safe external edits | Separate touch, add, and delete convergence counts, generation numbers, and timings for 100 files per mutation kind. |
 | Usable shell | Electron process start to renderer `threadleaf:shell-ready` mark | Shell timing, surface state, and the Electron process RSS samples. |
 | Background completion | Usable shell to the matching ready snapshot | Ready timing, exact Markdown count, last surface, and an abort record if the timeout wins. |
@@ -58,11 +58,11 @@ produce the same values and fails before any timing is accepted if its corpus sh
 | Responsiveness | Renderer search invocation at three scheduled points while background work is ongoing; kernel 5 ms heartbeat | Per-probe latency/outcome and per-stage Node blocking pauses. |
 
 The Electron leg uses the existing product Electron/Xvfb mechanics: isolated X11 display, a
-dedicated temporary profile, remote-debugging observation, GPU disabled, and explicit process
-reaping. The isolated observer asks Electron to exit through CDP `Browser.close`; only a
-nonresponsive observer falls back to a process-group kill. It is intentionally one workspace-open
-leg: the deterministic kernel records the other startup mechanics without multiplying an
-expensive full-vault Electron wedge.
+dedicated temporary profile shared only by the cold/warm pair, remote-debugging observation, GPU disabled, and explicit process
+reaping. The isolated observer closes the renderer window through CDP so Electron runs the app's
+`window-all-closed` and `before-quit` persistence lifecycle; only a
+nonresponsive observer falls back to a process-group kill. The temporary profile is deleted only
+after both Electron legs finish; the deterministic kernel records the lower-level startup mechanics.
 
 `--variant smoke` creates a deterministic 1,536-file synthetic corpus for lifecycle validation.
 `--force-electron-timeout` deliberately keeps its Electron observer open until the configured
@@ -83,7 +83,7 @@ those rows are deliberately explicit policy proposals rather than claimed compar
 | Cold metadata build | 11,966 ms reading + metadata | p90 <= 11,966 ms | Closest comparable component. **PROPOSED.** |
 | Time to usable shell | No split measurement | p90 <= 5,000 ms | Product responsiveness target. **PROPOSED.** |
 | Background completion | 14,081 ms total open | p90 <= 14,081 ms | Whole-open comparator. **PROPOSED.** |
-| Warm persisted-index start | Not measured | p90 <= 5,000 ms | Requires product capability first. **PROPOSED.** |
+| Warm persisted-index start | Not measured | p90 <= 5,000 ms | Product target measured by the required restart leg. **PROPOSED.** |
 | Incremental 100-file convergence, each mutation kind | Not measured | p90 <= 2,000 ms | Interaction safety target for each touch/add/delete run. **PROPOSED.** |
 | Peak RSS | Not measured | <= 4 GiB kernel, <= 4 GiB Electron main | Host-capacity guard, not an Obsidian comparison. **PROPOSED.** |
 | Background search probe | Not measured | each <= 250 ms | Responsiveness target, not a reference comparison. **PROPOSED.** |

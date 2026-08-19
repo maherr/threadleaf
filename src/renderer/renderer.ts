@@ -174,6 +174,7 @@ import {
 } from "./editor-text-history";
 import { FilePreviewController } from "./file-preview";
 import { GraphViewController } from "./graph-view";
+import { ImageLightbox } from "./image-lightbox";
 import {
   createLivePreviewExtension,
   type LivePreviewLink,
@@ -360,6 +361,10 @@ const elements = {
   settingsClose: getButton("settings-close"),
   settingsDone: getButton("settings-done"),
   settingsReset: getButton("settings-reset"),
+  settingsSearch: getInput("settings-search"),
+  settingsSearchResults: getElement("settings-search-results"),
+  settingsSearchCount: getElement("settings-search-count"),
+  settingsSearchResultList: getElement("settings-search-result-list"),
   settingsPageEyebrow: getElement("settings-page-eyebrow"),
   settingsPageTitle: getElement("settings-page-title"),
   settingsNavAppearance: getButton("settings-nav-appearance"),
@@ -962,6 +967,7 @@ let pointerTabGesture: {
   startY: number;
 } | null = null;
 let suppressPointerActivationPath: string | null = null;
+const tabRenderKeys = new WeakMap<HTMLElement, string>();
 let workspaceKeyboardShortcutsBound = false;
 let loadedNote: WorkspaceNoteSnapshot | null = null;
 let loadedVaultId: string | null = null;
@@ -1026,6 +1032,7 @@ let settingsSnapshot: AppSettingsSnapshot = {
 };
 let settingsRestoreFocus: HTMLElement | null = null;
 let settingsPage: SettingsPage = "appearance";
+let settingsSearchQuery = "";
 let recordingShortcut: ShortcutTargetId | null = null;
 let settingsBusy = false;
 let settingsMessage = "Select a command, then press its new shortcut.";
@@ -1036,6 +1043,7 @@ let accessibilityPreferencesSnapshot: AccessibilityPreferencesSnapshot = {
   preferences: createDefaultAccessibilityPreferences(),
   warning: null,
 };
+let accessibilityPreferencesDraft: AccessibilityPreferences | null = null;
 let accessibilityPreferencesLoaded = false;
 let accessibilityBusy = false;
 let accessibilityMessage = "System accessibility preferences are active until you override them.";
@@ -1111,9 +1119,9 @@ let lastVirtualActivePath: string | null = null;
 type NavigatorViewMode = "tree" | "flat";
 type NavigatorContentMode = "notes" | "tags";
 type ReadyWorkspaceTagCatalog = Extract<WorkspaceTagCatalogResponse, { status: "ready" }>;
-const navigatorTreeRowHeight = 40;
+const navigatorTreeRowHeight = 28;
 const navigatorTreeOverscan = 8;
-const navigatorTagRowHeight = 44;
+const navigatorTagRowHeight = 32;
 const navigatorTagOverscan = 8;
 let navigatorViewMode: NavigatorViewMode = "tree";
 let navigatorContentMode: NavigatorContentMode = "notes";
@@ -1130,7 +1138,7 @@ let navigatorContextFolderPath: string | null | undefined;
 let navigatorRevealRequest = 0;
 let navigatorTreeRevealPath: string | null = null;
 let navigatorTreeRevealLocations: NavigatorTreeEntryLocation[] = [];
-let navigatorExpansionSave = false;
+let navigatorExpansionSave: Promise<void> | null = null;
 let navigatorTagCatalog: ReadyWorkspaceTagCatalog | null = null;
 let navigatorTagCatalogAttemptIdentity = "";
 let navigatorTagCatalogRequest = 0;
@@ -2704,6 +2712,8 @@ function renderReadingView(): void {
       loadCanvas: (path, expectedVaultId) => window.threadleaf.loadCanvas(path, expectedVaultId),
       decorateLinks: decoratePreviewLinks,
       isCurrent,
+    }).then(() => {
+      if (isCurrent()) imageLightbox.bind(elements.notePreview);
     });
     renderCiteSettledProjection(loadedNote.path, source, vaultId, isCurrent);
   }
@@ -4387,6 +4397,17 @@ function openCommandPalette(): void {
   paletteSelection = -1;
   elements.commandPalette.showModal();
   renderPaletteResults();
+  const expectedVaultId = currentSnapshot?.vault.id ?? null;
+  void window.threadleaf
+    .getSnapshot()
+    .then((snapshot) => {
+      if (!elements.commandPalette.open || snapshot.vault.id !== expectedVaultId) {
+        return;
+      }
+      render(snapshot);
+      renderPaletteResults();
+    })
+    .catch(() => undefined);
   window.requestAnimationFrame(() => elements.paletteQuery.focus());
 }
 
@@ -7096,7 +7117,7 @@ const accessibilityAccentColors: Record<
 };
 
 function currentAccessibilityPreferences(): AccessibilityPreferences {
-  return accessibilityPreferencesSnapshot.preferences;
+  return accessibilityPreferencesDraft ?? accessibilityPreferencesSnapshot.preferences;
 }
 
 function effectiveCurrentAccessibilityPreferences(): EffectiveAccessibilityPreferences {
@@ -7351,10 +7372,12 @@ function renderAccessibilitySettings(): void {
       accessibilityOverrideLabel(preferences.reducedTransparency),
     ],
   ] as const) {
-    control.value = value;
+    if (document.activeElement !== control || disabled) control.value = value;
     control.disabled = disabled;
   }
-  elements.accessibilityAccent.value = preferences.accent;
+  if (document.activeElement !== elements.accessibilityAccent || disabled) {
+    elements.accessibilityAccent.value = preferences.accent;
+  }
   elements.accessibilityAccent.disabled = disabled;
   const ranges = [
     [
@@ -7379,7 +7402,7 @@ function renderAccessibilitySettings(): void {
     ],
   ] as const;
   for (const [control, value, range] of ranges) {
-    control.value = String(value);
+    if (document.activeElement !== control || disabled) control.value = String(value);
     control.setAttribute("aria-valuetext", String(value));
     control.min = String(range.min);
     control.max = String(range.max);
@@ -7399,9 +7422,11 @@ function renderAccessibilitySettings(): void {
 
 async function persistAccessibilityPreferences(next: AccessibilityPreferences): Promise<void> {
   if (accessibilityBusy) return;
+  accessibilityPreferencesDraft = next;
   accessibilityBusy = true;
   accessibilityMessage = "Saving accessibility preferences outside the vault…";
   accessibilityMessageKind = "info";
+  setAccessibilityRootAttributes(effectiveCurrentAccessibilityPreferences());
   renderSettings();
   try {
     applyAccessibilityPreferences(await window.threadleaf.setAccessibilityPreferences(next));
@@ -7411,7 +7436,9 @@ async function persistAccessibilityPreferences(next: AccessibilityPreferences): 
     accessibilityMessage = error instanceof Error ? error.message : String(error);
     accessibilityMessageKind = "error";
   } finally {
+    accessibilityPreferencesDraft = null;
     accessibilityBusy = false;
+    setAccessibilityRootAttributes(effectiveCurrentAccessibilityPreferences());
     renderSettings();
   }
 }
@@ -9173,6 +9200,12 @@ function renderPluginSettings(): void {
     const track = document.createElement("span");
     track.className = "plugin-toggle-track";
     track.ariaHidden = "true";
+    track.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (checkbox.disabled) return;
+      checkbox.checked = !checkbox.checked;
+      checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+    });
     const toggleLabel = document.createElement("span");
     toggleLabel.className = "plugin-toggle-label";
     toggleLabel.textContent =
@@ -9939,9 +9972,13 @@ function openSettings(): void {
   }
   settingsRestoreFocus =
     document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  settingsSearchQuery = "";
+  elements.settingsSearch.value = "";
   recordingShortcut = null;
   noteWorkflowDraft = null;
   workspaceSettingsDraft = null;
+  settingsSearchQuery = "";
+  elements.settingsSearch.value = "";
   settingsMessage = "Select a command, then press its new shortcut.";
   settingsMessageKind = "info";
   elements.settingsDialog.showModal();
@@ -10098,6 +10135,8 @@ function captureShortcut(event: KeyboardEvent, targetId: ShortcutTargetId): void
 
 function setSettingsPage(page: SettingsPage, focusNavigation = false): void {
   settingsPage = page;
+  settingsSearchQuery = "";
+  elements.settingsSearch.value = "";
   recordingShortcut = null;
   if (page === "notes" && noteWorkflowDraft === null) {
     noteWorkflowDraft = { ...currentNoteWorkflowPreference() };
@@ -10127,12 +10166,189 @@ function setSettingsPage(page: SettingsPage, focusNavigation = false): void {
   }
 }
 
+const settingsPageLabels: Record<SettingsPage, string> = {
+  appearance: "Appearance",
+  accessibility: "Accessibility",
+  notes: "Daily notes and templates",
+  workspace: "Editor and files",
+  plugins: "Community plugins",
+  migration: "Migration preview",
+  updates: "About and updates",
+  hotkeys: "Hotkeys",
+};
+
+const settingsPageSearchAliases: Record<SettingsPage, string> = {
+  appearance: "theme themes css snippet snippets color colour dark light font interface",
+  accessibility:
+    "contrast motion transparency scale zoom text size line height accent deuteranomaly",
+  notes: "daily note notes template templates folder date time workflow",
+  workspace:
+    "editor files explorer tabs panes startup live preview source reading autosave trash layout",
+  plugins:
+    "community plugin plugins obsidian excalidraw extension extensions compatibility permissions",
+  migration: "import obsidian vault migrate rollback preview",
+  updates: "about version update updates release support diagnostics logs license",
+  hotkeys: "keyboard keybinding keybindings shortcut shortcuts command commands",
+};
+
+const settingsSearchCandidateSelector = [
+  ".settings-section-heading",
+  ".scheme-option",
+  ".appearance-select-field",
+  ".snippet-settings",
+  ".accessibility-setting",
+  ".accessibility-diagnostics",
+  ".note-workflow-field",
+  ".plugin-mode-card",
+  ".plugin-search-field",
+  ".plugin-index-panel",
+  ".installed-plugin-heading",
+  ".plugin-summary-row",
+  ".migration-safety-card",
+  ".migration-group",
+  ".app-update-card",
+  ".support-bundle-card",
+  ".binding-row",
+].join(",");
+
+function normalizedSettingsSearchText(value: string): string {
+  return value.toLocaleLowerCase().replace(/\s+/gu, " ").trim();
+}
+
+function settingsSearchCandidates(page: HTMLElement): HTMLElement[] {
+  return [...page.querySelectorAll<HTMLElement>(settingsSearchCandidateSelector)].filter(
+    (candidate) => {
+      const text = normalizedSettingsSearchText(candidate.textContent ?? "");
+      return (
+        /[\p{L}\p{N}]{2}/u.test(text) &&
+        !candidate.parentElement?.closest(settingsSearchCandidateSelector)
+      );
+    },
+  );
+}
+
+function settingsSearchCandidateTitle(candidate: HTMLElement): string {
+  const title = candidate.querySelector("strong, legend, h2, h3")?.textContent;
+  if (title?.trim()) return title.trim();
+  return (candidate.textContent ?? "").replace(/\s+/gu, " ").trim().slice(0, 72);
+}
+
+function revealSettingsSearchResult(page: SettingsPage, candidateTitle: string): void {
+  settingsPage = page;
+  settingsSearchQuery = "";
+  elements.settingsSearch.value = "";
+  renderSettings();
+  window.requestAnimationFrame(() => {
+    const pageElement = elements.settingsDialog.querySelector<HTMLElement>(
+      `[data-settings-page="${page}"]`,
+    );
+    const target = pageElement
+      ? settingsSearchCandidates(pageElement).find(
+          (candidate) => settingsSearchCandidateTitle(candidate) === candidateTitle,
+        )
+      : null;
+    if (!target) return;
+    target.scrollIntoView({ block: "center" });
+    target.classList.add("settings-search-reveal");
+    const focusTarget = target.querySelector<HTMLElement>("input, select, textarea, button");
+    if (focusTarget) {
+      focusTarget.focus();
+    } else {
+      target.tabIndex = -1;
+      target.focus({ preventScroll: true });
+    }
+    window.setTimeout(() => target.classList.remove("settings-search-reveal"), 1400);
+  });
+}
+
+function renderSettingsSearchResults(): void {
+  const query = normalizedSettingsSearchText(settingsSearchQuery);
+  const pages = [...elements.settingsDialog.querySelectorAll<HTMLElement>("[data-settings-page]")];
+  const navigation = new Map<SettingsPage, HTMLButtonElement>([
+    ["appearance", elements.settingsNavAppearance],
+    ["accessibility", elements.settingsNavAccessibility],
+    ["notes", elements.settingsNavNotes],
+    ["workspace", elements.settingsNavWorkspace],
+    ["plugins", elements.settingsNavPlugins],
+    ["migration", elements.settingsNavMigration],
+    ["updates", elements.settingsNavUpdates],
+    ["hotkeys", elements.settingsNavHotkeys],
+  ]);
+  if (!query) {
+    elements.settingsSearchResults.hidden = true;
+    for (const button of navigation.values()) button.hidden = false;
+    return;
+  }
+
+  const terms = query.split(" ").filter(Boolean);
+  const results: Array<{
+    page: SettingsPage;
+    text: string;
+    title: string;
+  }> = [];
+  const matchingPages = new Set<SettingsPage>();
+  for (const pageElement of pages) {
+    const page = pageElement.dataset.settingsPage as SettingsPage;
+    pageElement.hidden = true;
+    const pageContext = normalizedSettingsSearchText(
+      `${settingsPageLabels[page]} ${settingsPageSearchAliases[page]}`,
+    );
+    for (const candidate of settingsSearchCandidates(pageElement)) {
+      const text = normalizedSettingsSearchText(candidate.textContent ?? "");
+      if (!terms.every((term) => `${pageContext} ${text}`.includes(term))) continue;
+      results.push({
+        page,
+        text,
+        title: settingsSearchCandidateTitle(candidate),
+      });
+      matchingPages.add(page);
+    }
+  }
+
+  for (const [page, button] of navigation) {
+    button.hidden = !matchingPages.has(page);
+    button.dataset.active = "false";
+    button.removeAttribute("aria-current");
+  }
+  elements.settingsPageEyebrow.textContent = "All settings";
+  elements.settingsPageTitle.textContent = `Search: ${settingsSearchQuery.trim()}`;
+  elements.settingsReset.hidden = true;
+  elements.settingsSearchResults.hidden = false;
+  elements.settingsSearchResultList.replaceChildren();
+  for (const result of results.slice(0, 80)) {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "settings-search-result";
+    const page = document.createElement("small");
+    page.textContent = settingsPageLabels[result.page];
+    const title = document.createElement("strong");
+    title.textContent = result.title;
+    const excerpt = document.createElement("span");
+    excerpt.textContent = result.text.slice(0, 160);
+    button.append(page, title, excerpt);
+    button.addEventListener("click", () => revealSettingsSearchResult(result.page, result.title));
+    item.append(button);
+    elements.settingsSearchResultList.append(item);
+  }
+  if (results.length === 0) {
+    const item = document.createElement("li");
+    const empty = document.createElement("p");
+    empty.className = "settings-search-empty";
+    empty.textContent = "No setting matches this search.";
+    item.append(empty);
+    elements.settingsSearchResultList.append(item);
+  }
+  const shown = Math.min(results.length, 80);
+  elements.settingsSearchCount.textContent = `${shown} ${shown === 1 ? "result" : "results"}`;
+}
+
 function renderSettingsNavigation(): void {
   const pageDetails: Record<SettingsPage, { eyebrow: string; title: string }> = {
     appearance: { eyebrow: "Options", title: "Appearance" },
     accessibility: { eyebrow: "Inclusive workspace", title: "Accessibility" },
     notes: { eyebrow: "Core workflows", title: "Daily notes and templates" },
-    workspace: { eyebrow: "Core behavior", title: "Workspace and editing" },
+    workspace: { eyebrow: "Core behavior", title: "Editor and files" },
     plugins: { eyebrow: "Trusted runtime", title: "Community plugins" },
     migration: { eyebrow: "Migration bridge", title: "Migration preview" },
     updates: { eyebrow: "Release safety", title: "About and updates" },
@@ -10258,6 +10474,7 @@ function renderSettings(): void {
     row.append(copy, controls);
     elements.settingsList.append(row);
   }
+  renderSettingsSearchResults();
 }
 
 function selectPaletteIndex(index: number, scrollIntoView: boolean): void {
@@ -10738,10 +10955,10 @@ function render(snapshot: RuntimeSnapshot): void {
     });
   }
   filePreview.onSnapshot(
-    snapshot.vault.id && snapshot.workspace?.inventory.state === "current"
+    snapshot.vault.id && snapshot.workspace?.inventory.state !== "degraded"
       ? {
           vaultId: snapshot.vault.id,
-          inventoryGeneration: snapshot.workspace.inventory.generation,
+          inventoryGeneration: snapshot.workspace?.inventory.generation ?? "",
         }
       : null,
   );
@@ -11368,6 +11585,13 @@ function bindTabDragSurface(paneId: WorkspacePaneId, tabsElement: HTMLElement): 
 function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): void {
   const paneId = activePaneContextId;
   bindTabDragSurface(paneId, elements.noteTabs);
+  const renderKey = JSON.stringify({
+    busy,
+    displayedPath,
+    tabs: tabs.map(({ path, title, active, pinned }) => ({ path, title, active, pinned })),
+  });
+  if (tabRenderKeys.get(elements.noteTabs) === renderKey) return;
+  tabRenderKeys.set(elements.noteTabs, renderKey);
   elements.noteTabs.replaceChildren();
   if (tabs.length === 0) {
     const empty = document.createElement("span");
@@ -12031,13 +12255,16 @@ function renderNavigatorModeControls(queryActive: boolean): void {
   elements.navigatorViewToggle.hidden = tagsVisible;
   elements.newNote.hidden = tagsVisible;
   elements.navigatorSearchField.hidden = tagsVisible;
-  elements.canvasShelf.hidden = tagsVisible;
+  elements.canvasShelf.hidden = tagsVisible || elements.canvasShelf.dataset.empty === "true";
   elements.fileCount.textContent = vaultOpening()
     ? "…"
     : tagsVisible
       ? (navigatorTagCatalog?.tags.length.toLocaleString() ?? "…")
       : treeVisible
-        ? String(currentSnapshot?.workspace?.inventory.fileCount ?? 0)
+        ? (currentSnapshot?.workspace?.inventory.state === "current"
+            ? currentSnapshot.workspace.inventory.fileCount
+            : (currentSnapshot?.workspace?.census.indexed ?? 0)
+          ).toLocaleString()
         : String(
             currentSnapshot?.workspace?.state === "warming"
               ? (currentSnapshot.workspace?.census.indexed ?? 0)
@@ -12075,12 +12302,19 @@ function renderNavigatorTree(
   activePath: string | null = activeWorkspaceDocumentPath(),
   force = false,
 ): void {
+  if (
+    navigatorContentMode !== "notes" ||
+    elements.fileSearch.value.trim() ||
+    navigatorViewMode !== "tree"
+  ) {
+    return;
+  }
   const workspace = currentSnapshot?.workspace;
   const state = navigatorTreeState;
   elements.fileList.dataset.mode = "tree";
   elements.fileList.setAttribute("role", "tree");
   elements.fileList.setAttribute("aria-label", "Vault files and folders");
-  if (!workspace || !state || workspace.inventory.state !== "current") {
+  if (!workspace || !state || workspace.inventory.state === "degraded") {
     elements.fileList.setAttribute("aria-busy", "true");
     renderEmpty(
       elements.fileList,
@@ -12378,25 +12612,35 @@ async function persistNavigatorExpandedPaths(
   nextPaths: ReadonlySet<string>,
   focusedFolderPath: string | null = null,
 ): Promise<boolean> {
+  if (navigatorExpansionSave) {
+    await navigatorExpansionSave;
+  }
   const expectedVaultId = currentSnapshot?.vault.id;
   const layout = workspaceLayoutSnapshot;
-  if (!expectedVaultId || !layout || layout.vaultId !== expectedVaultId || navigatorExpansionSave) {
+  if (!expectedVaultId || !layout || layout.vaultId !== expectedVaultId) {
     return false;
   }
   if (sameNavigatorExpandedPaths(nextPaths)) return false;
   if (focusedFolderPath) navigatorFocusedPath = focusedFolderPath;
   navigatorTreeRevision += 1;
-  navigatorExpansionSave = true;
+  const operation = window.threadleaf
+    .setWorkspaceNavigatorExpandedPaths([...nextPaths], expectedVaultId)
+    .then((nextLayout) => {
+      renderWorkspaceLayout(nextLayout);
+    });
+  const tracked = operation.then(
+    () => undefined,
+    () => undefined,
+  );
+  navigatorExpansionSave = tracked;
   try {
-    renderWorkspaceLayout(
-      await window.threadleaf.setWorkspaceNavigatorExpandedPaths([...nextPaths], expectedVaultId),
-    );
+    await operation;
     return true;
   } catch (error) {
     showToast(error instanceof Error ? error.message : String(error));
     return false;
   } finally {
-    navigatorExpansionSave = false;
+    if (navigatorExpansionSave === tracked) navigatorExpansionSave = null;
   }
 }
 
@@ -12572,13 +12816,18 @@ function renderFiles(
   if (navigatorViewMode === "tree") {
     cancelVirtualFileRender();
     const inventory = currentSnapshot?.workspace?.inventory;
-    const fileCount = inventory?.fileCount ?? 0;
-    const folderCount = inventory?.folderCount ?? 0;
-    elements.filterSummary.textContent = `${fileCount.toLocaleString()} ${fileCount === 1 ? "file" : "files"} · ${folderCount.toLocaleString()} ${folderCount === 1 ? "folder" : "folders"}`;
-    renderNavigatorTree(activeWorkspaceDocumentPath(), true);
+    if (inventory?.state === "current") {
+      const fileCount = inventory.fileCount;
+      const folderCount = inventory.folderCount;
+      elements.filterSummary.textContent = `${fileCount.toLocaleString()} ${fileCount === 1 ? "file" : "files"} · ${folderCount.toLocaleString()} ${folderCount === 1 ? "folder" : "folders"}`;
+    } else {
+      elements.filterSummary.textContent = `${indexed.toLocaleString()} ${indexed === 1 ? "note" : "notes"} indexed`;
+    }
+    renderNavigatorTree(activeWorkspaceDocumentPath());
     return;
   }
 
+  cancelNavigatorTreeRender();
   elements.fileList.removeAttribute("role");
   elements.filterSummary.textContent = `${indexed.toLocaleString()} ${indexed === 1 ? "note" : "notes"} indexed`;
   const activeChanged = activePath !== lastVirtualActivePath;
@@ -12595,7 +12844,7 @@ function renderFiles(
     }
   }
   lastVirtualActivePath = activePath;
-  renderVirtualFiles(true);
+  renderVirtualFiles();
 
   if (files.length === 0) {
     renderEmpty(
@@ -12608,6 +12857,7 @@ function renderFiles(
 }
 
 function renderCanvasFiles(files: WorkspaceCanvasSummary[], activePath: string | null): void {
+  elements.canvasShelf.dataset.empty = String(files.length === 0);
   elements.canvasFileCount.textContent = String(files.length);
   elements.canvasFileList.replaceChildren();
   if (files.length === 0) {
@@ -12849,7 +13099,14 @@ function renderVirtualFiles(force = false): void {
     overscan: virtualFileOverscan,
   });
   requestWorkspaceFileRange(geometry.start, geometry.end);
-  const renderKey = `${geometry.start}:${geometry.end}:${activePath ?? ""}:${files.length}`;
+  const visibleRows = files
+    .slice(geometry.start, geometry.end)
+    .map((file) =>
+      file
+        ? [file.path, file.title, file.backlinkCount, file.outgoingCount, file.unresolvedCount]
+        : null,
+    );
+  const renderKey = `${geometry.start}:${geometry.end}:${activePath ?? ""}:${files.length}:${JSON.stringify(visibleRows)}`;
   if (!force && renderKey === virtualFileRenderKey) {
     return;
   }
@@ -14554,6 +14811,8 @@ function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneEle
   });
 }
 
+const imageLightbox = new ImageLightbox(document);
+
 const graphView = new GraphViewController(elements.graphDialog, {
   context: () => {
     if (!currentSnapshot?.vault.id) {
@@ -14608,12 +14867,12 @@ const recoveryView = new RecoveryViewController(elements.recoveryDialog, {
 
 const filePreview = new FilePreviewController(elements.filePreviewDialog, {
   context: () => {
-    if (!currentSnapshot?.vault.id || currentSnapshot.workspace?.inventory.state !== "current") {
+    if (!currentSnapshot?.vault.id || currentSnapshot.workspace?.inventory.state === "degraded") {
       return null;
     }
     return {
       vaultId: currentSnapshot.vault.id,
-      inventoryGeneration: currentSnapshot.workspace.inventory.generation,
+      inventoryGeneration: currentSnapshot.workspace?.inventory.generation ?? "",
     };
   },
   load: (path, expectedVaultId, expectedInventoryGeneration) =>
@@ -14754,6 +15013,19 @@ elements.quickSwitcher.addEventListener("click", (event) => {
 elements.settingsClose.addEventListener("click", () => closeSettings());
 elements.settingsDone.addEventListener("click", () => closeSettings());
 elements.settingsReset.addEventListener("click", () => void resetKeyBindings());
+elements.settingsSearch.addEventListener("input", () => {
+  settingsSearchQuery = elements.settingsSearch.value;
+  renderSettings();
+});
+elements.settingsSearch.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && settingsSearchQuery) {
+    event.preventDefault();
+    event.stopPropagation();
+    settingsSearchQuery = "";
+    elements.settingsSearch.value = "";
+    renderSettings();
+  }
+});
 elements.settingsNavAppearance.addEventListener("click", () => setSettingsPage("appearance"));
 elements.settingsNavAccessibility.addEventListener("click", () => setSettingsPage("accessibility"));
 elements.settingsNavNotes.addEventListener("click", () => setSettingsPage("notes"));
@@ -14937,6 +15209,13 @@ elements.settingsDialog.addEventListener("cancel", (event) => {
     cancelShortcutRecording(recordingShortcut);
   } else {
     closeSettings();
+  }
+});
+elements.settingsDialog.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "f") {
+    event.preventDefault();
+    elements.settingsSearch.focus();
+    elements.settingsSearch.select();
   }
 });
 elements.settingsDialog.addEventListener("click", (event) => {

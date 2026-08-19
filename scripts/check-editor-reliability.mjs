@@ -262,9 +262,11 @@ async function waitFor(probe, message, timeoutMs = 10_000) {
 const editorStateExpression = `(() => {
   const root = document.querySelector('[data-pane-id="primary"]');
   if (!(root instanceof HTMLElement)) return null;
+  const content = root.querySelector('.cm-content');
+  const editorView = content?.cmTile?.root?.view;
   return {
     path: root.querySelector('[id^="note-path"]')?.textContent ?? "",
-    text: [...root.querySelectorAll(".cm-content .cm-line")]
+    text: editorView?.state.doc.toString() ?? [...root.querySelectorAll(".cm-content .cm-line")]
       .map((line) => line.textContent ?? "")
       .join("\\n"),
     editState: root.querySelector('[id^="edit-state"]')?.textContent ?? "",

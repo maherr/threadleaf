@@ -812,6 +812,18 @@
               <strong id="settings-title">Settings</strong>
             </span>
           </header>
+          <label class="settings-search" for="settings-search">
+            <span aria-hidden="true">⌕</span>
+            <span class="sr-only">Search settings</span>
+            <input
+              id="settings-search"
+              type="search"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Search settings"
+            />
+            <kbd>Ctrl F</kbd>
+          </label>
           <nav class="settings-nav" aria-label="Settings sections">
             <button id="settings-nav-appearance" type="button" data-settings-target="appearance">
               <span aria-hidden="true">◐</span>
@@ -827,7 +839,7 @@
             </button>
             <button id="settings-nav-workspace" type="button" data-settings-target="workspace">
               <span aria-hidden="true">⌘</span>
-              <span>Workspace and editing</span>
+              <span>Editor and files</span>
             </button>
             <button id="settings-nav-plugins" type="button" data-settings-target="plugins">
               <span aria-hidden="true">◇</span>
@@ -839,7 +851,7 @@
             </button>
             <button id="settings-nav-updates" type="button" data-settings-target="updates">
               <span aria-hidden="true">↥</span>
-              <span>About and updates</span>
+              <span>About</span>
             </button>
             <button id="settings-nav-hotkeys" type="button" data-settings-target="hotkeys">
               <span aria-hidden="true">⌨</span>
@@ -865,6 +877,18 @@
           </header>
           <p class="settings-warning" id="settings-warning" role="alert" hidden></p>
           <div class="settings-content">
+          <section
+            class="settings-search-results"
+            id="settings-search-results"
+            aria-labelledby="settings-search-results-title"
+            hidden
+          >
+            <header>
+              <strong id="settings-search-results-title">Search results</strong>
+              <span id="settings-search-count" aria-live="polite">0 results</span>
+            </header>
+            <ul id="settings-search-result-list"></ul>
+          </section>
           <section
             class="settings-page appearance-settings"
             data-settings-page="appearance"

@@ -66,6 +66,33 @@ async function expectSameDirectoryIdentity(leftPath: string, rightPath: string):
 }
 
 describe("PluginRendererService", () => {
+  it("initializes without recursively walking the vault and accepts the authoritative census", async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-seeded-service-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    await fs.mkdir(path.join(vaultPath, "Nested"), { recursive: true });
+    await fs.writeFile(path.join(vaultPath, "Nested", "Unseeded.md"), "# Must not scan\n");
+    const service = new PluginRendererService();
+    try {
+      const initialized = await service.handle(
+        request("initialize", {
+          vaultPath,
+          packageJsonPath: path.resolve("package.json"),
+        }),
+      );
+      expect(initialized?.vault.markdownFileCount).toBe(0);
+
+      const seeded = await service.handle(
+        request("seed-vault-markdown-paths", {
+          paths: ["Notes/One.md", "Notes/Two.md"],
+        }),
+      );
+      expect(seeded?.vault.markdownFileCount).toBe(2);
+    } finally {
+      await service.close();
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   it("applies full environments through source-bearing nodes and settles one css-change per live update", async () => {
     const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-environment-service-"));
     const vaultPath = path.join(sandboxPath, "vault");

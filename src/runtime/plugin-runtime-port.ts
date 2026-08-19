@@ -56,6 +56,8 @@ export interface PluginRuntimePort {
     sourcePath: string,
     content: string,
   ): Promise<RuntimeSnapshot>;
+  /** Seed the compatibility vault from the already-authoritative startup census. */
+  seedVaultMarkdownPaths?(paths: readonly string[]): Promise<void>;
   runCommand(commandId: string, editorContext?: PluginEditorContext): Promise<RuntimeSnapshot>;
   waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot>;
   unloadAllPlugins(): Promise<RuntimeSnapshot>;

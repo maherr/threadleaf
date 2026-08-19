@@ -16,6 +16,7 @@ import {
   parsePluginVaultWriteBinaryRequest,
   parsePluginVaultWriteRequest,
   requirePayloadString,
+  requirePayloadStringArray,
 } from "./plugin-runtime-protocol";
 
 describe("plugin renderer protocol", () => {
@@ -100,6 +101,26 @@ describe("plugin renderer protocol", () => {
 
     expect(requirePayloadString(request, "pluginDirectory")).toBe("/vault/plugin");
     expect(optionalPayloadString(request, "pluginId")).toBeUndefined();
+  });
+
+  it("accepts bounded vault path inventories and rejects malformed entries", () => {
+    const request = parsePluginRendererRequest({
+      id: "request-seed",
+      operation: "seed-vault-markdown-paths",
+      payload: { paths: ["Notes/One.md", "Notes/Two.md"] },
+    });
+
+    expect(requirePayloadStringArray(request, "paths")).toEqual(["Notes/One.md", "Notes/Two.md"]);
+    expect(() =>
+      requirePayloadStringArray(
+        parsePluginRendererRequest({
+          id: "request-invalid-seed",
+          operation: "seed-vault-markdown-paths",
+          payload: { paths: ["Notes/One.md", 2] },
+        }),
+        "paths",
+      ),
+    ).toThrow("valid paths strings");
   });
 
   it("validates success and failure response envelopes", () => {

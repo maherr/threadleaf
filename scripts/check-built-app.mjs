@@ -12,6 +12,7 @@ const projectRoot = path.resolve(import.meta.dirname, "..");
 const rendererDirectory = path.join(projectRoot, "dist", "renderer");
 const indexPath = path.join(rendererDirectory, "index.html");
 const html = await readFile(indexPath, "utf8");
+const pluginHostHtml = await readFile(path.join(rendererDirectory, "plugin-host.html"), "utf8");
 
 if (html.includes('="/assets/')) {
   throw new Error("Renderer assets must be relative so Electron can load them over file://.");
@@ -23,6 +24,15 @@ const assetPaths = [...html.matchAll(/(?:href|src)="(\.\/assets\/[^"]+)"/g)].map
 
 if (assetPaths.length < 2) {
   throw new Error("Built renderer must reference its JavaScript and CSS assets.");
+}
+
+if (
+  !pluginHostHtml.includes("img-src 'self' data: blob: https:") ||
+  !pluginHostHtml.includes("connect-src data: blob: https:") ||
+  !pluginHostHtml.includes("object-src 'none'") ||
+  !pluginHostHtml.includes("form-action 'none'")
+) {
+  throw new Error("Compatibility renderer lost its reviewed network and active-content CSP.");
 }
 
 await Promise.all([

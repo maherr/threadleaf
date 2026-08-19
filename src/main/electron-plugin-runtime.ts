@@ -252,6 +252,10 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
     return this.requestSnapshot("get-snapshot");
   }
 
+  async seedVaultMarkdownPaths(paths: readonly string[]): Promise<void> {
+    await this.requestSnapshot("seed-vault-markdown-paths", { paths: [...paths] });
+  }
+
   applyEnvironment(environment: PluginRendererEnvironment): Promise<RuntimeSnapshot> {
     return this.requestSnapshot("apply-environment", { environment });
   }
@@ -376,10 +380,13 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
   }
 
   private unavailableError(operation: PluginRendererOperation): FatalPluginRuntimeError {
+    if (this.lastFatalError) {
+      return this.lastFatalError;
+    }
     return new FatalPluginRuntimeError(
       operation,
       "Plugin compatibility renderer is not available.",
-      this.resourceDiagnostics.at(-1) ?? this.lastFatalError?.resourceDiagnostic ?? null,
+      this.resourceDiagnostics.at(-1) ?? null,
     );
   }
 

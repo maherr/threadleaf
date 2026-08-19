@@ -24,6 +24,12 @@ Open [[01 Linked Note]] for the connected surface. The long note is [[04 Long Te
 
 The harness places a deleted copy under `.trash/` before opening the recovery dialog.
 
+## Image review
+
+![[Attachments/brew-ratio-chart.png|Brew ratio chart]]
+
+![[Attachments/brew-ratio-detail.png|Brew ratio detail]]
+
 ## Empty and error states
 
 The fixture also contains an intentionally empty note and a note with a deliberately missing link.

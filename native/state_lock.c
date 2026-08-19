@@ -14,6 +14,7 @@
 #include "include/threadleaf_node_api.h"
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -56,6 +57,10 @@ typedef struct {
 #ifndef RENAME_NOREPLACE
 #define RENAME_NOREPLACE (1 << 0)
 #endif
+#endif
+
+#if defined(__APPLE__)
+#include <sys/stdio.h>
 #endif
 
 typedef struct {
@@ -921,8 +926,8 @@ static char* threadleaf_read_path_argument(
 
 /*
  * Atomically move one already-contained pathname to another without replacing
- * a target claimant. Linux renameat2 is the authority; other platforms fail
- * closed until an equivalent primitive is implemented and packaged there.
+ * a target claimant. Linux uses renameat2(RENAME_NOREPLACE), macOS uses
+ * renamex_np(RENAME_EXCL), and other platforms fail closed.
  */
 static napi_value threadleaf_rename_no_replace(napi_env env, napi_callback_info info) {
   size_t argc = 2;
@@ -984,13 +989,239 @@ static napi_value threadleaf_rename_no_replace(napi_env env, napi_callback_info 
     return NULL;
   }
   return undefined;
+#elif defined(__APPLE__)
+  int result = renamex_np(source, target, RENAME_EXCL);
+  int rename_error = result == 0 ? 0 : errno;
+  free(source);
+  free(target);
+  if (result != 0) {
+    if (rename_error == EEXIST) {
+      return threadleaf_filesystem_error(
+          env, "exists", "The native no-clobber rename target already exists.");
+    }
+    if (rename_error == ENOENT) {
+      return threadleaf_filesystem_error(
+          env, "missing", "The native no-clobber rename source or parent is missing.");
+    }
+    if (rename_error == EXDEV) {
+      return threadleaf_filesystem_error(
+          env, "cross-device", "The native no-clobber rename crossed filesystem devices.");
+    }
+    if (rename_error == EINVAL || rename_error == ENOTSUP || rename_error == EOPNOTSUPP) {
+      return threadleaf_filesystem_error(
+          env,
+          "unsupported",
+          "The filesystem does not support atomic no-clobber rename.");
+    }
+    return threadleaf_filesystem_error(
+        env, "io", "The native no-clobber rename did not complete.");
+  }
+
+  napi_value undefined;
+  if (napi_get_undefined(env, &undefined) != napi_ok) {
+    return NULL;
+  }
+  return undefined;
 #else
   free(source);
   free(target);
   return threadleaf_filesystem_error(
       env,
       "unsupported",
-      "Atomic no-clobber rename is currently available only on Linux.");
+      "Atomic no-clobber rename is unavailable on this platform.");
+#endif
+}
+
+static int threadleaf_read_descriptor_argument(
+    napi_env env,
+    napi_value value,
+    const char* message) {
+  int32_t descriptor = -1;
+  if (napi_get_value_int32(env, value, &descriptor) != napi_ok || descriptor < 0) {
+    threadleaf_filesystem_error(env, "invalid", message);
+    return -1;
+  }
+  return descriptor;
+}
+
+static char* threadleaf_read_basename_argument(
+    napi_env env,
+    napi_value value,
+    const char* message) {
+  char* name = threadleaf_read_path_argument(env, value, message);
+  if (!name) {
+    return NULL;
+  }
+  if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0 || strchr(name, '/') != NULL) {
+    free(name);
+    threadleaf_filesystem_error(env, "invalid", message);
+    return NULL;
+  }
+  return name;
+}
+
+static napi_value threadleaf_descriptor_result(napi_env env, int descriptor) {
+  napi_value result;
+  if (napi_create_int32(env, descriptor, &result) != napi_ok) {
+    close(descriptor);
+    return NULL;
+  }
+  return result;
+}
+
+static napi_value threadleaf_open_directory_no_follow_at(
+    napi_env env,
+    napi_callback_info info) {
+  size_t argc = 2;
+  napi_value argv[2];
+  if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok || argc < 2) {
+    return threadleaf_filesystem_error(
+        env, "invalid", "Contained directory open requires a parent descriptor and basename.");
+  }
+#if defined(_WIN32)
+  return threadleaf_filesystem_error(
+      env, "unsupported", "Descriptor-relative directory open is unavailable on Windows.");
+#else
+  int parent = threadleaf_read_descriptor_argument(
+      env, argv[0], "Contained directory open requires a parent descriptor.");
+  if (parent < 0) return NULL;
+  char* name = threadleaf_read_basename_argument(
+      env, argv[1], "Contained directory open requires one safe basename.");
+  if (!name) return NULL;
+  int descriptor = openat(parent, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  int open_error = descriptor < 0 ? errno : 0;
+  free(name);
+  if (descriptor < 0) {
+    if (open_error == ENOENT) {
+      return threadleaf_filesystem_error(env, "missing", "Contained directory is missing.");
+    }
+    if (open_error == ELOOP || open_error == ENOTDIR) {
+      return threadleaf_filesystem_error(
+          env, "invalid", "Contained directory traversal refused a symlink or non-directory.");
+    }
+    return threadleaf_filesystem_error(env, "io", "Contained directory open failed.");
+  }
+  return threadleaf_descriptor_result(env, descriptor);
+#endif
+}
+
+static napi_value threadleaf_open_file_no_follow_at(
+    napi_env env,
+    napi_callback_info info) {
+  size_t argc = 3;
+  napi_value argv[3];
+  if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok || argc < 3) {
+    return threadleaf_filesystem_error(
+        env, "invalid", "Contained file open requires a directory, basename, and create flag.");
+  }
+#if defined(_WIN32)
+  return threadleaf_filesystem_error(
+      env, "unsupported", "Descriptor-relative file open is unavailable on Windows.");
+#else
+  int directory = threadleaf_read_descriptor_argument(
+      env, argv[0], "Contained file open requires a directory descriptor.");
+  if (directory < 0) return NULL;
+  char* name = threadleaf_read_basename_argument(
+      env, argv[1], "Contained file open requires one safe basename.");
+  if (!name) return NULL;
+  bool create = false;
+  if (napi_get_value_bool(env, argv[2], &create) != napi_ok) {
+    free(name);
+    return threadleaf_filesystem_error(
+        env, "invalid", "Contained file open requires a boolean create flag.");
+  }
+  int flags = create
+      ? O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW | O_CLOEXEC
+      : O_RDONLY | O_NOFOLLOW | O_CLOEXEC;
+  int descriptor = openat(directory, name, flags, S_IRUSR | S_IWUSR);
+  int open_error = descriptor < 0 ? errno : 0;
+  free(name);
+  if (descriptor < 0) {
+    if (open_error == EEXIST) {
+      return threadleaf_filesystem_error(env, "exists", "Contained file already exists.");
+    }
+    if (open_error == ENOENT) {
+      return threadleaf_filesystem_error(env, "missing", "Contained file is missing.");
+    }
+    if (open_error == ELOOP) {
+      return threadleaf_filesystem_error(env, "invalid", "Contained file open refused a symlink.");
+    }
+    return threadleaf_filesystem_error(env, "io", "Contained file open failed.");
+  }
+  return threadleaf_descriptor_result(env, descriptor);
+#endif
+}
+
+static napi_value threadleaf_rename_no_replace_at(
+    napi_env env,
+    napi_callback_info info) {
+  size_t argc = 4;
+  napi_value argv[4];
+  if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok || argc < 4) {
+    return threadleaf_filesystem_error(
+        env, "invalid", "Contained rename requires two directory descriptors and basenames.");
+  }
+#if defined(_WIN32)
+  return threadleaf_filesystem_error(
+      env, "unsupported", "Descriptor-relative no-clobber rename is unavailable on Windows.");
+#else
+  int source_directory = threadleaf_read_descriptor_argument(
+      env, argv[0], "Contained rename requires a source directory descriptor.");
+  if (source_directory < 0) return NULL;
+  char* source = threadleaf_read_basename_argument(
+      env, argv[1], "Contained rename requires one safe source basename.");
+  if (!source) return NULL;
+  int target_directory = threadleaf_read_descriptor_argument(
+      env, argv[2], "Contained rename requires a target directory descriptor.");
+  if (target_directory < 0) {
+    free(source);
+    return NULL;
+  }
+  char* target = threadleaf_read_basename_argument(
+      env, argv[3], "Contained rename requires one safe target basename.");
+  if (!target) {
+    free(source);
+    return NULL;
+  }
+#if defined(__linux__) && defined(SYS_renameat2)
+  int result = (int)syscall(
+      SYS_renameat2,
+      source_directory,
+      source,
+      target_directory,
+      target,
+      RENAME_NOREPLACE);
+#elif defined(__APPLE__)
+  int result = renameatx_np(
+      source_directory, source, target_directory, target, RENAME_EXCL);
+#else
+  int result = -1;
+  errno = ENOTSUP;
+#endif
+  int rename_error = result == 0 ? 0 : errno;
+  free(source);
+  free(target);
+  if (result != 0) {
+    if (rename_error == EEXIST) {
+      return threadleaf_filesystem_error(env, "exists", "Contained rename target exists.");
+    }
+    if (rename_error == ENOENT) {
+      return threadleaf_filesystem_error(env, "missing", "Contained rename source is missing.");
+    }
+    if (rename_error == EXDEV) {
+      return threadleaf_filesystem_error(
+          env, "cross-device", "Contained rename crossed filesystem devices.");
+    }
+    if (rename_error == EINVAL || rename_error == ENOTSUP || rename_error == EOPNOTSUPP ||
+        rename_error == ENOSYS) {
+      return threadleaf_filesystem_error(
+          env, "unsupported", "Contained no-clobber rename is unsupported.");
+    }
+    return threadleaf_filesystem_error(env, "io", "Contained no-clobber rename failed.");
+  }
+  napi_value undefined;
+  if (napi_get_undefined(env, &undefined) != napi_ok) return NULL;
+  return undefined;
 #endif
 }
 
@@ -1093,11 +1324,24 @@ static napi_value threadleaf_probe_anonymous_publish_no_name(
     return NULL;
   }
   return undefined;
+#elif defined(__APPLE__)
+  struct stat directory_stat;
+  if (fstat(directory_fd, &directory_stat) != 0 || !S_ISDIR(directory_stat.st_mode)) {
+    return threadleaf_filesystem_error(
+        env,
+        "invalid",
+        "No-clobber publication probe descriptor is not an open directory.");
+  }
+  napi_value undefined;
+  if (napi_get_undefined(env, &undefined) != napi_ok) {
+    return NULL;
+  }
+  return undefined;
 #else
   return threadleaf_filesystem_error(
       env,
       "unsupported",
-      "Anonymous publication probing is currently available only on Linux.");
+      "No-clobber publication probing is unavailable on this platform.");
 #endif
 }
 
@@ -1274,12 +1518,139 @@ static napi_value threadleaf_publish_buffer_no_replace(
     return NULL;
   }
   return undefined;
+#elif defined(__APPLE__)
+  struct stat directory_stat;
+  if (fstat(directory_fd, &directory_stat) != 0 || !S_ISDIR(directory_stat.st_mode)) {
+    free(target);
+    return threadleaf_filesystem_error(
+        env,
+        "invalid",
+        "No-clobber publication descriptor is not an open directory.");
+  }
+
+  struct stat target_stat;
+  if (fstatat(directory_fd, target, &target_stat, AT_SYMLINK_NOFOLLOW) == 0) {
+    free(target);
+    return threadleaf_filesystem_error(
+        env, "exists", "The no-clobber publication target already exists.");
+  }
+  if (errno != ENOENT) {
+    int target_error = errno;
+    free(target);
+    if (target_error == EACCES || target_error == EPERM) {
+      return threadleaf_filesystem_error(
+          env, "unsupported", "The target directory rejected no-clobber publication.");
+    }
+    return threadleaf_filesystem_error(
+        env, "io", "The no-clobber publication target could not be inspected.");
+  }
+
+  char staged_name[96];
+  int temporary_fd = -1;
+  for (int attempt = 0; attempt < 8 && temporary_fd < 0; attempt += 1) {
+    unsigned char random_bytes[16];
+    arc4random_buf(random_bytes, sizeof(random_bytes));
+    int staged_length = snprintf(
+        staged_name,
+        sizeof(staged_name),
+        ".threadleaf-attachment-stage-%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x.tmp",
+        random_bytes[0], random_bytes[1], random_bytes[2], random_bytes[3],
+        random_bytes[4], random_bytes[5], random_bytes[6], random_bytes[7],
+        random_bytes[8], random_bytes[9], random_bytes[10], random_bytes[11],
+        random_bytes[12], random_bytes[13], random_bytes[14], random_bytes[15]);
+    if (staged_length <= 0 || (size_t)staged_length >= sizeof(staged_name)) {
+      free(target);
+      return threadleaf_filesystem_error(
+          env, "io", "Could not allocate the no-clobber publication stage name.");
+    }
+    temporary_fd = openat(
+        directory_fd,
+        staged_name,
+        O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW | O_CLOEXEC,
+        S_IRUSR | S_IWUSR);
+    if (temporary_fd < 0 && errno != EEXIST) {
+      int open_error = errno;
+      free(target);
+      if (open_error == EACCES || open_error == EPERM) {
+        return threadleaf_filesystem_error(
+            env, "unsupported", "The target directory rejected no-clobber publication.");
+      }
+      return threadleaf_filesystem_error(
+          env, "io", "Could not create the no-clobber publication stage.");
+    }
+  }
+  if (temporary_fd < 0) {
+    free(target);
+    return threadleaf_filesystem_error(
+        env, "io", "Could not reserve a no-clobber publication stage name.");
+  }
+
+  size_t offset = 0;
+  int operation_error = 0;
+  while (offset < length) {
+    ssize_t written = write(temporary_fd, (const char*)bytes + offset, length - offset);
+    if (written < 0 && errno == EINTR) continue;
+    if (written <= 0) {
+      operation_error = written == 0 ? EIO : errno;
+      break;
+    }
+    offset += (size_t)written;
+  }
+  if (
+      operation_error == 0 &&
+      (fchmod(temporary_fd, S_IRUSR | S_IWUSR) != 0 || fsync(temporary_fd) != 0)) {
+    operation_error = errno;
+  }
+  if (close(temporary_fd) != 0 && operation_error == 0) {
+    operation_error = errno;
+  }
+  if (operation_error != 0) {
+    free(target);
+    return threadleaf_filesystem_error(
+        env,
+        "io",
+        "No-clobber publication staging failed; the hidden stage was retained for recovery.");
+  }
+
+  int result = renameatx_np(
+      directory_fd, staged_name, directory_fd, target, RENAME_EXCL);
+  int publish_error = result == 0 ? 0 : errno;
+  if (result == 0 && fsync(directory_fd) != 0) {
+    publish_error = errno;
+    result = -1;
+  }
+  free(target);
+  if (result != 0) {
+    if (publish_error == EEXIST) {
+      return threadleaf_filesystem_error(
+          env,
+          "exists",
+          "The no-clobber publication target won a race; the hidden stage was retained for recovery.");
+    }
+    if (publish_error == EXDEV) {
+      return threadleaf_filesystem_error(
+          env, "cross-device", "The no-clobber publication crossed filesystem devices.");
+    }
+    if (publish_error == EINVAL || publish_error == ENOTSUP ||
+        publish_error == EOPNOTSUPP) {
+      return threadleaf_filesystem_error(
+          env, "unsupported", "The filesystem rejected atomic no-clobber publication.");
+    }
+    return threadleaf_filesystem_error(
+        env,
+        "io",
+        "No-clobber publication did not complete; the hidden stage was retained for recovery.");
+  }
+
+  napi_value undefined;
+  if (napi_get_undefined(env, &undefined) != napi_ok) return NULL;
+  return undefined;
 #else
   free(target);
   return threadleaf_filesystem_error(
       env,
       "unsupported",
-      "Anonymous no-clobber publication is currently available only on Linux.");
+      "No-clobber publication is unavailable on this platform.");
 #endif
 }
 
@@ -1331,13 +1702,16 @@ napi_value napi_register_module_v1(napi_env env, napi_value exports) {
   napi_property_descriptor properties[] = {
       {"acquire", NULL, threadleaf_acquire, NULL, NULL, NULL, napi_default, NULL},
       {"renameNoReplace", NULL, threadleaf_rename_no_replace, NULL, NULL, NULL, napi_default, NULL},
+      {"openDirectoryNoFollowAt", NULL, threadleaf_open_directory_no_follow_at, NULL, NULL, NULL, napi_default, NULL},
+      {"openFileNoFollowAt", NULL, threadleaf_open_file_no_follow_at, NULL, NULL, NULL, napi_default, NULL},
+      {"renameNoReplaceAt", NULL, threadleaf_rename_no_replace_at, NULL, NULL, NULL, napi_default, NULL},
       {"probeAnonymousPublishNoName", NULL, threadleaf_probe_anonymous_publish_no_name, NULL, NULL, NULL, napi_default, NULL},
       {"publishBufferNoReplace", NULL, threadleaf_publish_buffer_no_replace, NULL, NULL, NULL, napi_default, NULL},
       {"platform", NULL, threadleaf_platform, NULL, NULL, NULL, napi_default, NULL},
       {"mechanism", NULL, threadleaf_mechanism, NULL, NULL, NULL, napi_default, NULL},
       {"napiVersion", NULL, threadleaf_napi_version, NULL, NULL, NULL, napi_default, NULL},
   };
-  if (napi_define_properties(env, exports, 7, properties) != napi_ok) {
+  if (napi_define_properties(env, exports, 10, properties) != napi_ok) {
     return NULL;
   }
   return exports;

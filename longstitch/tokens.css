@@ -1,6 +1,6 @@
-/* Runtime authority: this file
-   Longstitch is Threadleaf's canonical visual token source. The renderer
-   imports this file directly; do not duplicate these values in app CSS. */
+/* Runtime authority: this file.
+   Longstitch is Threadleaf's quiet, familiar workspace language. The renderer
+   imports these semantic tokens directly; do not duplicate them in app CSS. */
 
 /* Three self-hosted variable faces, with OFL files beside the font binaries.
    Literata carries reading and display, Hanken Grotesk carries interface text,
@@ -58,31 +58,35 @@
   font-family: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
   font-synthesis: none;
 
-  /* Pressroom paper, ink, rules, and interaction ink. */
-  --background-primary: #f6f1e6;
-  --background-primary-alt: #fdfaf1;
-  --background-secondary: #eae3d3;
-  --background-secondary-alt: #f0e9da;
-  --background-modifier-border: #d8cfba;
-  --background-modifier-border-hover: #b5a98d;
-  --background-modifier-hover: #efe8d9;
-  --background-modifier-error: #f6e3cf;
-  --text-normal: #241d13;
-  --text-muted: #554d3c;
-  --text-faint: #6d6450;
-  --color-accent: #1c5c8c;
+  /* Paper: neutral editor canvas, familiar hierarchy, Threadleaf violet. */
+  --background-primary: #f7f7f8;
+  --background-primary-alt: #ffffff;
+  --background-secondary: #ececef;
+  --background-secondary-alt: #f2f2f4;
+  --background-modifier-border: #d8d8dc;
+  --background-modifier-border-hover: #bdbdc4;
+  --background-modifier-hover: #e8e8ec;
+  --background-modifier-error: #f8e9df;
+  --text-normal: #2f3035;
+  --text-muted: #606169;
+  --text-faint: #7b7c84;
+  --color-accent: #6750a4;
   --interactive-accent: var(--color-accent);
-  --interactive-accent-hover: #14486f;
+  --interactive-accent-hover: #523b91;
   /* Some community themes read a bare --interactive as their general accent. */
   --interactive: var(--interactive-accent);
-  --text-accent: #14486f;
-  --text-accent-hover: #0d3653;
-  --text-error: #9c4a0e;
+  --text-accent: #574094;
+  --text-accent-hover: #432c7f;
+  --text-error: #a3480b;
   --icon-color: var(--text-muted);
 
   /* Type roles. */
-  --font-interface: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
-  --font-text: "Literata", Georgia, "Times New Roman", serif;
+  --font-interface:
+    "Hanken Grotesk", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --font-text:
+    "Hanken Grotesk", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
   --font-monospace: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
   --mono: var(--font-monospace);
 
@@ -102,17 +106,16 @@
   --line-strong: var(--background-modifier-border-hover);
   --accent: var(--interactive-accent);
   --accent-strong: var(--text-accent);
-  --accent-soft: color-mix(in srgb, var(--accent) 25%, var(--background-primary));
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, var(--background-primary));
   --signal: var(--text-error);
   --signal-soft: var(--background-modifier-error);
-  --shadow-small: 0 1px 0 rgb(64 50 27 / 7%), 0 2px 8px rgb(64 50 27 / 9%);
-  --shadow-large: 0 2px 4px rgb(64 50 27 / 9%), 0 12px 32px rgb(64 50 27 / 14%);
+  --shadow-small: 0 1px 2px rgb(24 24 27 / 8%), 0 4px 12px rgb(24 24 27 / 7%);
+  --shadow-large: 0 2px 6px rgb(24 24 27 / 10%), 0 18px 50px rgb(24 24 27 / 16%);
 
-  /* Bindery metal and thread. Brass carries headbands, kettle knots, and foil
-     frames. Thread draws the sewn navigator spine. Neither is action ink. */
-  --brass: #96682a;
-  --brass-strong: #7a521e;
-  --thread: #756746;
+  /* Legacy aliases remain for community CSS compatibility. */
+  --brass: var(--background-modifier-border-hover);
+  --brass-strong: var(--text-muted);
+  --thread: var(--interactive-accent);
 
   /* Callout type is carried only by this measured strong-ink channel, plus a
      distinct glyph and visible title. Pale paper layers remain shared. */
@@ -134,29 +137,29 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  /* Lampside walnut, parchment ink, rules, and interaction ink. */
-  --background-primary: #211a13;
-  --background-primary-alt: #2a2219;
-  --background-secondary: #18130d;
-  --background-secondary-alt: #1c1610;
-  --background-modifier-border: #40372a;
-  --background-modifier-border-hover: #5a4c35;
-  --background-modifier-hover: #2a2219;
-  --background-modifier-error: #4a2e18;
-  --text-normal: #f0e8d8;
-  --text-muted: #d0c5ab;
-  --text-faint: #a2977e;
-  --color-accent: #85b2dc;
+  /* Graphite: Obsidian-familiar depth with a clearer active-state violet. */
+  --background-primary: #202024;
+  --background-primary-alt: #27272b;
+  --background-secondary: #17171a;
+  --background-secondary-alt: #1c1c20;
+  --background-modifier-border: #36363c;
+  --background-modifier-border-hover: #505059;
+  --background-modifier-hover: #2d2d32;
+  --background-modifier-error: #4a2c1d;
+  --text-normal: #dedee3;
+  --text-muted: #a9a9b2;
+  --text-faint: #85858f;
+  --color-accent: #a99af5;
   --interactive-accent: var(--color-accent);
-  --interactive-accent-hover: #a9cbe9;
-  --text-accent: #a9cbe9;
-  --text-accent-hover: #c8def2;
-  --text-error: #e6a35f;
-  --shadow-small: 0 1px 0 rgb(0 0 0 / 30%), 0 2px 8px rgb(12 8 3 / 30%);
-  --shadow-large: 0 2px 6px rgb(12 8 3 / 35%), 0 14px 36px rgb(12 8 3 / 45%);
-  --brass: #c2924e;
-  --brass-strong: #dcb06a;
-  --thread: #a48d63;
+  --interactive-accent-hover: #c2b8ff;
+  --text-accent: #b9adff;
+  --text-accent-hover: #d1caff;
+  --text-error: #f0a15e;
+  --shadow-small: 0 1px 2px rgb(0 0 0 / 28%), 0 4px 12px rgb(0 0 0 / 22%);
+  --shadow-large: 0 2px 8px rgb(0 0 0 / 36%), 0 20px 52px rgb(0 0 0 / 46%);
+  --brass: var(--background-modifier-border-hover);
+  --brass-strong: var(--text-muted);
+  --thread: var(--interactive-accent);
 
   --callout-note-ink: #6070aa;
   --callout-abstract-ink: #7cd8cd;

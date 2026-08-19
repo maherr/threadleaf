@@ -349,6 +349,10 @@ describe("VaultKernel path policy", () => {
       "Folder/Nested/Inside.md",
       "Root.md",
     ]);
+    await expect(kernel.listWorkspaceDocumentPaths()).resolves.toEqual({
+      markdownPaths: ["Folder/Nested/Inside.md", "Root.md"],
+      canvasPaths: ["Folder/Nested/Board.canvas"],
+    });
     await expect(kernel.listVisiblePaths("../")).rejects.toBeInstanceOf(VaultPathError);
   });
 

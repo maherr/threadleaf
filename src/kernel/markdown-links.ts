@@ -676,6 +676,18 @@ const opaqueMarkdownBlockTypes = new Set(["code_block", "fence", "html_block"]);
 
 /** Uses the preview engine's block grammar while retaining original byte offsets. */
 function rendererOpaqueBlockRanges(content: string): MaskRange[] {
+  // MarkdownIt's block pass is materially more expensive than the physical
+  // scanners below. If none of its opaque constructs can occur, the empty
+  // result is exact and we can avoid tokenizing every ordinary prose line.
+  if (
+    !content.includes("```") &&
+    !content.includes("~~~") &&
+    !content.includes("<") &&
+    !content.includes("\t") &&
+    !content.includes("    ")
+  ) {
+    return [];
+  }
   const lineStarts = [0];
   for (const match of content.matchAll(/\r\n|\r|\n/gu)) {
     lineStarts.push((match.index ?? 0) + match[0].length);
@@ -967,6 +979,11 @@ function rendererReferenceDefinitionContexts(
   content: string,
   frontmatterRanges: readonly MaskRange[],
 ): RendererReferenceDefinitionContext[] {
+  // Every CommonMark reference definition contains a closing bracket
+  // immediately followed by a colon. Wiki links and ordinary inline links do
+  // not, so this necessary-marker gate avoids a full MarkdownIt block pass
+  // without recognizing or approximating the definition grammar itself.
+  if (!content.includes("]:")) return [];
   // Reading view renders frontmatter as source-only text before MarkdownIt
   // sees it. Keep those exact offsets but prevent a frontmatter line from
   // becoming a visible definition in this classifier.
@@ -1017,6 +1034,7 @@ function threadleafMathBlockRanges(
   content: string,
   frontmatterRanges: readonly MaskRange[],
 ): MaskRange[] {
+  if (!content.includes("$$") && !content.includes("\\[")) return [];
   const frontmatterMasked = applyMaskRanges(content, frontmatterRanges);
   const lineStarts = [0];
   for (const match of content.matchAll(/\r\n|\r|\n/gu)) {
@@ -1074,14 +1092,15 @@ export function maskMarkdownCodeAndComments(content: string): string {
   const rendererBlockRanges = rendererOpaqueBlockRanges(content);
   const mathBlockRanges = threadleafMathBlockRanges(content, frontmatterRanges);
   const blockRanges = [...rendererBlockRanges, ...mathBlockRanges];
-  const blockMask = applyMaskRanges(content, [...frontmatterRanges, ...blockRanges]);
-  const structuralRanges = mergeMaskRanges([
-    ...frontmatterRanges,
-    ...blockRanges,
-    ...htmlCommentRanges(blockMask),
-  ]);
-  const structuralMask = applyMaskRanges(content, structuralRanges);
-  return applyMaskRanges(content, [...structuralRanges, ...inlineCodeRanges(structuralMask)]);
+  const blockMaskRanges = [...frontmatterRanges, ...blockRanges];
+  const commentRanges = content.includes("<!--")
+    ? htmlCommentRanges(applyMaskRanges(content, blockMaskRanges))
+    : [];
+  const structuralRanges = mergeMaskRanges([...blockMaskRanges, ...commentRanges]);
+  const inlineRanges = content.includes("`")
+    ? inlineCodeRanges(applyMaskRanges(content, structuralRanges))
+    : [];
+  return applyMaskRanges(content, [...structuralRanges, ...inlineRanges]);
 }
 
 function parseMarkdownReferenceDefinitionCandidate(
@@ -1683,6 +1702,17 @@ export function parseMarkdownReferenceDefinitions(
     .map(({ label, valid, external, line }) => ({ label, valid, external, line }));
 }
 
+/** True when masked source has an opening bracket that is not one half of `[[`. */
+function mayContainMarkdownReferenceUsage(maskedContent: string): boolean {
+  let cursor = 0;
+  for (;;) {
+    const bracket = maskedContent.indexOf("[", cursor);
+    if (bracket === -1) return false;
+    if (maskedContent[bracket - 1] !== "[" && maskedContent[bracket + 1] !== "[") return true;
+    cursor = bracket + 1;
+  }
+}
+
 /** Finds visible full, collapsed, and shortcut reference-style usages. */
 export function parseMarkdownReferenceUsages(
   content: string,
@@ -1691,6 +1721,11 @@ export function parseMarkdownReferenceUsages(
   if (maskedContent.length !== content.length) {
     throw new Error("Masked Markdown must preserve source offsets.");
   }
+  // A reference usage necessarily starts with a single Markdown bracket.
+  // Notes containing only wiki links therefore have no candidate for the
+  // renderer-aligned reference pass, and returning the exact empty set avoids
+  // normalizing and tokenizing the whole note twice.
+  if (!mayContainMarkdownReferenceUsage(maskedContent)) return [];
   const lines = content.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
   const searchableLines = maskedContent.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
   const opaqueDefinitionLines = new Set<number>();
@@ -1773,7 +1808,12 @@ export function parseMarkdownLinks(
         : null;
       if (definition) links.push(definition);
     } else if (!opaqueReferenceLines.has(index + 1)) {
-      links.push(...parseLine(sourceLine, searchableLine, offset, index + 1));
+      // Every wiki link, Markdown link, and image syntax contains `[`. Avoid
+      // invoking the line parser for the millions of ordinary prose lines in
+      // a large vault; the reference-definition path above remains separate.
+      if (searchableLine.includes("[")) {
+        links.push(...parseLine(sourceLine, searchableLine, offset, index + 1));
+      }
     }
     offset += full.length;
   }

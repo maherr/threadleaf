@@ -74,6 +74,7 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
   private closePromise: Promise<void> | null = null;
   private environment: PluginRendererEnvironment | null = null;
   private environmentSnapshot: RuntimeSnapshot["pluginEnvironment"];
+  private vaultMarkdownPaths: string[] | null = null;
 
   private constructor(
     private readonly baseSnapshot: RuntimeSnapshot,
@@ -99,7 +100,13 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
   }
 
   getSnapshot(): Promise<RuntimeSnapshot> {
-    return this.enqueue(async () => this.mergeSnapshot());
+    return this.enqueue(async () => {
+      if (this.idleRuntime) {
+        this.idleRuntime.snapshot = await this.idleRuntime.runtime.getSnapshot();
+      }
+      await this.updateEverySlot((slot) => slot.runtime.getSnapshot());
+      return this.mergeSnapshot();
+    });
   }
 
   isClosed(): boolean {
@@ -133,6 +140,27 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
         cssChangeTriggered: false,
       };
       return this.mergeSnapshot(this.lastPluginId, operationSnapshot);
+    });
+  }
+
+  seedVaultMarkdownPaths(paths: readonly string[]): Promise<void> {
+    return this.enqueue(async () => {
+      const seeded = [...paths];
+      if (this.idleRuntime) {
+        if (!this.idleRuntime.runtime.seedVaultMarkdownPaths) {
+          throw new Error("The idle plugin runtime does not support vault inventory seeding.");
+        }
+        await this.idleRuntime.runtime.seedVaultMarkdownPaths(seeded);
+        this.idleRuntime.snapshot = await this.idleRuntime.runtime.getSnapshot();
+      }
+      await this.updateEverySlot(async (slot) => {
+        if (!slot.runtime.seedVaultMarkdownPaths) {
+          throw new Error("An active plugin runtime does not support vault inventory seeding.");
+        }
+        await slot.runtime.seedVaultMarkdownPaths(seeded);
+        return slot.runtime.getSnapshot();
+      });
+      this.vaultMarkdownPaths = seeded;
     });
   }
 
@@ -344,6 +372,14 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
     }
     const runtime = await this.options.create();
     try {
+      if (this.vaultMarkdownPaths) {
+        if (!runtime.seedVaultMarkdownPaths) {
+          throw new Error(
+            "A fresh isolated plugin runtime does not support vault inventory seeding.",
+          );
+        }
+        await runtime.seedVaultMarkdownPaths(this.vaultMarkdownPaths);
+      }
       let snapshot = await runtime.getSnapshot();
       if (this.environment) {
         if (!runtime.applyEnvironment) {

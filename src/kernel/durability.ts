@@ -1,19 +1,28 @@
 import { createHash, randomUUID } from "node:crypto";
-import { constants, promises as fs } from "node:fs";
+import {
+  type BigIntStats,
+  close as closeDescriptor,
+  constants,
+  promises as fs,
+  readFile as readDescriptor,
+  fstat as statDescriptor,
+  fsync as syncDescriptor,
+  writeFile as writeDescriptor,
+} from "node:fs";
 import path from "node:path";
 
 import * as nativeFilesystem from "../native-filesystem/index.js";
 
-// Linux is the only platform whose descriptor-relative path behavior is
-// exercised by this repository. Do not infer that Darwin's /dev/fd spelling
-// has identical openat-style guarantees. Unsupported platforms fail closed
-// for strict attachment mutations while ordinary writers remain portable.
+// Linux exposes held-directory children through /proc/self/fd. Darwin does
+// not provide equivalent child traversal through /dev/fd, so the native
+// boundary uses openat and renameatx_np against the same held descriptors.
 const descriptorRoot = process.platform === "linux" ? "/proc/self/fd" : null;
 const descriptorDirectoryFlags = constants.O_RDONLY | (constants.O_DIRECTORY ?? 0);
 const descriptorNoFollow = constants.O_NOFOLLOW ?? 0;
 
 export const strictContainmentSupported =
-  process.platform === "linux" && Boolean(constants.O_DIRECTORY && constants.O_NOFOLLOW);
+  (process.platform === "linux" || process.platform === "darwin") &&
+  Boolean(constants.O_DIRECTORY && constants.O_NOFOLLOW);
 
 /** Stable contract name for strict, source-retaining attachment publication. */
 export const FILE_PUBLISH_CAPABILITY = "FILE-PUBLISH-CAP-02" as const;
@@ -61,11 +70,10 @@ export class ContainedDurabilityError extends Error {
   }
 }
 
-function requireDescriptorContainment(operation: string): string {
-  if (!strictContainmentSupported || !descriptorRoot) {
+function requireDescriptorContainment(operation: string): void {
+  if (!strictContainmentSupported) {
     throw new ContainedDurabilityError(operation);
   }
-  return descriptorRoot;
 }
 
 function unsupportedPublishCapability(
@@ -109,21 +117,115 @@ function descriptorEntry(root: string, descriptor: number, name: string): string
   return path.join(root, String(descriptor), name);
 }
 
+function statRawDescriptor(descriptor: number): Promise<BigIntStats> {
+  return new Promise((resolve, reject) => {
+    statDescriptor(descriptor, { bigint: true }, (error, stats) => {
+      if (error) reject(error);
+      else resolve(stats);
+    });
+  });
+}
+
+function closeRawDescriptor(descriptor: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    closeDescriptor(descriptor, (error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+}
+
+function syncRawDescriptor(descriptor: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    syncDescriptor(descriptor, (error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+}
+
+function readRawDescriptor(descriptor: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    readDescriptor(descriptor, (error, bytes) => {
+      if (error) reject(error);
+      else resolve(bytes);
+    });
+  });
+}
+
+function writeRawDescriptor(descriptor: number, bytes: Uint8Array): Promise<void> {
+  return new Promise((resolve, reject) => {
+    writeDescriptor(descriptor, bytes, (error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+}
+
+function rawFileHandle(descriptor: number) {
+  let closed = false;
+  return {
+    fd: descriptor,
+    stat: (_options: { bigint: true }) => statRawDescriptor(descriptor),
+    readFile: () => readRawDescriptor(descriptor),
+    writeFile: (bytes: Uint8Array) => writeRawDescriptor(descriptor, bytes),
+    sync: () => syncRawDescriptor(descriptor),
+    close: async () => {
+      if (closed) return;
+      await closeRawDescriptor(descriptor);
+      closed = true;
+    },
+  };
+}
+
+type ContainedHandle = Awaited<ReturnType<typeof fs.open>> | ReturnType<typeof rawFileHandle>;
+
+function openDirectoryChild(parentDescriptor: number, name: string) {
+  if (process.platform === "darwin") {
+    return Promise.resolve(
+      rawFileHandle(nativeFilesystem.openDirectoryNoFollowAt(parentDescriptor, name)),
+    );
+  }
+  const root = descriptorRoot;
+  if (!root) throw new ContainedDurabilityError("Contained directory open");
+  return fs.open(
+    descriptorEntry(root, parentDescriptor, name),
+    descriptorDirectoryFlags | descriptorNoFollow,
+  );
+}
+
+function openFileChild(directoryDescriptor: number, name: string, create: boolean) {
+  if (process.platform === "darwin") {
+    return Promise.resolve(
+      rawFileHandle(nativeFilesystem.openFileNoFollowAt(directoryDescriptor, name, create)),
+    );
+  }
+  const root = descriptorRoot;
+  if (!root) throw new ContainedDurabilityError("Contained file open");
+  return fs.open(
+    descriptorEntry(root, directoryDescriptor, name),
+    create
+      ? constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | descriptorNoFollow
+      : constants.O_RDONLY | descriptorNoFollow,
+    0o600,
+  );
+}
+
 function claimQuarantinePath(filePath: string): string {
   return path.join(path.dirname(filePath), `.threadleaf-claim-${randomUUID()}.tmp`);
 }
 
 async function openContainedDirectory(directoryPath: string) {
-  const root = requireDescriptorContainment("Contained directory access");
+  requireDescriptorContainment("Contained directory access");
   const absolute = path.resolve(directoryPath);
   const filesystemRoot = path.parse(absolute).root;
-  let current = await fs.open(filesystemRoot, descriptorDirectoryFlags | descriptorNoFollow);
+  let current: ContainedHandle = await fs.open(
+    filesystemRoot,
+    descriptorDirectoryFlags | descriptorNoFollow,
+  );
   try {
     for (const segment of path.relative(filesystemRoot, absolute).split(path.sep).filter(Boolean)) {
-      const next = await fs.open(
-        descriptorEntry(root, current.fd, segment),
-        descriptorDirectoryFlags | descriptorNoFollow,
-      );
+      const next = await openDirectoryChild(current.fd, segment);
       await current.close();
       current = next;
     }
@@ -152,15 +254,18 @@ async function readContainedFileAt(
   directory: ContainedDirectory,
   fileName: string,
 ): Promise<FileSnapshot | null> {
-  const root = requireDescriptorContainment("Contained file read");
-  let file: Awaited<ReturnType<typeof fs.open>>;
+  requireDescriptorContainment("Contained file read");
+  let file: ContainedHandle;
   try {
-    file = await fs.open(
-      descriptorEntry(root, directory.fd, fileName),
-      constants.O_RDONLY | descriptorNoFollow,
-    );
+    file = await openFileChild(directory.fd, fileName, false);
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error.code === "ENOENT" || error.code === "missing")
+    ) {
+      return null;
+    }
     throw error;
   }
   try {
@@ -187,12 +292,8 @@ async function createContainedFileAt(
   fileName: string,
   bytes: Uint8Array,
 ): Promise<void> {
-  const root = requireDescriptorContainment("Contained file create");
-  const file = await fs.open(
-    descriptorEntry(root, directory.fd, fileName),
-    constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | descriptorNoFollow,
-    0o600,
-  );
+  requireDescriptorContainment("Contained file create");
+  const file = await openFileChild(directory.fd, fileName, true);
   try {
     await file.writeFile(bytes);
     await file.sync();
@@ -207,11 +308,8 @@ async function renameContainedAt(
   sourceName: string,
   targetName: string,
 ): Promise<void> {
-  const root = requireDescriptorContainment("Contained file claim");
-  nativeFilesystem.renameNoReplace(
-    descriptorEntry(root, directory.fd, sourceName),
-    descriptorEntry(root, directory.fd, targetName),
-  );
+  requireDescriptorContainment("Contained file claim");
+  nativeFilesystem.renameNoReplaceAt(directory.fd, sourceName, directory.fd, targetName);
   await directory.sync();
 }
 
@@ -333,14 +431,16 @@ async function retainContainedClaim(
   if (!retentionDirectory) return true;
   await fs.mkdir(retentionDirectory, { recursive: true, mode: 0o700 });
   const destinationDirectory = await openContainedDirectory(retentionDirectory);
-  const root = requireDescriptorContainment("Contained claim retention");
+  requireDescriptorContainment("Contained claim retention");
   try {
     for (let attempt = 0; attempt < 4; attempt += 1) {
       const retainedName = `.threadleaf-retained-${randomUUID()}.bin`;
       try {
-        nativeFilesystem.renameNoReplace(
-          descriptorEntry(root, sourceDirectory.fd, claimName),
-          descriptorEntry(root, destinationDirectory.fd, retainedName),
+        nativeFilesystem.renameNoReplaceAt(
+          sourceDirectory.fd,
+          claimName,
+          destinationDirectory.fd,
+          retainedName,
         );
         await sourceDirectory.sync();
         await destinationDirectory.sync();
@@ -433,19 +533,16 @@ async function settleContainedClaim(
 async function openContainedFile(
   filePath: string,
   flags: number,
-  mode?: number,
+  _mode?: number,
 ): Promise<{
-  file: Awaited<ReturnType<typeof fs.open>>;
-  directory: Awaited<ReturnType<typeof fs.open>>;
+  file: ContainedHandle;
+  directory: ContainedDirectory;
 }> {
-  const root = requireDescriptorContainment("Contained file access");
+  requireDescriptorContainment("Contained file access");
   const directory = await openContainedDirectory(path.dirname(filePath));
   try {
-    const file = await fs.open(
-      descriptorEntry(root, directory.fd, path.basename(filePath)),
-      flags | descriptorNoFollow,
-      mode,
-    );
+    const create = Boolean(flags & constants.O_CREAT);
+    const file = await openFileChild(directory.fd, path.basename(filePath), create);
     return { file, directory };
   } catch (error) {
     await directory.close().catch(() => undefined);
@@ -458,7 +555,13 @@ export async function readContainedFile(filePath: string): Promise<FileSnapshot 
   try {
     opened = await openContainedFile(filePath, constants.O_RDONLY);
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error.code === "ENOENT" || error.code === "missing")
+    ) {
+      return null;
+    }
     throw error;
   }
   try {
@@ -530,7 +633,13 @@ export async function moveContainedFileAside(
     try {
       await createContainedFileAt(directory, rollbackName, target.bytes);
     } catch (error) {
-      if (error instanceof Error && "code" in error && error.code === "EEXIST") return false;
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        (error.code === "EEXIST" || error.code === "exists")
+      ) {
+        return false;
+      }
       throw error;
     }
     const rollback = await readContainedFileAt(directory, rollbackName);
@@ -869,7 +978,7 @@ async function removeExpectedContainedFileInternal(
               !(
                 restoreError instanceof Error &&
                 "code" in restoreError &&
-                restoreError.code === "EEXIST"
+                (restoreError.code === "EEXIST" || restoreError.code === "exists")
               )
             ) {
               throw restoreError;
@@ -887,7 +996,13 @@ async function removeExpectedContainedFileInternal(
           try {
             await createContainedFileAt(directory, sourceName, claimed.bytes);
           } catch (error) {
-            if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) {
+            if (
+              !(
+                error instanceof Error &&
+                "code" in error &&
+                (error.code === "EEXIST" || error.code === "exists")
+              )
+            ) {
               throw error;
             }
           }
@@ -905,7 +1020,13 @@ async function removeExpectedContainedFileInternal(
           try {
             await createContainedFileAt(directory, sourceName, claimed.bytes);
           } catch (error) {
-            if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) {
+            if (
+              !(
+                error instanceof Error &&
+                "code" in error &&
+                (error.code === "EEXIST" || error.code === "exists")
+              )
+            ) {
               throw error;
             }
           }

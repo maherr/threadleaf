@@ -4,7 +4,10 @@ export interface WorkspaceTreeIndex {
   childrenByParent: ReadonlyMap<string | null, readonly WorkspaceTreeEntry[]>;
   filePaths: ReadonlySet<string>;
   folderPaths: ReadonlySet<string>;
-  pathLocations: ReadonlyMap<string, WorkspaceTreePathLocation>;
+  pathLocations: {
+    get(path: string): WorkspaceTreePathLocation | undefined;
+    has(path: string): boolean;
+  };
 }
 
 export interface WorkspaceVisiblePathsInput {
@@ -132,42 +135,43 @@ function childEntries(
 export function buildWorkspaceTreeIndex(input: WorkspaceVisiblePathsInput): WorkspaceTreeIndex {
   const childrenByParent = new Map<string | null, WorkspaceTreeEntry[]>();
   const foldersByPath = new Map<string, Extract<WorkspaceTreeEntry, { kind: "folder" }>>();
-  const folderPaths = new Set(
+  const candidateFolderPaths = new Set(
     input.folders.filter((folderPath) => publicPathSegments(folderPath) !== null),
   );
+  const folderPaths = new Set(
+    [...candidateFolderPaths].filter((folderPath) => {
+      const segments = publicPathSegments(folderPath) ?? [];
+      return segments
+        .slice(0, -1)
+        .every((_, index) => candidateFolderPaths.has(segments.slice(0, index + 1).join("/")));
+    }),
+  );
   const filePaths = new Set(
-    input.files.filter((filePath) => publicPathSegments(filePath) !== null),
+    input.files.filter((filePath) => {
+      const segments = publicPathSegments(filePath);
+      if (!segments) return false;
+      const parentPath = segments.length > 1 ? segments.slice(0, -1).join("/") : null;
+      return parentPath === null || folderPaths.has(parentPath);
+    }),
   );
 
-  const orderedFolders = [...folderPaths].sort((left, right) => {
-    const depthComparison = left.split("/").length - right.split("/").length;
-    return depthComparison !== 0 ? depthComparison : compareWorkspaceInventoryPaths(left, right);
-  });
-  for (const folderPath of orderedFolders) {
+  for (const folderPath of folderPaths) {
     const segments = publicPathSegments(folderPath);
     if (!segments) continue;
     const title = segments.at(-1);
     if (!title) continue;
     const parentPath = segments.length > 1 ? segments.slice(0, -1).join("/") : null;
-    if (parentPath !== null && !folderPaths.has(parentPath)) {
-      folderPaths.delete(folderPath);
-      continue;
-    }
     const folder = { kind: "folder" as const, path: folderPath, title, childCount: 0 };
     foldersByPath.set(folderPath, folder);
     childEntries(childrenByParent, parentPath).push(folder);
   }
 
-  for (const filePath of [...filePaths]) {
+  for (const filePath of filePaths) {
     const segments = publicPathSegments(filePath);
     if (!segments) continue;
     const baseName = segments.at(-1);
     if (!baseName) continue;
     const parentPath = segments.length > 1 ? segments.slice(0, -1).join("/") : null;
-    if (parentPath !== null && !folderPaths.has(parentPath)) {
-      filePaths.delete(filePath);
-      continue;
-    }
     const lowerName = baseName.toLowerCase();
     const kind = lowerName.endsWith(".md")
       ? "note"
@@ -190,25 +194,27 @@ export function buildWorkspaceTreeIndex(input: WorkspaceVisiblePathsInput): Work
     folder.childCount = childrenByParent.get(folder.path)?.length ?? 0;
   }
 
-  const entryLocations = new Map<string, TreeEntryLocation>();
-  for (const [parentPath, entries] of childrenByParent) {
-    for (const [offset, entry] of entries.entries()) {
-      entryLocations.set(entry.path, { parentPath, offset });
-    }
-  }
-
-  const pathLocations = new Map<string, WorkspaceTreePathLocation>();
-  for (const filePath of filePaths) {
+  const locationForPath = (filePath: string): WorkspaceTreePathLocation | undefined => {
+    if (!filePaths.has(filePath)) return undefined;
     const pages: TreeEntryLocation[] = [];
-    let current = entryLocations.get(filePath);
-    while (current) {
-      pages.push(current);
-      current = current.parentPath === null ? undefined : entryLocations.get(current.parentPath);
+    let currentPath = filePath;
+    for (;;) {
+      const segments = publicPathSegments(currentPath);
+      if (!segments) return undefined;
+      const parentPath = segments.length > 1 ? segments.slice(0, -1).join("/") : null;
+      const entries = childrenByParent.get(parentPath) ?? [];
+      const offset = entries.findIndex((entry) => entry.path === currentPath);
+      if (offset < 0) return undefined;
+      pages.push({ parentPath, offset });
+      if (parentPath === null) break;
+      currentPath = parentPath;
     }
-    if (pages.length > 0) {
-      pathLocations.set(filePath, { path: filePath, pages: pages.reverse() });
-    }
-  }
+    return { path: filePath, pages: pages.reverse() };
+  };
+  const pathLocations = {
+    get: locationForPath,
+    has: (filePath: string) => locationForPath(filePath) !== undefined,
+  };
 
   return { childrenByParent, filePaths, folderPaths, pathLocations };
 }

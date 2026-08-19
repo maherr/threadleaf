@@ -14,9 +14,17 @@ const budgetMs = Number.parseInt(process.env.THREADLEAF_STARTUP_BUDGET_MS ?? "50
 const readyBudgetMs = process.env.THREADLEAF_STARTUP_READY_BUDGET_MS
   ? Number.parseInt(process.env.THREADLEAF_STARTUP_READY_BUDGET_MS, 10)
   : null;
+const exitBudgetMs = Number.parseInt(process.env.THREADLEAF_STARTUP_EXIT_BUDGET_MS ?? "10000", 10);
+const postReadyWaitMs = Number.parseInt(
+  process.env.THREADLEAF_STARTUP_POST_READY_WAIT_MS ?? "0",
+  10,
+);
 const screenshotDirectory = process.env.THREADLEAF_STARTUP_SCREENSHOT_DIR;
 const testRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-startup-readiness-"));
-const userDataPath = path.join(testRoot, "user-data");
+const configuredUserDataPath = process.env.THREADLEAF_STARTUP_USER_DATA_DIR
+  ? path.resolve(process.env.THREADLEAF_STARTUP_USER_DATA_DIR)
+  : null;
+const userDataPath = configuredUserDataPath ?? path.join(testRoot, "user-data");
 const output = [];
 let child;
 let cdp;
@@ -158,7 +166,18 @@ async function waitForRenderedVault(deadline) {
       };
     })()`);
     const activePath = state.snapshot?.startup?.targetPath ?? state.snapshot?.vault?.path;
-    if (state.bodyVisible && state.vaultName === expectedName && activePath === configuredVault) {
+    const coherentState =
+      state.snapshot?.startup?.phase === "opening"
+        ? state.runtimeState === "Opening"
+        : state.snapshot?.workspace?.state === "warming"
+          ? state.runtimeState === "Ready, indexing"
+          : state.runtimeState === "Ready";
+    if (
+      state.bodyVisible &&
+      state.vaultName === expectedName &&
+      activePath === configuredVault &&
+      coherentState
+    ) {
       return state;
     }
     await delay(25);
@@ -302,6 +321,11 @@ try {
     readyBudgetMs === null || (Number.isFinite(readyBudgetMs) && readyBudgetMs > 0),
     "Full-ready budget must be a positive number when configured.",
   );
+  assert(Number.isFinite(exitBudgetMs) && exitBudgetMs > 0, "Exit budget must be positive.");
+  assert(
+    Number.isFinite(postReadyWaitMs) && postReadyWaitMs >= 0,
+    "Post-ready wait must be zero or positive.",
+  );
   await fs.access(electronPath);
   await fs.mkdir(userDataPath, { recursive: true });
   const port = await availablePort();
@@ -431,27 +455,31 @@ try {
   }
   const virtualFiles = fullReadyMs === null ? null : await verifyVirtualFileWindow();
 
-  console.log(
-    JSON.stringify({
-      budgetMs,
-      readyBudgetMs,
-      readyMs,
-      fullReadyMs,
-      state: opening ? "opening" : warming ? "warming" : "ready",
-      targetName: path.basename(configuredVault) || configuredVault,
-      screenshots,
-      virtualFiles,
-    }),
-  );
+  const result = {
+    budgetMs,
+    readyBudgetMs,
+    exitBudgetMs,
+    postReadyWaitMs,
+    readyMs,
+    fullReadyMs,
+    userDataMode: configuredUserDataPath ? "reused-external" : "fresh-ephemeral",
+    state: opening ? "opening" : warming ? "warming" : "ready",
+    targetName: path.basename(configuredVault) || configuredVault,
+    screenshots,
+    virtualFiles,
+  };
+  if (postReadyWaitMs > 0) await delay(postReadyWaitMs);
+  const closingStartedAt = Date.now();
   await evaluate("setTimeout(() => window.close(), 0); true");
   const exit = await Promise.race([
     exited,
-    delay(10_000).then(() => ({ code: null, signal: "timeout" })),
+    delay(exitBudgetMs).then(() => ({ code: null, signal: "timeout" })),
   ]);
   assert(
     exit.code === 0,
     `Electron did not exit cleanly: ${JSON.stringify(exit)}\n${output.join("")}`,
   );
+  console.log(JSON.stringify({ ...result, processExitMs: Date.now() - closingStartedAt }));
 } catch (error) {
   const detail = error instanceof Error ? error.message : String(error);
   const logs = output.join("").trim();

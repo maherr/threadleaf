@@ -11,6 +11,7 @@ import {
   Setting,
   SettingGroup,
   SettingPage,
+  SettingTab,
   type SliderComponent,
   type TextComponent,
   type ToggleComponent,
@@ -310,6 +311,114 @@ describe("Obsidian settings compatibility", () => {
     component.inputEl.dispatchEvent(new dom.window.Event("input"));
     expect(changes).toEqual(["opaque", null]);
     dom.window.close();
+  });
+});
+
+describe("Obsidian declarative settings compatibility", () => {
+  it("renders controls, validates writes, refreshes predicates, and navigates pages", async () => {
+    const dom = new JSDOM("<!doctype html><body></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    vi.stubGlobal("document", dom.window.document);
+    const values = new Map<string, unknown>([
+      ["enabled", false],
+      ["threshold", 2],
+    ]);
+    const writes: Array<[string, unknown]> = [];
+    const app = {
+      secretStorage: {
+        getSecret: () => null,
+        setSecret: vi.fn(),
+      },
+      vault: {
+        getConfig: (key: string) => values.get(key),
+        setConfig: (key: string, value: unknown) => {
+          values.set(key, value);
+          writes.push([key, value]);
+        },
+      },
+    } as never;
+    class FixtureTab extends SettingTab {
+      override getSettingDefinitions(): unknown[] {
+        return [
+          {
+            name: "Enable helpers",
+            aliases: ["drawing"],
+            control: { type: "toggle", key: "enabled" },
+          },
+          {
+            name: "Canvas threshold",
+            visible: () => values.get("enabled") === true,
+            control: {
+              type: "number",
+              key: "threshold",
+              validate: async (value: number) =>
+                value < 1 || value > 8 ? "Choose a value from 1 to 8." : undefined,
+            },
+          },
+          {
+            type: "page",
+            name: "Advanced canvas",
+            items: [{ name: "Native renderer", control: { type: "toggle", key: "enabled" } }],
+          },
+        ];
+      }
+    }
+    try {
+      const tab = new FixtureTab(app);
+      tab.update();
+      tab.renderSettingDefinitions();
+      const enabledRow = tab.containerEl.querySelector<HTMLElement>(
+        '[data-setting-name="Enable helpers"]',
+      );
+      const thresholdRow = tab.containerEl.querySelector<HTMLElement>(
+        '[data-setting-name="Canvas threshold"]',
+      );
+      expect(enabledRow?.dataset.settingSearch).toContain("drawing");
+      expect(thresholdRow?.hidden).toBe(true);
+
+      const enabledToggle = enabledRow?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+      if (!enabledToggle) return;
+      enabledToggle.checked = true;
+      enabledToggle.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(writes).toContainEqual(["enabled", true]);
+      expect(thresholdRow?.hidden).toBe(false);
+
+      const thresholdInput = thresholdRow?.querySelector<HTMLInputElement>('input[type="number"]');
+      expect(thresholdInput).not.toBeNull();
+      if (!thresholdInput) return;
+      thresholdInput.value = "12";
+      thresholdInput.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(thresholdRow?.querySelector(".setting-item-error")?.textContent).toBe(
+        "Choose a value from 1 to 8.",
+      );
+      expect(writes).not.toContainEqual(["threshold", 12]);
+
+      thresholdInput.value = "4";
+      thresholdInput.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(writes).toContainEqual(["threshold", 4]);
+      expect(thresholdRow?.querySelector(".setting-item-error")).toBeNull();
+
+      const pageRow = [...tab.containerEl.querySelectorAll<HTMLElement>(".setting-item-page")].find(
+        (element) => element.textContent?.includes("Advanced canvas"),
+      );
+      pageRow?.click();
+      expect(tab.containerEl.querySelector(".setting-page-titlebar")?.textContent).toContain(
+        "Advanced canvas",
+      );
+      expect(tab.containerEl.querySelector('[data-setting-name="Native renderer"]')).not.toBeNull();
+      tab.containerEl.querySelector<HTMLButtonElement>(".setting-page-back")?.click();
+      expect(tab.containerEl.querySelector('[data-setting-name="Enable helpers"]')).not.toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+      dom.window.close();
+    }
   });
 });
 

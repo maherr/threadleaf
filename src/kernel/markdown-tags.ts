@@ -1,6 +1,8 @@
 import { isValidTagBody, tagKey } from "../shared/tags";
 import {
   maskMarkdownCodeAndComments,
+  type ParsedMarkdownLink,
+  type ParsedMarkdownReferenceUsage,
   parseMarkdownLinks,
   parseMarkdownReferenceUsages,
 } from "./markdown-links";
@@ -30,12 +32,24 @@ export interface ParsedMarkdownTag {
 
 const inlineTag = /(?:^|[\s(])#([\p{L}\p{M}\p{N}_/-]+)/gu;
 
-function protectedMarkdownRanges(content: string, maskedContent: string): TagMaskRange[] {
-  const ranges: TagMaskRange[] = parseMarkdownLinks(content, maskedContent).map((link) => ({
+export interface MarkdownTagProtection {
+  links?: readonly ParsedMarkdownLink[];
+  referenceUsages?: readonly ParsedMarkdownReferenceUsage[];
+}
+
+function protectedMarkdownRanges(
+  content: string,
+  maskedContent: string,
+  protection: MarkdownTagProtection,
+): TagMaskRange[] {
+  const links = protection.links ?? parseMarkdownLinks(content, maskedContent);
+  const referenceUsages =
+    protection.referenceUsages ?? parseMarkdownReferenceUsages(content, maskedContent);
+  const ranges: TagMaskRange[] = links.map((link) => ({
     start: link.position,
     end: link.end,
   }));
-  for (const usage of parseMarkdownReferenceUsages(content, maskedContent)) {
+  for (const usage of referenceUsages) {
     if (usage.sourceRanges && usage.sourceRanges.length > 0) {
       ranges.push(...usage.sourceRanges);
     } else {
@@ -59,11 +73,12 @@ function offsetIsProtected(
 export function parseInlineMarkdownTags(
   content: string,
   maskedContent = maskMarkdownCodeAndComments(content),
+  protection: MarkdownTagProtection = {},
 ): ParsedMarkdownTag[] {
   if (maskedContent.length !== content.length) {
     throw new Error("Masked Markdown must preserve source offsets.");
   }
-  const protectedRanges = protectedMarkdownRanges(content, maskedContent);
+  const protectedRanges = protectedMarkdownRanges(content, maskedContent, protection);
   const tags: ParsedMarkdownTag[] = [];
   let rangeCursor = 0;
   for (const match of maskedContent.matchAll(inlineTag)) {

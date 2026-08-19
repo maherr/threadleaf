@@ -47,7 +47,7 @@ await writeFile(
   `const fs = require("node:fs");\nconst path = require("node:path");\nconst addon = require(process.env.THREADLEAF_NATIVE_PROBE_PATH);\nif (addon.napiVersion() !== "10") throw new Error("native addon did not report pinned Node-API version 10");\nif (typeof addon.renameNoReplace !== "function") throw new Error("native addon lacks no-clobber rename");\nconst targetPlatform = process.env.THREADLEAF_NATIVE_TARGET_PLATFORM;\nconst expected = targetPlatform === "win32" ? ["windows", "LockFileEx"] : ["posix", "flock"];\nif (addon.platform() !== expected[0] || addon.mechanism() !== expected[1]) throw new Error("native addon mechanism does not match the Electron target");\nfs.writeFileSync(process.env.THREADLEAF_NATIVE_PROBE_LOCK, "electron target probe\\n", { mode: 0o600 });\nconst lock = addon.acquire(process.env.THREADLEAF_NATIVE_PROBE_LOCK);\nlock.assertPathIdentity();\nlock.close();\nconst root = path.dirname(process.env.THREADLEAF_NATIVE_PROBE_LOCK);\nconst source = path.join(root, "rename-source");\nconst target = path.join(root, "rename-target");\nconst claimant = path.join(root, "rename-claimant");\nlet noClobberRename = "unsupported";\nlet collisionPreserved = false;\nif (targetPlatform === "linux") {\n  fs.writeFileSync(source, "source");\n  addon.renameNoReplace(source, target);\n  fs.writeFileSync(claimant, "claimant");\n  let collisionCode = null;\n  try { addon.renameNoReplace(claimant, target); } catch (error) { collisionCode = error && error.code; }\n  collisionPreserved = collisionCode === "exists" && fs.readFileSync(target, "utf8") === "source" && fs.readFileSync(claimant, "utf8") === "claimant" && !fs.existsSync(source);\n  if (!collisionPreserved) throw new Error("native no-clobber rename collision changed a claimant");\n  noClobberRename = "renameat2-noreplace";\n} else {\n  let unsupportedCode = null;\n  try { addon.renameNoReplace(source, target); } catch (error) { unsupportedCode = error && error.code; }\n  if (unsupportedCode !== "unsupported") throw new Error("non-Linux no-clobber rename did not fail closed");\n  collisionPreserved = true;\n}\nprocess.stdout.write(JSON.stringify({ loaded: true, acquired: true, asserted: true, released: true, napiVersion: addon.napiVersion(), noClobberRename, collisionPreserved }) + "\\n");\n`,
   "utf8",
 );
-const probeSource = (await readFile(probePath, "utf8"))
+let probeSource = (await readFile(probePath, "utf8"))
   .replace(
     "const addon = require(process.env.THREADLEAF_NATIVE_PROBE_PATH);\n",
     'const addon = require(process.env.THREADLEAF_NATIVE_PROBE_PATH);\nconst hostNapiVersion = Number(process.versions.napi);\nif (!Number.isInteger(hostNapiVersion) || hostNapiVersion < 10) throw new Error("Electron host does not provide Node-API version 10");\n',
@@ -98,16 +98,33 @@ if (targetPlatform === "linux") {
 } else {
   let unsupportedCode = null;
   try { addon.probeAnonymousPublishNoName(0); } catch (error) { unsupportedCode = error && error.code; }
-  if (unsupportedCode !== "unsupported") throw new Error("non-Linux anonymous publication probe did not fail closed");
+  if (unsupportedCode !== "unsupported") throw new Error("unsupported-platform publication probe did not fail closed");
   unsupportedCode = null;
   try { addon.publishBufferNoReplace(0, "anonymous-published.bin", Buffer.alloc(0)); } catch (error) { unsupportedCode = error && error.code; }
-  if (unsupportedCode !== "unsupported") throw new Error("non-Linux anonymous publication did not fail closed");
+  if (unsupportedCode !== "unsupported") throw new Error("unsupported-platform publication did not fail closed");
   anonymousExactBytes = true;
   anonymousCollisionPreserved = true;
   anonymousNoStage = true;
   anonymousProbeNoName = true;
 }
 process.stdout.write(JSON.stringify({ loaded: true, acquired: true, asserted: true, released: true, napiVersion: addon.napiVersion(), hostNapiVersion, noClobberRename, collisionPreserved, anonymousProbe, anonymousProbeNoName, anonymousPublish, anonymousExactBytes, anonymousCollisionPreserved, anonymousNoStage }) + "\\n");`,
+  );
+probeSource = probeSource
+  .replaceAll(
+    'if (targetPlatform === "linux") {',
+    'if (targetPlatform === "linux" || targetPlatform === "darwin") {',
+  )
+  .replace(
+    'noClobberRename = "renameat2-noreplace";',
+    'noClobberRename = targetPlatform === "linux" ? "renameat2-noreplace" : "renameatx-excl";',
+  )
+  .replace(
+    'anonymousProbe = "otmpfile-no-name";',
+    'anonymousProbe = targetPlatform === "linux" ? "otmpfile-no-name" : "held-directory-no-name";',
+  )
+  .replace(
+    'anonymousPublish = "otmpfile-linkat";',
+    'anonymousPublish = targetPlatform === "linux" ? "otmpfile-linkat" : "staged-renameatx-excl";',
   );
 await writeFile(probePath, `${probeSource}process.exit(0);\n`, "utf8");
 

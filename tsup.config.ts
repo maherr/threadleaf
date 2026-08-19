@@ -19,7 +19,7 @@ const shared = {
   format: "cjs" as const,
   platform: "node" as const,
   target: "node22",
-  external: ["electron"],
+  external: ["electron", "node:sqlite"],
   splitting: false,
   sourcemap: true,
 };

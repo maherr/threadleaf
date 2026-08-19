@@ -86,6 +86,21 @@ set before distribution or enablement. It adds bounded trusted activation, regis
 timeout, and disposable-vault evidence without treating static inspection as a sandbox. Its
 candidate level stops at Level 3 because a named workflow is required for Level 4.
 
+## Declarative plugin settings fixture
+
+The compatibility host supports the public Obsidian 1.13 `getSettingDefinitions()` path alongside
+the established imperative `display()` settings lifecycle. A non-empty declaration takes
+precedence. Empty or absent declarations leave the legacy implementation authoritative. The host
+samples declarations once at tab registration for bounded search metadata and again when the tab
+updates; a declaration that performs I/O remains plugin-authored behavior outside the host contract.
+
+The unit fixture covers toggles, dropdowns, text, textarea, number, file, folder, slider, color, and
+secret controls; dynamic visibility and disabled state; groups; list add, delete, and reorder;
+nested page navigation and back; accepted persistence; rejected validation with inline error; and
+legacy suppression only when a non-empty declaration exists. Custom render and action callbacks
+retain plugin authority and must save explicitly. The host does not claim every future definition
+variant or pixel parity with another settings renderer.
+
 ## Native note transclusion fixture
 
 Reading view recognizes wiki and Markdown note embeds without changing source bytes. The verified
@@ -178,27 +193,28 @@ destination is retained as opaque evidence and blocks publication rather than re
 rewrite; a definitely unrelated continuation remains byte-identical and nonblocking.
 The strict publish gate is `FILE-PUBLISH-CAP-02`: vault open/create performs a non-mutating native
 binding, descriptor-containment, and destination-device preflight only. For an already-existing,
-contained exact destination parent, Threadleaf then uses its held directory descriptor to create an
-unnamed `O_TMPFILE` inode, write one bounded byte, apply mode 0600, fsync the inode and directory,
-and close it before it creates a journal, evidence, target, or Markdown change. This no-name probe
-proves anonymous-inode create, write, and durability on the exact target filesystem and directory
-without exposing a vault pathname. It cannot prove `linkat` at the actual basename without creating
-a visible name. The final absent-name `linkat` and directory sync therefore remain the authoritative
-publication and no-overwrite receipt before Markdown mutation. No target-side staging pathname is
-exposed, and an existing claimant is never replaced.
+contained exact destination parent, Linux uses its held directory descriptor to create an unnamed
+`O_TMPFILE` inode, write one bounded byte, apply mode 0600, fsync the inode and directory, and close
+it before it creates a journal, evidence, target, or Markdown change. The final absent-name `linkat`
+and directory sync are the authoritative Linux publication and no-overwrite receipt before Markdown
+mutation. macOS proves the held directory without creating a name, then exclusively creates and
+fsyncs a random mode-0600 hidden stage through that descriptor and publishes it with
+`renameatx_np(RENAME_EXCL)`. A successful macOS publication leaves no stage residue; a late failure
+or target race retains the stage as recovery evidence. On both platforms an existing claimant is
+never replaced.
 Strict publication requires an already-existing contained destination parent. A missing or unsafe
 parent, unavailable publication capability, or cross-device layout fails as a typed conflict before
 Threadleaf creates a journal, evidence, target, or Markdown change. When link rewrites are required,
 every rewritten note parent and the receipt-gated private rollback claim directory need the
 descriptor and same-device receipt, not the no-name probe, because they do not publish the
 attachment. A cross-device layout fails before publication.
-There is no exclusive-copy fallback because a crash could expose a partial final target. ReFS-like
-unsupported anonymous-inode or link behavior, `EXDEV`, durability failure, unsupported
-descriptor/reparse behavior, and Windows sharing violations are typed unsupported capability states
-before Markdown mutation. A final native capability failure after durable intent returns
+There is no unchecked final-target copy fallback because a crash could expose partial final bytes.
+Unsupported anonymous-inode, exclusive-rename, or link behavior, `EXDEV`, durability failure,
+unsupported descriptor/reparse behavior, and Windows sharing violations are typed unsupported
+capability states before Markdown mutation. A final native capability failure after durable intent returns
 `attachment-publish-unavailable`, leaves source and Markdown bytes unchanged, and retains the
 private journal and evidence for recovery. It does not claim that the exact target is absent, because
-`linkat` may have succeeded before a later durability failure.
+the exact publication primitive may have succeeded before a later durability failure.
 Strict attachment claims are moved through no-clobber retention or left as recoverable evidence;
 they are never unlinked through a mutable pathname. Portable private stages use bounded
 high-entropy claims and clean only after exact verification under the documented ordinary-editor
@@ -305,7 +321,7 @@ The acceptance test must exercise the bundle through the same loader used by Ele
 
 The production renderer fixture registers an `ItemView`, opens it through the shared workspace
 model, and proves that its title, content, action icon, layout bounds, theme, and close lifecycle
-cross the main-renderer and compatibility-renderer seam. The unchanged Excalidraw 2.25.3 bundle is
+cross the main-renderer and compatibility-renderer seam. The unchanged Excalidraw 2.26.4 bundle is
 then sampled through that same path. Its verified workflow opens an existing Excalidraw Markdown
 document, mutates the scene, saves with the file revision through the recoverable writer, closes and
 detaches the plugin leaf, and reopens the exact persisted scene. A second verified workflow runs the

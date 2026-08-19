@@ -722,6 +722,14 @@ export class Vault extends Events {
     }
   }
 
+  async seedMarkdownPaths(paths: readonly string[]): Promise<void> {
+    await this.readerInitialization;
+    const now = Date.now();
+    this.readerFiles = paths.map(
+      (filePath) => new TFile(filePath, this, { ctime: now, mtime: now, size: 0 }),
+    );
+  }
+
   on(name: string, callback: VaultEventCallback, context?: unknown): VaultEventRef {
     const bound = context ? callback.bind(context) : callback;
     const callbacks = this.listeners.get(name) ?? new Set<VaultEventCallback>();
@@ -746,11 +754,13 @@ export class Vault extends Events {
   }
 
   getFiles(): TFile[] {
+    if (this.readerFiles) {
+      return [...this.readerFiles];
+    }
     if (this.#reader) {
       if (!this.readerFiles) {
         throw new Error("The compatibility vault file inventory has not been initialized.");
       }
-      return [...this.readerFiles];
     }
     const files: TFile[] = [];
     this.collectFiles(this.rootPath, files);
@@ -2566,6 +2576,77 @@ export class Keymap extends BaseKeymap {
   };
 }
 
+function copyHotkeys(hotkeys: readonly Hotkey[]): Hotkey[] {
+  return hotkeys.map((hotkey) => ({ modifiers: [...hotkey.modifiers], key: hotkey.key }));
+}
+
+export class HotkeyManager {
+  private readonly defaults = new Map<string, Hotkey[]>();
+  private readonly custom = new Map<string, Hotkey[]>();
+  private readonly releases = new Map<string, Array<() => void>>();
+
+  constructor(private readonly app: App) {}
+
+  getDefaultHotkeys(commandId: string): Hotkey[] | undefined {
+    const hotkeys = this.defaults.get(commandId);
+    return hotkeys ? copyHotkeys(hotkeys) : undefined;
+  }
+
+  addDefaultHotkeys(commandId: string, hotkeys: readonly Hotkey[]): void {
+    this.defaults.set(commandId, copyHotkeys(hotkeys));
+    this.rebind(commandId);
+  }
+
+  removeDefaultHotkeys(commandId: string): void {
+    this.defaults.delete(commandId);
+    this.rebind(commandId);
+  }
+
+  getHotkeys(commandId: string): Hotkey[] | undefined {
+    const hotkeys = this.custom.get(commandId);
+    return hotkeys ? copyHotkeys(hotkeys) : undefined;
+  }
+
+  setHotkeys(commandId: string, hotkeys: readonly Hotkey[]): void {
+    this.custom.set(commandId, copyHotkeys(hotkeys));
+    this.rebind(commandId);
+  }
+
+  removeHotkeys(commandId: string): void {
+    this.custom.delete(commandId);
+    this.rebind(commandId);
+  }
+
+  printHotkeyForCommand(commandId: string): string {
+    const hotkey = (this.custom.get(commandId) ?? this.defaults.get(commandId))?.[0];
+    return hotkey ? [...hotkey.modifiers, hotkey.key].join("+") : "";
+  }
+
+  private rebind(commandId: string): void {
+    for (const release of this.releases.get(commandId) ?? []) {
+      release();
+    }
+    this.releases.delete(commandId);
+    const command = this.app.commands.commands[commandId];
+    if (!command) {
+      return;
+    }
+    const hotkeys = this.custom.get(commandId) ?? this.defaults.get(commandId) ?? [];
+    const releases = hotkeys.map((hotkey) => {
+      const registration = this.app.scope.register(hotkey.modifiers, hotkey.key, (event) => {
+        if (event.repeat && command.repeatable !== true) {
+          return true;
+        }
+        return !this.app.commands.executeCommandById(commandId);
+      });
+      return () => this.app.scope.unregister(registration);
+    });
+    if (releases.length > 0) {
+      this.releases.set(commandId, releases);
+    }
+  }
+}
+
 export class NoticeBus {
   private readonly messages: string[] = [];
   private readonly onNotice: (message: string) => void;
@@ -3091,6 +3172,7 @@ export class App {
   readonly internalPlugins = createInternalPlugins();
   readonly keymap: Keymap;
   readonly scope: Scope;
+  readonly hotkeyManager: HotkeyManager;
   readonly plugins = new PluginManager();
   lastEvent: unknown | null = null;
   readonly renderContext = new RenderContext();
@@ -3110,6 +3192,7 @@ export class App {
     );
     this.keymap = new Keymap();
     this.scope = this.keymap.getRootScope();
+    this.hotkeyManager = new HotkeyManager(this);
     this.commands.setEditorContextProvider(() => {
       const view = this.workspace.getActiveViewOfType(MarkdownView);
       return view ? { editor: view.editor, view } : null;
@@ -3313,24 +3396,15 @@ export class Plugin extends Component {
     const releaseCommand = this.app.commands.register(this.manifest.id, command, {
       displayName: localName,
     });
-    const hotkeyHandlers = (command.hotkeys ?? []).map((hotkey) =>
-      this.app.scope.register(hotkey.modifiers, hotkey.key, (event) => {
-        if (event.repeat && command.repeatable !== true) {
-          return true;
-        }
-        return !this.app.commands.executeCommandById(qualifiedId);
-      }),
-    );
+    this.app.hotkeyManager.addDefaultHotkeys(qualifiedId, command.hotkeys ?? []);
     let active = true;
     const release = (): void => {
       if (!active) {
         return;
       }
       active = false;
-      for (const handler of hotkeyHandlers) {
-        this.app.scope.unregister(handler);
-      }
       releaseCommand();
+      this.app.hotkeyManager.removeDefaultHotkeys(qualifiedId);
       if (this.commandReleases.get(localId) === release) {
         this.commandReleases.delete(localId);
       }
@@ -3376,6 +3450,7 @@ export class Plugin extends Component {
   }
 
   addSettingTab(settingTab: PluginSettingTab): void {
+    settingTab.update();
     this.register(this.app.compatibility.addSettingTab(this.manifest.id, settingTab));
   }
 

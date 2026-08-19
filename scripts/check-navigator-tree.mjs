@@ -596,30 +596,40 @@ async function closeApplication() {
   exited = undefined;
 }
 
-async function waitForReady(
-  expectedMarkdownCount,
-  expectedVisibleFileCount,
-  expectedVisibleFolderCount,
-) {
-  return waitFor(
-    async () => {
-      const current = await snapshot();
-      return current?.workspace?.state === "ready" &&
-        current?.vault?.path === vaultPath &&
-        current?.workspace?.census?.discovered === expectedMarkdownCount &&
-        current?.workspace?.census?.indexed === expectedMarkdownCount &&
-        current?.workspace?.census?.total === expectedMarkdownCount &&
-        current?.workspace?.filePage?.total === expectedMarkdownCount &&
-        current?.vault?.markdownFileCount === expectedMarkdownCount &&
-        current?.workspace?.inventory?.state === "current" &&
-        current?.workspace?.inventory?.fileCount === expectedVisibleFileCount &&
-        current?.workspace?.inventory?.folderCount === expectedVisibleFolderCount
-        ? current
-        : null;
-    },
-    "The navigator-tree fixture vault did not become ready",
-    30_000,
-  );
+async function waitForReady(expectedMarkdownCount) {
+  let lastSnapshot;
+  try {
+    return await waitFor(
+      async () => {
+        const current = await snapshot();
+        lastSnapshot = current;
+        return current?.workspace?.state === "ready" &&
+          current?.vault?.path === vaultPath &&
+          current?.workspace?.census?.discovered === expectedMarkdownCount &&
+          current?.workspace?.census?.indexed === expectedMarkdownCount &&
+          current?.workspace?.census?.total === expectedMarkdownCount &&
+          current?.workspace?.filePage?.total === expectedMarkdownCount &&
+          current?.vault?.markdownFileCount === expectedMarkdownCount
+          ? current
+          : null;
+      },
+      "The navigator-tree fixture vault did not become ready",
+      30_000,
+    );
+  } catch (error) {
+    const observed = {
+      workspaceState: lastSnapshot?.workspace?.state,
+      vaultPath: lastSnapshot?.vault?.path,
+      census: lastSnapshot?.workspace?.census,
+      filePageTotal: lastSnapshot?.workspace?.filePage?.total,
+      markdownFileCount: lastSnapshot?.vault?.markdownFileCount,
+      inventory: lastSnapshot?.workspace?.inventory,
+    };
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}. Last observation: ${JSON.stringify(observed)}`,
+      { cause: error },
+    );
+  }
 }
 
 async function waitForTreePath(treePath) {
@@ -785,7 +795,7 @@ try {
 
   phase = "isolated X11 launch";
   await launchApplication();
-  await waitForReady(fixtureMarkdownCount, fixtureVisibleFileCount, fixtureVisibleFolderCount);
+  await waitForReady(fixtureMarkdownCount);
   await assertIsolatedX11Renderer();
 
   phase = "initial collapsed tree";
@@ -859,6 +869,24 @@ try {
       initialSemantics.emptyFolder.expanded === "false" &&
       initialSemantics.emptyFolder.summary === "0 items",
     `The explicit empty folder was not represented truthfully: ${JSON.stringify(initialSemantics.emptyFolder)}`,
+  );
+
+  phase = "on-demand physical inventory";
+  const lazyInventory = (await snapshot()).workspace?.inventory;
+  assert(
+    lazyInventory?.state === "lazy" &&
+      lazyInventory.fileCount === 0 &&
+      lazyInventory.folderCount === 0,
+    `The paged Files tree eagerly scanned the whole vault: ${JSON.stringify(lazyInventory)}`,
+  );
+  const missingAttachment = await evaluate(`window.threadleaf.loadVaultAttachment(
+    "Welcome.md",
+    "missing-attachment.png",
+    ${JSON.stringify((await snapshot()).vault.id)}
+  )`);
+  assert(
+    missingAttachment?.status === "unavailable" && missingAttachment.reason === "missing",
+    `The inventory-enabling attachment lookup returned an unexpected result: ${JSON.stringify(missingAttachment)}`,
   );
 
   phase = "external census convergence";
@@ -959,17 +987,27 @@ try {
     "A content-only Markdown edit churned the Files tree generation.",
   );
 
-  const visibleCensus = await waitFor(async () => {
-    const current = await evaluate(`(() => ({
-      fileCount: document.querySelector("#file-count")?.textContent ?? "",
-      summary: document.querySelector("#filter-summary")?.textContent ?? "",
-    }))()`);
-    return current.fileCount === String(convergedVisibleFileCount) &&
-      current.summary ===
-        `${convergedVisibleFileCount.toLocaleString()} files · ${fixtureVisibleFolderCount.toLocaleString()} folders`
-      ? current
-      : null;
-  }, "The rendered Files summary did not match the physical inventory");
+  let lastVisibleCensus;
+  let visibleCensus;
+  try {
+    visibleCensus = await waitFor(async () => {
+      const current = await evaluate(`(() => ({
+        fileCount: document.querySelector("#file-count")?.textContent ?? "",
+        summary: document.querySelector("#filter-summary")?.textContent ?? "",
+      }))()`);
+      lastVisibleCensus = current;
+      return current.fileCount === convergedVisibleFileCount.toLocaleString() &&
+        current.summary ===
+          `${convergedVisibleFileCount.toLocaleString()} files · ${fixtureVisibleFolderCount.toLocaleString()} folders`
+        ? current
+        : null;
+    }, "The rendered Files summary did not match the physical inventory");
+  } catch (error) {
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; observed=${JSON.stringify(lastVisibleCensus)}`,
+      { cause: error },
+    );
+  }
   await setTheme("dark");
   const censusDark = await captureScreenshot("navigator-census-converged-dark");
   const originalSummary = visibleCensus.summary;
@@ -1477,6 +1515,9 @@ try {
   await openNoteCalls.close();
 
   phase = "reveal active note and truncated active row";
+  await ensureTreeFolderExpanded("Projects");
+  await ensureTreeFolderExpanded("Projects/Deep");
+  await waitForTreePath(activeNotePath);
   await clickSelector(treeSelector(activeNotePath));
   await waitFor(
     async () =>
@@ -1503,7 +1544,7 @@ try {
       current: item.getAttribute("aria-current"),
       selected: item.getAttribute("aria-selected"),
       background: style.backgroundColor,
-      markerBoxShadow: markerStyle.boxShadow,
+      markerBackground: markerStyle.backgroundColor,
       truncated: label.scrollWidth > label.clientWidth,
       visible: item.getBoundingClientRect().top >= 0 && item.getBoundingClientRect().bottom <= innerHeight,
     };
@@ -1513,7 +1554,8 @@ try {
       activeVisual.selected === "true" &&
       activeVisual.background !== "transparent" &&
       activeVisual.background !== "rgba(0, 0, 0, 0)" &&
-      activeVisual.markerBoxShadow !== "none" &&
+      activeVisual.markerBackground !== "transparent" &&
+      activeVisual.markerBackground !== "rgba(0, 0, 0, 0)" &&
       activeVisual.truncated &&
       activeVisual.visible,
     `The revealed active row is not visibly selected and truncated: ${JSON.stringify(activeVisual)}`,
@@ -1551,7 +1593,7 @@ try {
       summary: folder.querySelector("small")?.textContent ?? "",
       rows: document.querySelectorAll(".navigator-tree-row").length,
       scrollHeight: list.scrollHeight,
-      expectedHeight: 1_001 * 40,
+      expectedHeight: 1_001 * 28,
     };
   })()`);
   assert(
@@ -1754,11 +1796,7 @@ try {
   );
   await closeApplication();
   await launchApplication();
-  await waitForReady(
-    convergedMarkdownCount,
-    convergedVisibleFileCount,
-    fixtureVisibleFolderCount + 1,
-  );
+  await waitForReady(convergedMarkdownCount);
   await assertIsolatedX11Renderer();
   await waitFor(
     async () =>

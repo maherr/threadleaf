@@ -13,6 +13,7 @@ export default defineConfig({
   format: ["cjs"],
   platform: "node",
   target: "node22",
+  external: ["node:sqlite"],
   clean: true,
   splitting: false,
   sourcemap: false,

@@ -1,5 +1,7 @@
 import path from "node:path";
 import {
+  type CachedFullTextSearchDocument,
+  type FullTextSearchContentStore,
   type FullTextSearchDocument,
   FullTextSearchIndex,
   type FullTextSearchOptions,
@@ -9,11 +11,17 @@ import {
   maskMarkdownCodeAndComments,
   type ParsedMarkdownLink,
   parseMarkdownLinks,
+  parseMarkdownReferenceUsages,
 } from "./markdown-links";
 import { normalizeTagBody, parseInlineMarkdownTags, tagHierarchy, tagKey } from "./markdown-tags";
 import { normalizeVaultDirectoryPath } from "./path-policy";
 import type { VaultReadPort, VaultTextSnapshot } from "./ports";
-import { type RescanReason, type VaultChangeBatch, WatchSequenceGate } from "./watch-protocol";
+import {
+  type RescanReason,
+  type VaultChange,
+  type VaultChangeBatch,
+  WatchSequenceGate,
+} from "./watch-protocol";
 
 export interface HeadingMetadata {
   level: number;
@@ -66,7 +74,7 @@ export interface MetadataIndexSnapshot {
   duplicateNames: Array<{ name: string; paths: string[] }>;
 }
 
-interface ParsedDocument {
+export interface ParsedDocument {
   path: string;
   revision: string;
   headings: HeadingMetadata[];
@@ -75,6 +83,11 @@ interface ParsedDocument {
   tagOccurrences: string[];
   properties: Record<string, string | string[]>;
   links: ParsedMarkdownLink[];
+}
+
+export interface CachedMetadataIndexDocument {
+  document: ParsedDocument;
+  searchDocument: CachedFullTextSearchDocument;
 }
 
 export interface IndexUpdateResult {
@@ -216,9 +229,13 @@ function parseDocument(snapshot: VaultTextSnapshot): ParsedDocument {
   const masked = maskMarkdownCodeAndComments(snapshot.content);
   const properties = parseProperties(snapshot.content);
   const headings: HeadingMetadata[] = [];
+  const links = parseMarkdownLinks(snapshot.content, masked);
+  const referenceUsages = parseMarkdownReferenceUsages(snapshot.content, masked);
   const tagOccurrences = [
     ...tagsFromProperties(properties),
-    ...parseInlineMarkdownTags(snapshot.content, masked).map(({ tag }) => tag),
+    ...parseInlineMarkdownTags(snapshot.content, masked, { links, referenceUsages }).map(
+      ({ tag }) => tag,
+    ),
   ];
   const tagCounts = new Map<string, { tag: string; count: number }>();
   for (const tag of tagOccurrences) {
@@ -255,7 +272,7 @@ function parseDocument(snapshot: VaultTextSnapshot): ParsedDocument {
     tagCounts: sortedTagCounts,
     tagOccurrences: tagOccurrences.map(flatten),
     properties,
-    links: parseMarkdownLinks(snapshot.content, masked).map((link) => ({
+    links: links.map((link) => ({
       ...link,
       target: flatten(link.target),
       subpath: link.subpath === null ? null : flatten(link.subpath),
@@ -346,6 +363,7 @@ const snapshotBuildProgressInterval = 512;
 export interface MetadataIndexBuildOptions {
   signal?: AbortSignal;
   onProgress?: (indexed: number, total: number) => void;
+  contentStore?: FullTextSearchContentStore;
 }
 
 function throwIfIndexBuildAborted(signal: AbortSignal | undefined): void {
@@ -449,6 +467,52 @@ export class MetadataIndex {
       }
     }
     index.#generation += 1;
+    return index;
+  }
+
+  static async fromCachedDocumentsAsync(
+    documents: AsyncIterable<CachedMetadataIndexDocument>,
+    total: number,
+    cachedSnapshot: MetadataIndexSnapshot | null | PromiseLike<MetadataIndexSnapshot | null> = null,
+    options: MetadataIndexBuildOptions = {},
+  ): Promise<MetadataIndex> {
+    const index = new MetadataIndex();
+    let loaded = 0;
+    options.onProgress?.(0, total);
+    for await (const cached of documents) {
+      throwIfIndexBuildAborted(options.signal);
+      if (
+        cached.document.path !== cached.searchDocument.path ||
+        cached.document.revision.length !== 64
+      ) {
+        throw new Error("The derived index cache contains an invalid document.");
+      }
+      index.upsertCachedDocument(cached);
+      loaded += 1;
+      if (loaded % snapshotBuildProgressInterval === 0 || loaded === total) {
+        options.onProgress?.(loaded, total);
+      }
+      if (loaded % snapshotBuildYieldInterval === 0) {
+        await yieldToEventLoop();
+      }
+    }
+    if (loaded !== total) {
+      throw new Error(`The derived index cache contains ${loaded} documents, expected ${total}.`);
+    }
+    index.#generation += 1;
+    index.#searchIndex.setContentStore(options.contentStore ?? null);
+    const resolvedCachedSnapshot = await cachedSnapshot;
+    if (resolvedCachedSnapshot) {
+      if (
+        resolvedCachedSnapshot.documents.length !== total ||
+        resolvedCachedSnapshot.documents.some(
+          (document) => index.#documents.get(document.path)?.revision !== document.revision,
+        )
+      ) {
+        throw new Error("The derived index cache projection does not match its documents.");
+      }
+      index.#snapshotCache = { generation: index.#generation, snapshot: resolvedCachedSnapshot };
+    }
     return index;
   }
 
@@ -571,6 +635,22 @@ export class MetadataIndex {
     return snapshot;
   }
 
+  *cachedDocuments(): IterableIterator<CachedMetadataIndexDocument> {
+    for (const document of this.#documents.values()) {
+      const searchDocument = this.#searchIndex.cachedDocument(document.path);
+      if (!searchDocument) {
+        throw new Error(`Search state is missing for cached document: ${document.path}`);
+      }
+      yield { document, searchDocument };
+    }
+  }
+
+  cachedDocument(filePath: string): CachedMetadataIndexDocument | undefined {
+    const document = this.#documents.get(filePath);
+    const searchDocument = this.#searchIndex.cachedDocument(filePath);
+    return document && searchDocument ? { document, searchDocument } : undefined;
+  }
+
   private replaceDocuments(
     documents: Map<string, ParsedDocument>,
     searchDocuments: FullTextSearchDocument[],
@@ -592,6 +672,15 @@ export class MetadataIndex {
     this.#documents.set(document.path, document);
     this.#searchIndex.upsert(searchDocument);
     this.addTagContributions(document);
+  }
+
+  private upsertCachedDocument(cached: CachedMetadataIndexDocument): void {
+    if (this.#documents.has(cached.document.path)) {
+      throw new Error(`The derived index cache repeats a document: ${cached.document.path}`);
+    }
+    this.#documents.set(cached.document.path, cached.document);
+    this.#searchIndex.upsertCached(cached.searchDocument);
+    this.addTagContributions(cached.document);
   }
 
   private deleteDocument(filePath: string): void {
@@ -680,6 +769,32 @@ export class VaultIndexReactor {
       source,
       await MetadataIndex.fromSnapshotsAsync(snapshots, options),
     );
+  }
+
+  static async fromCachedDocumentsAsync(
+    source: VaultReadPort,
+    documents: AsyncIterable<CachedMetadataIndexDocument>,
+    total: number,
+    cachedSnapshot: MetadataIndexSnapshot | null | PromiseLike<MetadataIndexSnapshot | null> = null,
+    options: MetadataIndexBuildOptions = {},
+  ): Promise<VaultIndexReactor> {
+    return new VaultIndexReactor(
+      source,
+      await MetadataIndex.fromCachedDocumentsAsync(documents, total, cachedSnapshot, options),
+    );
+  }
+
+  async reconcileCachedChanges(changes: readonly VaultChange[]): Promise<void> {
+    for (const change of changes) {
+      if (change.kind === "delete") {
+        this.index.remove(change.path);
+      } else if (change.kind === "move") {
+        this.index.remove(change.from);
+        await this.index.refresh(this.#source, change.to);
+      } else {
+        await this.index.refresh(this.#source, change.state.path);
+      }
+    }
   }
 
   async accept(batch: VaultChangeBatch): Promise<IndexUpdateResult> {

@@ -370,7 +370,7 @@ export type WorkspaceTreeEntry =
     };
 
 export interface WorkspaceVisibleInventorySnapshot {
-  state: "warming" | "current" | "degraded";
+  state: "lazy" | "warming" | "current" | "degraded";
   /** Runtime-scoped physical-path-set generation. Treat as an opaque validator. */
   generation: string;
   /** Visible non-folder entries, including Markdown, Canvas, and ordinary files. */

@@ -68,6 +68,7 @@ class FakeIsolatedRuntime implements PluginRuntimePort {
   readonly renderCalls: string[] = [];
   readonly runCalls: string[] = [];
   readonly environmentSequences: number[] = [];
+  readonly vaultPathSeeds: string[][] = [];
   readonly trace: string[] = [];
   readonly waitForPluginMutations = vi.fn(async () => this.snapshot());
   readonly instanceId: number;
@@ -109,6 +110,10 @@ class FakeIsolatedRuntime implements PluginRuntimePort {
         cssChangeTriggered: false,
       },
     };
+  }
+
+  async seedVaultMarkdownPaths(paths: readonly string[]): Promise<void> {
+    this.vaultPathSeeds.push([...paths]);
   }
 
   reloadPlugin(): Promise<RuntimeSnapshot> {
@@ -219,6 +224,30 @@ class FakeIsolatedRuntime implements PluginRuntimePort {
 }
 
 describe("IsolatedPluginRuntime", () => {
+  it("seeds the idle renderer and every fresh isolated slot before plugin evaluation", async () => {
+    const runtimes: FakeIsolatedRuntime[] = [];
+    const runtime = await IsolatedPluginRuntime.open({
+      create: async () => {
+        const created = new FakeIsolatedRuntime(runtimes.length + 1);
+        runtimes.push(created);
+        return created;
+      },
+    });
+
+    await runtime.seedVaultMarkdownPaths(["Notes/One.md", "Notes/Two.md"]);
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/alpha"));
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/beta"));
+
+    expect(runtimes).toHaveLength(2);
+    expect(runtimes.map(({ vaultPathSeeds }) => vaultPathSeeds)).toEqual([
+      [["Notes/One.md", "Notes/Two.md"]],
+      [["Notes/One.md", "Notes/Two.md"]],
+    ]);
+    expect(runtimes[0]?.trace[0]).toBe("load:alpha");
+    expect(runtimes[1]?.trace[0]).toBe("load:beta");
+    await runtime.close();
+  });
+
   it("acknowledges the environment before each fresh slot evaluates a plugin", async () => {
     const environment: PluginRendererEnvironment = {
       vaultId: "e".repeat(64),
@@ -330,6 +359,27 @@ describe("IsolatedPluginRuntime", () => {
 
     await runtime.close();
     expect(created[2]?.close).toHaveBeenCalledOnce();
+  });
+
+  it("refreshes slot liveness before serving a snapshot", async () => {
+    const created: FakeIsolatedRuntime[] = [];
+    const runtime = await IsolatedPluginRuntime.open({
+      create: async () => {
+        const instance = new FakeIsolatedRuntime(created.length + 1);
+        created.push(instance);
+        return instance;
+      },
+    });
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/alpha"));
+    const slot = created[0];
+    if (!slot) throw new Error("The isolated runtime fixture did not create its first slot.");
+
+    slot.pluginState = "failed";
+    const refreshed = await runtime.getSnapshot();
+
+    expect(refreshed.plugins).toMatchObject([{ id: "alpha", state: "failed" }]);
+    expect(refreshed.commands).toEqual([]);
+    await runtime.close();
   });
 
   it("rejects cross-plugin command ambiguity instead of guessing an owner", async () => {

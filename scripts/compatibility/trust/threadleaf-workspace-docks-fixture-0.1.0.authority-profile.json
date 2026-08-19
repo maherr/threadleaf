@@ -1,0 +1,28 @@
+{
+  "$schema": "./reviewed-authority-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profileId": "threadleaf-workspace-docks-fixture-0.1.0",
+  "profileRevision": 1,
+  "packageIdentity": {
+    "pluginId": "threadleaf-workspace-docks-fixture",
+    "manifestVersion": "0.1.0",
+    "distributionTag": "0.1.0",
+    "manifestSha256": "f50e242537da86e37eda09d6cefc04431be1a15b66769b9099fa5654ee6d16ce",
+    "mainSha256": "0b11502c023e634c5a54842b11fc1199388463da43d323f6e826f1cc8da85a79",
+    "stylesSha256": null,
+    "packageTreeSha256": "5338b838cc0606d102cff7f65d012536b6d6306f0f816f8c076e2dedf1b50e6e"
+  },
+  "packageIdentityDigest": "46c4e043aa69a51f416622437bfeafbacc76f5644cc2b893304585704c5c05ef",
+  "expectedStaticCapabilities": ["workspace-ui"],
+  "requiredAuthorities": [
+    "network",
+    "filesystem",
+    "subprocess",
+    "host-environment",
+    "workspace-ui",
+    "dynamic-code"
+  ],
+  "executionProfile": "trusted-node-renderer",
+  "allowedPlatforms": ["linux", "darwin", "win32"],
+  "authorityDigest": "1372593195348e8506905cf33e93a00352364f0173c590b18ac051741de1fe8b"
+}

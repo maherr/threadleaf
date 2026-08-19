@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "matrix": "threadleaf-community-open-themes-v1",
-  "fixtureTreeSha256": "9370b30e931406358fdaaeed38b16d8aef3cc6626bd8898811522ba9bd65b3ff",
+  "fixtureTreeSha256": "b75362cd9fc3ec4a852b42c0a2e743b4bf271a673091dc98ec4d5aa988493e62",
   "renderer": {
     "electron": "43.3.0",
     "nodeMajor": 22,
@@ -46,102 +46,102 @@
   "cases": {
     "minimal:dark-laptop": {
       "path": "minimal-dark-laptop.png",
-      "sha256": "83741e657b44401ce3f39e767fc8cd626b698d92401ee06592015072c1fd5092",
+      "sha256": "87893644b41404d1930100bc8b2d2f806a93ab00d9fbf85e94e4ca865fa1df29",
       "dimensions": [1180, 820]
     },
     "minimal:light-laptop": {
       "path": "minimal-light-laptop.png",
-      "sha256": "91798d74e3700661d745010ba47b7b268ea7150b966afa0c89c7e314629b5473",
+      "sha256": "73580ee261ede5a321a45905769fe5ba498d24b800ef2d38d3e46b8e13f773d5",
       "dimensions": [1180, 820]
     },
     "minimal:light-minimum": {
       "path": "minimal-light-minimum.png",
-      "sha256": "1efc8df8ff50e6350399a8519b7b1e6cbb4e677568e46daee5121464e2602ce1",
+      "sha256": "00ec2d4a275de97d19d1fd657f2d0df2a595edc9a03f445c8239bc777a554990",
       "dimensions": [860, 640]
     },
     "minimal:dark-high-contrast": {
       "path": "minimal-dark-high-contrast.png",
-      "sha256": "dd3d0e4fe221d610882b217b54a96978de018282b5d65441e9815118dc225154",
+      "sha256": "0a05021ad1c094b1dcd8d29830e98b373d20630cae26eb9d1969346d678e0ad7",
       "dimensions": [1180, 820]
     },
     "minimal:light-high-contrast": {
       "path": "minimal-light-high-contrast.png",
-      "sha256": "1179acaf22db5b5aaa7ae2c5c4e308c80f6bdf0c75761db8aea35fbaebb36f72",
+      "sha256": "e3e1b230ba4c6bd86f840866308889b17707b84bf50bc20b2cb01dd13e871554",
       "dimensions": [1180, 820]
     },
     "wikipedia:dark-laptop": {
       "path": "wikipedia-dark-laptop.png",
-      "sha256": "929385f6c0436be2c905d6364bacd85e8da0d1175ab834bfe89c24f4eb88ee91",
+      "sha256": "76d61f2b4180515f6111e1732f734c1fa500674775268a37553a130e4bc77675",
       "dimensions": [1180, 820]
     },
     "wikipedia:light-laptop": {
       "path": "wikipedia-light-laptop.png",
-      "sha256": "c3d6c9d50adee2b7af67afdc64f38c7f5c397c887226a5b715f84efdfb8ef3e8",
+      "sha256": "384f5a647b1dfe9091e0b8c8d719858db6905e3dbc170121fa97acefecad6605",
       "dimensions": [1180, 820]
     },
     "wikipedia:light-minimum": {
       "path": "wikipedia-light-minimum.png",
-      "sha256": "e8702abae7f93bdab7cf4ea516b0e2df504678a03c702c69c02d0e9520053048",
+      "sha256": "4826a22b790fcf7ed7912d7c27d7b8479b631e2695d04fa5b7a0105d78f178a3",
       "dimensions": [860, 640]
     },
     "wikipedia:dark-high-contrast": {
       "path": "wikipedia-dark-high-contrast.png",
-      "sha256": "60bf22f5bb2764899b6e7eb5c2849cb35015432d02f1184d01c7c49341175e66",
+      "sha256": "998d47c5ce35b84a548c8733cb09d78cded48272143644556b2176baaf080300",
       "dimensions": [1180, 820]
     },
     "wikipedia:light-high-contrast": {
       "path": "wikipedia-light-high-contrast.png",
-      "sha256": "a7ce6a54b3da5bcb666d2bc3f363595824a1cc8df509e0a5dd8ee60b6b24c065",
+      "sha256": "4fca116e7e4a23d384cb8abb9b06aac5b753f0ec5efd3fc53ed36e6dba292c4c",
       "dimensions": [1180, 820]
     },
     "sanctum:dark-laptop": {
       "path": "sanctum-dark-laptop.png",
-      "sha256": "8cb2a1b36a81cc113fb8cc5300d55a9a8494109e98d713e1aecb5013a7457255",
+      "sha256": "a25b5cf1000f28b2448d649fb17626274ac5f2e94cbc368e7125c040c1f156ff",
       "dimensions": [1180, 820]
     },
     "sanctum:light-laptop": {
       "path": "sanctum-light-laptop.png",
-      "sha256": "0dce99f79577a6542f9cd036b2dfd5956d178885edb18b7e24801d7d295a6f20",
+      "sha256": "2d3a9c8d8f53db032b62c820f241b79c5cff3635523570f2a5f299e93f7be17d",
       "dimensions": [1180, 820]
     },
     "sanctum:light-minimum": {
       "path": "sanctum-light-minimum.png",
-      "sha256": "9c44252de7290848b0b57f2a7d07fcb30e6d93526a2b6393fd964d36c137a94f",
+      "sha256": "1f20b46e16d64dfbb700456a22dd79d22b1f68412f09ffce837867aeec4caea5",
       "dimensions": [860, 640]
     },
     "sanctum:dark-high-contrast": {
       "path": "sanctum-dark-high-contrast.png",
-      "sha256": "4fcbd2a5879dacafadc48e5067c5db149bcc0dae55fd3e8ac05af564aed26f70",
+      "sha256": "1124b35f59886f90b6a3d38c129efdedc83fbced9d33d5b001b22843040ab455",
       "dimensions": [1180, 820]
     },
     "sanctum:light-high-contrast": {
       "path": "sanctum-light-high-contrast.png",
-      "sha256": "8e14e25ba3ad0d56dab4cf7ab2e81e6242d80a23dfe85ef19d101c45e202b5a6",
+      "sha256": "e848ab369cf3efc2d955e2ba077e36ef7196877a813d48cdbb461741443d3b0e",
       "dimensions": [1180, 820]
     },
     "default:dark-laptop": {
       "path": "default-dark-laptop.png",
-      "sha256": "3687c14e12d7b016ff813215973f41a2880f3fcec847f74ae48c5a58938f5236",
+      "sha256": "e00bae8bb0b986c48d7fd0ec2e65725f5a98d43e2ba12d3e654ab23671af3c76",
       "dimensions": [1180, 820]
     },
     "default:light-laptop": {
       "path": "default-light-laptop.png",
-      "sha256": "f4b78b92b63ca062781fbe5009d29bfc078e515530c7fbaf2546a9e0f93dfb26",
+      "sha256": "08cbe8bff94107f4daad4981f1314f8bb0551c5c436601e1089e0fbda92d979c",
       "dimensions": [1180, 820]
     },
     "default:light-minimum": {
       "path": "default-light-minimum.png",
-      "sha256": "bfa6e92775ba8e868fc89398db58d1fbdd65645bb67085cd56f6d58a559cca14",
+      "sha256": "d18c19688265d4cef3195bfd1c2d5bc81a1dabb8ffe5e693515e8e73c2fffa8c",
       "dimensions": [860, 640]
     },
     "default:dark-high-contrast": {
       "path": "default-dark-high-contrast.png",
-      "sha256": "61f2844b9e40801e8dccf96246b7652c19d9ec445d3859d73f9f8671a42d7e61",
+      "sha256": "f9e243dae932fd66b1d75470da8ac225d554d8d1329f21c3a1567a0b4c600056",
       "dimensions": [1180, 820]
     },
     "default:light-high-contrast": {
       "path": "default-light-high-contrast.png",
-      "sha256": "02e653a286ccf7295be9ba493fdd2de3a609c9118941e5fc6d578f8e5b19b632",
+      "sha256": "c31f37511c1114df09490c84039bd411107f2dce1e6c88de81d1bfca75841adc",
       "dimensions": [1180, 820]
     }
   },

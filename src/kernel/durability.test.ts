@@ -69,11 +69,12 @@ describe("bounded stable file reads", () => {
 describe("durable mutation platform contract", () => {
   it("exposes the narrow strict-containment platform contract", () => {
     expect(strictContainmentSupported).toBe(
-      process.platform === "linux" && Boolean(constants.O_DIRECTORY && constants.O_NOFOLLOW),
+      (process.platform === "linux" || process.platform === "darwin") &&
+        Boolean(constants.O_DIRECTORY && constants.O_NOFOLLOW),
     );
   });
 
-  it.runIf(process.platform !== "linux")(
+  it.runIf(!strictContainmentSupported)(
     "fails explicitly for strict attachment containment without support",
     async () => {
       await expect(
@@ -85,7 +86,7 @@ describe("durable mutation platform contract", () => {
     },
   );
 
-  it.runIf(process.platform === "linux")(
+  it.runIf(strictContainmentSupported)(
     "publishes an exact attachment copy without leaving a target-parent stage",
     async () => {
       const privateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-attachment-state-"));
@@ -118,7 +119,7 @@ describe("durable mutation platform contract", () => {
     },
   );
 
-  it.runIf(process.platform === "linux")(
+  it.runIf(strictContainmentSupported)(
     "does not expose a replaceable target-side stage before publication",
     async () => {
       const privateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-attachment-state-"));
@@ -161,7 +162,7 @@ describe("durable mutation platform contract", () => {
     },
   );
 
-  it.runIf(process.platform === "linux")(
+  it.runIf(strictContainmentSupported)(
     "preserves a target claimant without exposing a generated stage when publication collides",
     async () => {
       const privateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-attachment-state-"));
@@ -200,7 +201,7 @@ describe("durable mutation platform contract", () => {
     ).resolves.toEqual([]);
   });
 
-  it.runIf(process.platform === "linux")(
+  it.runIf(strictContainmentSupported)(
     "does not authorize strict vault-claim cleanup without private authority",
     async () => {
       const filePath = path.join(sandboxPath, "vault-claim.bin");
@@ -217,7 +218,7 @@ describe("durable mutation platform contract", () => {
     },
   );
 
-  it.runIf(process.platform === "linux")(
+  it.runIf(strictContainmentSupported)(
     "never unlinks a strict private claim through its mutable pathname",
     async () => {
       const filePath = path.join(sandboxPath, "private-claim.bin");
@@ -248,7 +249,7 @@ describe("durable mutation platform contract", () => {
     },
   );
 
-  it.runIf(process.platform === "linux")(
+  it.runIf(strictContainmentSupported)(
     "preflights no-clobber publication without creating or deleting vault names",
     async () => {
       const before = await fs.readdir(sandboxPath);
@@ -281,7 +282,7 @@ describe("durable mutation platform contract", () => {
 });
 
 describe("claim-then-verify removal", () => {
-  it.runIf(process.platform === "linux")(
+  it.runIf(strictContainmentSupported)(
     "retains the claimed expected inode when a winner appears after claim",
     async () => {
       const filePath = path.join(sandboxPath, "source.bin");
@@ -320,7 +321,7 @@ describe("claim-then-verify removal", () => {
     },
   );
 
-  it.runIf(process.platform === "linux")(
+  it.runIf(strictContainmentSupported)(
     "retains a changed quarantine winner instead of deleting it",
     async () => {
       const filePath = path.join(sandboxPath, "source.bin");
@@ -353,7 +354,7 @@ describe("claim-then-verify removal", () => {
     },
   );
 
-  it.runIf(process.platform === "linux")(
+  it.runIf(strictContainmentSupported)(
     "does not recreate bytes when the claimed quarantine disappears",
     async () => {
       const filePath = path.join(sandboxPath, "source.bin");
@@ -379,7 +380,7 @@ describe("claim-then-verify removal", () => {
     },
   );
 
-  it.runIf(process.platform === "linux")(
+  it.runIf(strictContainmentSupported)(
     "retains a strict claim when the post-claim hook fails",
     async () => {
       const filePath = path.join(sandboxPath, "strict-hook.bin");
@@ -407,7 +408,7 @@ describe("claim-then-verify removal", () => {
     },
   );
 
-  it.runIf(process.platform === "linux")(
+  it.runIf(strictContainmentSupported)(
     "keeps both rollback bytes and a source winner across the held-parent claim",
     async () => {
       const targetPath = path.join(sandboxPath, "target.bin");
@@ -514,7 +515,7 @@ describe("claim-then-verify removal", () => {
     ).resolves.toEqual([]);
   });
 
-  it.runIf(process.platform === "linux")(
+  it.runIf(strictContainmentSupported)(
     "does not move a claimant installed at the final strict settlement barrier",
     async () => {
       const filePath = path.join(sandboxPath, "strict-cleanup-barrier.bin");

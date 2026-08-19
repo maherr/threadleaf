@@ -997,6 +997,39 @@ async function setControlValue(selector, value) {
   );
 }
 
+async function setControlValueByLabel(selector, value, label) {
+  const optionExists = await evaluate(`(() => {
+    const control = document.querySelector(${JSON.stringify(selector)});
+    return control instanceof HTMLSelectElement && [...control.options].some(
+      (option) => option.value === ${JSON.stringify(value)} && option.textContent?.trim() === ${JSON.stringify(label)},
+    );
+  })()`);
+  assert(optionExists, `Missing labeled option ${label} in control ${selector}`);
+  await clickSelector(selector);
+  for (const character of label.toLowerCase()) {
+    if (character === " ") break;
+    await cdp.send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      code: `Key${character.toUpperCase()}`,
+      key: character,
+      text: character,
+      windowsVirtualKeyCode: character.toUpperCase().charCodeAt(0),
+    });
+    await cdp.send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      code: `Key${character.toUpperCase()}`,
+      key: character,
+      windowsVirtualKeyCode: character.toUpperCase().charCodeAt(0),
+    });
+  }
+  await pressKey("Enter", "Enter");
+  await waitFor(
+    async () =>
+      (await evaluate(`document.querySelector(${JSON.stringify(selector)})?.value`)) === value,
+    `Control ${selector} did not commit ${value}`,
+  );
+}
+
 async function applyTheme(theme, verification) {
   await openSettings();
   const themeId = `obsidian-theme:${encodeURIComponent(theme.folder)}`;
@@ -1071,7 +1104,11 @@ async function setHighContrast(enabled) {
         : null,
     "Accessibility settings did not open",
   );
-  await setControlValue("#accessibility-high-contrast", enabled ? "on" : "system");
+  await setControlValueByLabel(
+    "#accessibility-high-contrast",
+    enabled ? "on" : "system",
+    enabled ? "On" : "System default",
+  );
   await waitFor(
     async () =>
       (await evaluate("document.documentElement.dataset.threadleafHighContrast")) ===

@@ -1,4 +1,4 @@
-import { promises as fs } from "node:fs";
+import { type Dirent, promises as fs } from "node:fs";
 import path from "node:path";
 import { syncDirectory } from "./durability";
 import type { VaultDirectoryCreateResult } from "./ports";
@@ -15,6 +15,58 @@ export interface VisibleVaultPaths {
   exists: boolean;
   files: string[];
   folders: string[];
+}
+
+export interface WorkspaceDocumentPaths {
+  markdownPaths: string[];
+  canvasPaths: string[];
+}
+
+interface VaultWalkEntry {
+  entry: Dirent;
+  absolutePath: string;
+  relativePath: string;
+}
+
+const directoryReadConcurrency = 32;
+
+/**
+ * Walk ordinary vault directories with a bounded number of `readdir` calls.
+ *
+ * Results are sorted once by each public caller, so per-directory ordering is
+ * not observable. The queue never follows a symlink and excludes hidden and
+ * private entries before descent, preserving the same authority boundary as
+ * the former depth-first walker while avoiding one serial syscall per folder.
+ */
+async function walkVisibleVaultEntries(
+  startDirectory: string,
+  relativeDirectory: string,
+  visit: (candidate: VaultWalkEntry) => void | Promise<void>,
+): Promise<void> {
+  const directories = [{ absolutePath: startDirectory, relativePath: relativeDirectory }];
+  for (let cursor = 0; cursor < directories.length; ) {
+    const batch = directories.slice(cursor, cursor + directoryReadConcurrency);
+    cursor += batch.length;
+    const listings = await Promise.all(
+      batch.map(async (directory) => ({
+        ...directory,
+        entries: await fs.readdir(directory.absolutePath, { withFileTypes: true }),
+      })),
+    );
+    for (const directory of listings) {
+      for (const entry of directory.entries) {
+        if (isPrivateVaultEntry(entry.name) || isHiddenVaultEntry(entry.name)) continue;
+        const relativePath = directory.relativePath
+          ? `${directory.relativePath}/${entry.name}`
+          : entry.name;
+        const absolutePath = path.join(directory.absolutePath, entry.name);
+        if (entry.isDirectory()) {
+          directories.push({ absolutePath, relativePath });
+        }
+        await visit({ entry, absolutePath, relativePath });
+      }
+    }
+  }
 }
 
 function isPrivateVaultEntry(name: string): boolean {
@@ -265,28 +317,32 @@ export class VaultPathPolicy {
   }
 
   async listMarkdownPaths(relativeDirectory = ""): Promise<string[]> {
+    return (await this.listWorkspaceDocumentPaths(relativeDirectory)).markdownPaths;
+  }
+
+  async listWorkspaceDocumentPaths(relativeDirectory = ""): Promise<WorkspaceDocumentPaths> {
     const normalizedDirectory = normalizeVaultDirectoryPath(relativeDirectory);
     if ((await this.lexicalDirectoryPathKind(normalizedDirectory)) !== "plain") {
-      return [];
+      return { markdownPaths: [], canvasPaths: [] };
     }
     const startDirectory = normalizedDirectory
       ? path.resolve(this.rootPath, ...normalizedDirectory.split("/"))
       : this.rootPath;
     const lexicalStat = await lstatOrNull(startDirectory);
     if (!lexicalStat || (normalizedDirectory !== "" && lexicalStat.isSymbolicLink())) {
-      return [];
+      return { markdownPaths: [], canvasPaths: [] };
     }
     let canonicalDirectory: string;
     try {
       canonicalDirectory = await fs.realpath(startDirectory);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-        return [];
+        return { markdownPaths: [], canvasPaths: [] };
       }
       throw error;
     }
     if (path.resolve(canonicalDirectory) !== path.resolve(startDirectory)) {
-      return [];
+      return { markdownPaths: [], canvasPaths: [] };
     }
     if (!isPathInside(this.rootPath, canonicalDirectory)) {
       throw new VaultPathError(`Directory resolves outside the vault: ${relativeDirectory}`);
@@ -295,9 +351,18 @@ export class VaultPathPolicy {
     if (!stat.isDirectory()) {
       throw new VaultPathError(`Vault directory path is not a directory: ${relativeDirectory}`);
     }
-    const files: string[] = [];
-    await this.collectMarkdownPaths(canonicalDirectory, normalizedDirectory, files);
-    return files.sort((left, right) => left.localeCompare(right));
+    const markdownPaths: string[] = [];
+    const canvasPaths: string[] = [];
+    await this.collectWorkspaceDocumentPaths(
+      canonicalDirectory,
+      normalizedDirectory,
+      markdownPaths,
+      canvasPaths,
+    );
+    return {
+      markdownPaths: markdownPaths.sort((left, right) => left.localeCompare(right)),
+      canvasPaths: canvasPaths.sort((left, right) => left.localeCompare(right)),
+    };
   }
 
   async listVisiblePaths(relativeDirectory = ""): Promise<VisibleVaultPaths> {
@@ -351,6 +416,91 @@ export class VaultPathPolicy {
     };
   }
 
+  /**
+   * List one explorer level without walking any descendant directory.
+   *
+   * The full visible census remains available for global file operations, but
+   * expanding one folder must cost one directory read rather than one vault
+   * walk. Symlink and hidden/private-path rules are identical to the recursive
+   * listing, including allowing contained file symlinks without following a
+   * directory symlink.
+   */
+  async listVisibleChildren(relativeDirectory = ""): Promise<VisibleVaultPaths> {
+    const normalizedDirectory = normalizeVaultDirectoryPath(relativeDirectory);
+    if (hasPrivateVaultSegment(normalizedDirectory) || hasHiddenVaultSegment(normalizedDirectory)) {
+      return { directory: normalizedDirectory, exists: false, files: [], folders: [] };
+    }
+    if ((await this.lexicalDirectoryPathKind(normalizedDirectory)) !== "plain") {
+      return { directory: normalizedDirectory, exists: false, files: [], folders: [] };
+    }
+    const startDirectory = normalizedDirectory
+      ? path.resolve(this.rootPath, ...normalizedDirectory.split("/"))
+      : this.rootPath;
+    const lexicalStat = await lstatOrNull(startDirectory);
+    if (!lexicalStat || (normalizedDirectory !== "" && lexicalStat.isSymbolicLink())) {
+      return { directory: normalizedDirectory, exists: false, files: [], folders: [] };
+    }
+    let canonicalDirectory: string;
+    try {
+      canonicalDirectory = await fs.realpath(startDirectory);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return { directory: normalizedDirectory, exists: false, files: [], folders: [] };
+      }
+      throw error;
+    }
+    if (
+      path.resolve(canonicalDirectory) !== path.resolve(startDirectory) ||
+      !isPathInside(this.rootPath, canonicalDirectory)
+    ) {
+      return { directory: normalizedDirectory, exists: false, files: [], folders: [] };
+    }
+    const stat = await fs.stat(canonicalDirectory);
+    if (!stat.isDirectory()) {
+      throw new VaultPathError(`Vault directory path is not a directory: ${relativeDirectory}`);
+    }
+
+    const files: string[] = [];
+    const folders: string[] = [];
+    const entries = await fs.readdir(canonicalDirectory, { withFileTypes: true });
+    for (const entry of entries) {
+      if (isPrivateVaultEntry(entry.name) || isHiddenVaultEntry(entry.name)) continue;
+      const relativePath = normalizedDirectory
+        ? `${normalizedDirectory}/${entry.name}`
+        : entry.name;
+      if (entry.isDirectory()) {
+        folders.push(relativePath);
+        continue;
+      }
+      if (entry.isSymbolicLink()) {
+        const absolutePath = path.join(canonicalDirectory, entry.name);
+        let canonicalPath: string;
+        try {
+          canonicalPath = await fs.realpath(absolutePath);
+        } catch (error) {
+          if (error instanceof Error && "code" in error && error.code === "ENOENT") continue;
+          throw error;
+        }
+        if (
+          !isPathInside(this.rootPath, canonicalPath) ||
+          hasPrivateVaultSegment(path.relative(this.rootPath, canonicalPath)) ||
+          hasHiddenVaultSegment(path.relative(this.rootPath, canonicalPath))
+        ) {
+          continue;
+        }
+        if ((await fs.stat(canonicalPath)).isFile()) files.push(relativePath);
+        continue;
+      }
+      if (entry.isFile()) files.push(relativePath);
+    }
+    return {
+      directory: normalizedDirectory,
+      exists: true,
+      files: files.sort((left, right) => left.localeCompare(right)),
+      folders: folders.sort((left, right) => left.localeCompare(right)),
+    };
+  }
+
   private async lexicalDirectoryPathKind(
     normalizedDirectory: string,
   ): Promise<"plain" | "missing" | "symlink"> {
@@ -376,55 +526,50 @@ export class VaultPathPolicy {
     return claimants.sort((left, right) => left.localeCompare(right));
   }
 
-  private async collectMarkdownPaths(
+  private async collectWorkspaceDocumentPaths(
     directory: string,
     relativeDirectory: string,
-    files: string[],
+    markdownPaths: string[],
+    canvasPaths: string[],
   ): Promise<void> {
-    const entries = await fs.readdir(directory, { withFileTypes: true });
-    entries.sort((left, right) => left.name.localeCompare(right.name));
-
-    for (const entry of entries) {
-      if (isPrivateVaultEntry(entry.name) || isHiddenVaultEntry(entry.name)) {
-        continue;
-      }
-
-      const relativePath = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name;
-      const absolutePath = path.join(directory, entry.name);
-
-      if (entry.isDirectory()) {
-        await this.collectMarkdownPaths(absolutePath, relativePath, files);
-        continue;
-      }
-
-      if (entry.isSymbolicLink()) {
-        let canonicalPath: string;
-        try {
-          canonicalPath = await fs.realpath(absolutePath);
-        } catch (error) {
-          if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-            continue;
+    await walkVisibleVaultEntries(
+      directory,
+      relativeDirectory,
+      async ({ entry, absolutePath, relativePath }) => {
+        if (entry.isDirectory()) return;
+        if (entry.isSymbolicLink()) {
+          let canonicalPath: string;
+          try {
+            canonicalPath = await fs.realpath(absolutePath);
+          } catch (error) {
+            if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+              return;
+            }
+            throw error;
           }
-          throw error;
+          if (
+            !isPathInside(this.rootPath, canonicalPath) ||
+            hasPrivateVaultSegment(path.relative(this.rootPath, canonicalPath)) ||
+            hasHiddenVaultSegment(path.relative(this.rootPath, canonicalPath))
+          ) {
+            return;
+          }
+          const targetStat = await fs.stat(canonicalPath);
+          if (targetStat.isFile()) {
+            const foldedName = entry.name.toLocaleLowerCase("en-US");
+            if (foldedName.endsWith(".md")) markdownPaths.push(relativePath);
+            if (foldedName.endsWith(".canvas")) canvasPaths.push(relativePath);
+          }
+          return;
         }
-        if (
-          !isPathInside(this.rootPath, canonicalPath) ||
-          hasPrivateVaultSegment(path.relative(this.rootPath, canonicalPath)) ||
-          hasHiddenVaultSegment(path.relative(this.rootPath, canonicalPath))
-        ) {
-          continue;
-        }
-        const targetStat = await fs.stat(canonicalPath);
-        if (targetStat.isFile() && entry.name.toLowerCase().endsWith(".md")) {
-          files.push(relativePath);
-        }
-        continue;
-      }
 
-      if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
-        files.push(relativePath);
-      }
-    }
+        if (entry.isFile()) {
+          const foldedName = entry.name.toLocaleLowerCase("en-US");
+          if (foldedName.endsWith(".md")) markdownPaths.push(relativePath);
+          if (foldedName.endsWith(".canvas")) canvasPaths.push(relativePath);
+        }
+      },
+    );
   }
 
   private async collectNamespaceClaimants(
@@ -460,46 +605,41 @@ export class VaultPathPolicy {
     files: string[],
     folders: string[],
   ): Promise<void> {
-    const entries = await fs.readdir(directory, { withFileTypes: true });
-    entries.sort((left, right) => left.name.localeCompare(right.name));
-
-    for (const entry of entries) {
-      if (isPrivateVaultEntry(entry.name) || isHiddenVaultEntry(entry.name)) {
-        continue;
-      }
-      const relativePath = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name;
-      const absolutePath = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
-        folders.push(relativePath);
-        await this.collectVisiblePaths(absolutePath, relativePath, files, folders);
-        continue;
-      }
-      if (entry.isSymbolicLink()) {
-        let canonicalPath: string;
-        try {
-          canonicalPath = await fs.realpath(absolutePath);
-        } catch (error) {
-          if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-            continue;
+    await walkVisibleVaultEntries(
+      directory,
+      relativeDirectory,
+      async ({ entry, absolutePath, relativePath }) => {
+        if (entry.isDirectory()) {
+          folders.push(relativePath);
+          return;
+        }
+        if (entry.isSymbolicLink()) {
+          let canonicalPath: string;
+          try {
+            canonicalPath = await fs.realpath(absolutePath);
+          } catch (error) {
+            if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+              return;
+            }
+            throw error;
           }
-          throw error;
+          if (
+            !isPathInside(this.rootPath, canonicalPath) ||
+            hasPrivateVaultSegment(path.relative(this.rootPath, canonicalPath)) ||
+            hasHiddenVaultSegment(path.relative(this.rootPath, canonicalPath))
+          ) {
+            return;
+          }
+          const targetStat = await fs.stat(canonicalPath);
+          if (targetStat.isFile()) {
+            files.push(relativePath);
+          }
+          return;
         }
-        if (
-          !isPathInside(this.rootPath, canonicalPath) ||
-          hasPrivateVaultSegment(path.relative(this.rootPath, canonicalPath)) ||
-          hasHiddenVaultSegment(path.relative(this.rootPath, canonicalPath))
-        ) {
-          continue;
-        }
-        const targetStat = await fs.stat(canonicalPath);
-        if (targetStat.isFile()) {
+        if (entry.isFile()) {
           files.push(relativePath);
         }
-        continue;
-      }
-      if (entry.isFile()) {
-        files.push(relativePath);
-      }
-    }
+      },
+    );
   }
 }

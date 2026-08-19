@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { type FSWatcher, promises as fs, watch } from "node:fs";
 import path from "node:path";
+import { Worker } from "node:worker_threads";
 import type { WorkspaceOpenDiagnostics } from "../shared/workspace-open-diagnostics";
 import {
   hasHiddenVaultSegment,
@@ -88,6 +89,7 @@ export class WorkspacePathActivityLedger {
 export interface VaultBootstrapScan {
   documents: VaultTextSnapshot[];
   snapshot: VaultSnapshot;
+  canvasPaths: string[];
 }
 
 export interface VaultScanProgress {
@@ -98,6 +100,38 @@ export interface VaultScanProgress {
 export interface VaultScanControl {
   signal?: AbortSignal;
   onProgress?: (progress: VaultScanProgress) => void;
+  onCanvasPaths?: (paths: readonly string[]) => void;
+}
+
+const interactiveScanYieldInterval = 32;
+
+const recursiveWatchWorkerSource = String.raw`
+  const { parentPort, workerData } = require("node:worker_threads");
+  const { watch } = require("node:fs");
+  try {
+    const watcher = watch(workerData.rootPath, { recursive: true }, (_eventType, fileName) => {
+      parentPort.postMessage({
+        type: "event",
+        fileName: fileName === null ? null : fileName.toString(),
+      });
+    });
+    watcher.on("error", (error) => {
+      parentPort.postMessage({ type: "watch-error", message: error.message });
+    });
+    parentPort.on("message", (message) => {
+      if (message === "close") watcher.close();
+    });
+    parentPort.postMessage({ type: "ready" });
+  } catch (error) {
+    parentPort.postMessage({
+      type: "watch-error",
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+`;
+
+function yieldToInteractiveWork(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 function throwIfScanAborted(signal: AbortSignal | undefined): void {
@@ -277,12 +311,17 @@ export async function captureVaultBootstrap(
   const startedAt = diagnostics?.now();
   const snapshot: VaultSnapshot = new Map();
   const documents: VaultTextSnapshot[] = [];
-  const paths = diagnostics
-    ? await diagnostics.measure("bootstrap.list", () => policy.listMarkdownPaths())
-    : await policy.listMarkdownPaths();
+  const documentPaths = diagnostics
+    ? await diagnostics.measure("bootstrap.list", () => policy.listWorkspaceDocumentPaths())
+    : await policy.listWorkspaceDocumentPaths();
+  const paths = documentPaths.markdownPaths;
+  control.onCanvasPaths?.(documentPaths.canvasPaths);
   throwIfScanAborted(control.signal);
   control.onProgress?.({ scanned: 0, total: paths.length });
   for (let cursor = 0; cursor < paths.length; cursor += 1) {
+    if (cursor > 0 && cursor % interactiveScanYieldInterval === 0) {
+      await yieldToInteractiveWork();
+    }
     throwIfScanAborted(control.signal);
     const relativePath = paths[cursor];
     if (!relativePath) continue;
@@ -319,7 +358,7 @@ export async function captureVaultBootstrap(
       paths: paths.length,
     });
   }
-  return { documents, snapshot };
+  return { documents, snapshot, canvasPaths: documentPaths.canvasPaths };
 }
 
 export interface VaultSnapshotCaptureDiagnostics extends VaultScanControl {
@@ -336,44 +375,51 @@ export async function captureVaultSnapshot(
   const startedAt = options.diagnostics?.now();
   const snapshot: VaultSnapshot = new Map();
   const attributes = { reason: options.reason ?? "unspecified" };
-  const paths = options.diagnostics
-    ? await options.diagnostics.measure(
-        "watcher-rescan.list",
-        () => policy.listMarkdownPaths(relativeDirectory),
-        { attributes },
-      )
-    : await policy.listMarkdownPaths(relativeDirectory);
+  const listDocumentPaths = async () =>
+    options.onCanvasPaths
+      ? policy.listWorkspaceDocumentPaths(relativeDirectory)
+      : {
+          markdownPaths: await policy.listMarkdownPaths(relativeDirectory),
+          canvasPaths: [],
+        };
+  const documentPaths = options.diagnostics
+    ? await options.diagnostics.measure("watcher-rescan.list", listDocumentPaths, { attributes })
+    : await listDocumentPaths();
+  const paths = documentPaths.markdownPaths;
+  options.onCanvasPaths?.(documentPaths.canvasPaths);
   throwIfScanAborted(options.signal);
   options.onProgress?.({ scanned: 0, total: paths.length });
-  for (let cursor = 0; cursor < paths.length; cursor += 1) {
+  for (let cursor = 0; cursor < paths.length; cursor += interactiveScanYieldInterval) {
     throwIfScanAborted(options.signal);
-    const relativePath = paths[cursor];
-    if (!relativePath) continue;
-    if (isTransactionTemporary(path.posix.basename(relativePath))) {
-      if ((cursor + 1) % 256 === 0 || cursor + 1 === paths.length) {
-        options.onProgress?.({ scanned: cursor + 1, total: paths.length });
+    const batch = paths.slice(cursor, cursor + interactiveScanYieldInterval);
+    const states = await Promise.all(
+      batch.map(async (relativePath) => {
+        if (isTransactionTemporary(path.posix.basename(relativePath))) return null;
+        return options.diagnostics
+          ? ((
+              await readWatchedFile(
+                policy,
+                relativePath,
+                previous.get(relativePath),
+                false,
+                0,
+                options.diagnostics,
+                "watcher-rescan",
+              )
+            )?.state ?? null)
+          : readWatchedState(policy, relativePath, previous.get(relativePath));
+      }),
+    );
+    for (const state of states) {
+      if (state) {
+        snapshot.set(state.path, state);
       }
-      continue;
     }
-    const state = options.diagnostics
-      ? ((
-          await readWatchedFile(
-            policy,
-            relativePath,
-            previous.get(relativePath),
-            false,
-            0,
-            options.diagnostics,
-            "watcher-rescan",
-          )
-        )?.state ?? null)
-      : await readWatchedState(policy, relativePath, previous.get(relativePath));
-    if (state) {
-      snapshot.set(relativePath, state);
+    const scanned = Math.min(paths.length, cursor + batch.length);
+    if (scanned % 256 === 0 || scanned === paths.length) {
+      options.onProgress?.({ scanned, total: paths.length });
     }
-    if ((cursor + 1) % 256 === 0 || cursor + 1 === paths.length) {
-      options.onProgress?.({ scanned: cursor + 1, total: paths.length });
-    }
+    await yieldToInteractiveWork();
   }
   if (options.diagnostics && startedAt !== undefined) {
     options.diagnostics.addSpan("watcher-rescan.capture", startedAt, {
@@ -494,11 +540,16 @@ export class NodeVaultWatcher {
   readonly #debounceMs: number;
   readonly #onError: (error: unknown) => void;
   #snapshot: VaultSnapshot;
-  #watcher: FSWatcher | undefined;
+  #watcher: Worker | undefined;
+  #shallowWatcher: FSWatcher | undefined;
+  #backendReady = false;
+  #needsBackendCatchUp = false;
   #timer: ReturnType<typeof setTimeout> | undefined;
   #listener: ((batch: VaultChangeBatch) => void | Promise<void>) | undefined;
   #flushTail: Promise<void> = Promise.resolve();
   #activitySinceScan = false;
+  #startupBuffering = false;
+  #startupActivity = false;
   readonly #pathActivity = new WorkspacePathActivityLedger();
   #closed = false;
 
@@ -547,10 +598,51 @@ export class NodeVaultWatcher {
   }
 
   installStartupSnapshot(snapshot: VaultSnapshot): void {
-    if (this.#closed || this.#watcher) {
+    if (this.#closed || (this.#watcher && !this.#startupBuffering)) {
       throw new Error("The startup snapshot can only be installed before the watcher starts.");
     }
     this.#snapshot = new Map(snapshot);
+    if (!this.#backendReady) this.#needsBackendCatchUp = true;
+  }
+
+  /**
+   * Begin receiving filesystem notifications before a long startup scan.
+   * Events are reduced to one dirty bit until the authoritative snapshot is
+   * installed; no batch can reach a half-built index.
+   */
+  startBuffering(): void {
+    this.#startupBuffering = true;
+    this.startBackend(undefined);
+  }
+
+  async finishBufferedStart(
+    listener: (batch: VaultChangeBatch) => void | Promise<void>,
+    control: VaultScanControl = {},
+  ): Promise<VaultChangeBatch | null> {
+    if (!this.#watcher || !this.#startupBuffering) {
+      throw new Error("The vault watcher is not buffering startup events.");
+    }
+    this.#listener = listener;
+    this.#startupBuffering = false;
+    if (this.#backendReady && this.#needsBackendCatchUp) {
+      this.#needsBackendCatchUp = false;
+      this.#activitySinceScan = true;
+      this.scheduleScan();
+    }
+    const needsReconcile = this.#startupActivity;
+    this.#startupActivity = false;
+    if (!needsReconcile) return null;
+
+    let result: VaultChangeBatch | null = null;
+    const initialScan = this.#flushTail.then(async () => {
+      result = await this.scanNow(control);
+      if (!this.#closed && result && this.#listener) {
+        await this.#listener(result);
+      }
+    });
+    this.#flushTail = initialScan.catch(() => undefined);
+    await initialScan;
+    return result;
   }
 
   /** Monotonic activity receipt for one exact visible workspace path. */
@@ -580,7 +672,9 @@ export class NodeVaultWatcher {
     return result;
   }
 
-  private startBackend(listener: (batch: VaultChangeBatch) => void | Promise<void>): void {
+  private startBackend(
+    listener: ((batch: VaultChangeBatch) => void | Promise<void>) | undefined,
+  ): void {
     if (this.#closed) {
       throw new Error("Vault watcher is closed.");
     }
@@ -588,19 +682,73 @@ export class NodeVaultWatcher {
       throw new Error("Vault watcher is already running.");
     }
     this.#listener = listener;
-    this.#watcher = watch(this.policy.rootPath, { recursive: true }, (_eventType, fileName) => {
-      this.#pathActivity.record(fileName);
-      if (fileName && hasHiddenVaultSegment(fileName.toString())) {
+    this.#backendReady = false;
+    const recordEvent = (fileName: string | Buffer | null): void => {
+      if (this.#closed) return;
+      const normalizedFileName = fileName === null ? null : fileName.toString();
+      this.#pathActivity.record(normalizedFileName);
+      if (normalizedFileName && hasHiddenVaultSegment(normalizedFileName)) return;
+      if (this.#startupBuffering) {
+        this.#startupActivity = true;
         return;
       }
       this.#activitySinceScan = true;
       this.scheduleScan();
+    };
+    this.#shallowWatcher = watch(
+      this.policy.rootPath,
+      { recursive: false },
+      (_eventType, fileName) => recordEvent(fileName),
+    );
+    this.#shallowWatcher.on("error", (error) => {
+      if (!this.#closed) this.#onError(error);
     });
-    this.#watcher.on("error", (error) => {
+    this.#watcher = new Worker(recursiveWatchWorkerSource, {
+      eval: true,
+      workerData: { rootPath: this.policy.rootPath },
+    });
+    this.#watcher.on("message", (message: unknown) => {
       if (this.#closed) {
         return;
       }
+      if (!message || typeof message !== "object" || !("type" in message)) return;
+      if (message.type === "ready") {
+        this.#backendReady = true;
+        this.#shallowWatcher?.close();
+        this.#shallowWatcher = undefined;
+        if (this.#needsBackendCatchUp && !this.#startupBuffering) {
+          this.#needsBackendCatchUp = false;
+          this.#activitySinceScan = true;
+          this.scheduleScan();
+        }
+        return;
+      }
+      if (message.type === "watch-error") {
+        const error = new Error(
+          "message" in message && typeof message.message === "string"
+            ? message.message
+            : "Vault watcher backend failed.",
+        );
+        this.#onError(error);
+        if (this.#startupBuffering) {
+          this.#startupActivity = true;
+          return;
+        }
+        void this.emitRescan("backend-error").catch(this.#onError);
+        return;
+      }
+      if (message.type !== "event") return;
+      const fileName =
+        "fileName" in message && typeof message.fileName === "string" ? message.fileName : null;
+      recordEvent(fileName);
+    });
+    this.#watcher.on("error", (error) => {
+      if (this.#closed) return;
       this.#onError(error);
+      if (this.#startupBuffering) {
+        this.#startupActivity = true;
+        return;
+      }
       void this.emitRescan("backend-error").catch(this.#onError);
     });
   }
@@ -707,9 +855,17 @@ export class NodeVaultWatcher {
       clearTimeout(this.#timer);
       this.#timer = undefined;
     }
-    this.#watcher?.close();
+    const watcher = this.#watcher;
     this.#watcher = undefined;
+    this.#shallowWatcher?.close();
+    this.#shallowWatcher = undefined;
+    this.#backendReady = false;
+    this.#needsBackendCatchUp = false;
     this.#listener = undefined;
+    if (watcher) {
+      watcher.postMessage("close");
+      await watcher.terminate().catch(() => undefined);
+    }
   }
 
   private scheduleScan(): void {

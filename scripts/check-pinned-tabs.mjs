@@ -417,14 +417,22 @@ function paneTabs(current) {
 }
 
 async function waitForTabs(expected) {
-  return waitFor(
-    async () => {
-      const current = await snapshot();
-      const actual = paneTabs(current).map((tab) => ({ path: tab.path, pinned: tab.pinned }));
-      return JSON.stringify(actual) === JSON.stringify(expected) ? current : null;
-    },
-    `Tabs did not reach ${JSON.stringify(expected)}`,
-  );
+  let lastActual = [];
+  try {
+    return await waitFor(
+      async () => {
+        const current = await snapshot();
+        lastActual = paneTabs(current).map((tab) => ({ path: tab.path, pinned: tab.pinned }));
+        return JSON.stringify(lastActual) === JSON.stringify(expected) ? current : null;
+      },
+      `Tabs did not reach ${JSON.stringify(expected)}`,
+    );
+  } catch (error) {
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; actual=${JSON.stringify(lastActual)}`,
+      { cause: error },
+    );
+  }
 }
 
 async function waitForNoteToolbarLabel(expected) {
@@ -530,15 +538,18 @@ try {
     "Pinned state is not exposed by a non-color text marker.",
   );
 
-  phase = "visible close refusal";
-  await clickSelector('.note-tab-close[data-note-path="Third Note.md"]');
-  await waitFor(
-    async () =>
-      (await evaluate('document.querySelector("#toast")?.textContent')) ===
-      "Unpin this tab before closing it."
-        ? true
-        : null,
-    "Closing a pinned tab did not visibly refuse",
+  phase = "visible close prevention";
+  const pinnedClose = await evaluate(
+    `(() => {
+      const button = document.querySelector('.note-tab-close[data-note-path="Third Note.md"]');
+      return button instanceof HTMLButtonElement
+        ? { disabled: button.disabled, title: button.title }
+        : null;
+    })()`,
+  );
+  assert(
+    pinnedClose?.disabled === true && pinnedClose.title === "Unpin Third Note.md before closing it",
+    `Pinned close prevention was not visible: ${JSON.stringify(pinnedClose)}`,
   );
   await waitForTabs([
     { path: "Welcome.md", pinned: true },

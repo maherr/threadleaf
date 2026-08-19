@@ -232,7 +232,7 @@ async function main() {
     const moveSource = path.join(root, "move-source");
     const moveTarget = path.join(root, "move-target");
     const moveClaimant = path.join(root, "move-claimant");
-    if (process.platform === "linux") {
+    if (process.platform === "linux" || process.platform === "darwin") {
       await writeFile(moveSource, "source", "utf8");
       nativeAddon.renameNoReplace(moveSource, moveTarget);
       await writeFile(moveClaimant, "claimant", "utf8");
@@ -247,7 +247,7 @@ async function main() {
         (await readFile(moveTarget, "utf8")) === "source" &&
         (await readFile(moveClaimant, "utf8")) === "claimant";
       assert(collisionPreserved, "Native no-clobber rename changed a claimant.");
-      noClobberRename = "renameat2-noreplace";
+      noClobberRename = process.platform === "linux" ? "renameat2-noreplace" : "renameatx-excl";
     } else {
       let unsupportedCode;
       try {
@@ -255,7 +255,10 @@ async function main() {
       } catch (error) {
         unsupportedCode = error?.code;
       }
-      assert(unsupportedCode === "unsupported", "Non-Linux no-clobber rename did not fail closed.");
+      assert(
+        unsupportedCode === "unsupported",
+        "Unsupported-platform no-clobber rename did not fail closed.",
+      );
       collisionPreserved = true;
     }
 
@@ -269,7 +272,7 @@ async function main() {
     );
     let anonymousProbe = "unsupported";
     let anonymousProbeNoName = false;
-    if (process.platform === "linux") {
+    if (process.platform === "linux" || process.platform === "darwin") {
       const entriesBeforeProbe = await readdir(root);
       const probeDirectory = await open(root, constants.O_RDONLY | constants.O_DIRECTORY);
       try {
@@ -280,7 +283,7 @@ async function main() {
       anonymousProbeNoName =
         JSON.stringify(await readdir(root)) === JSON.stringify(entriesBeforeProbe);
       assert(anonymousProbeNoName, "Anonymous publication probe created a vault pathname.");
-      anonymousProbe = "otmpfile-no-name";
+      anonymousProbe = process.platform === "linux" ? "otmpfile-no-name" : "held-directory-no-name";
     } else {
       let unsupportedCode;
       try {
@@ -298,7 +301,7 @@ async function main() {
     let anonymousExactBytes = false;
     let anonymousCollisionPreserved = false;
     let anonymousNoStage = false;
-    if (process.platform === "linux") {
+    if (process.platform === "linux" || process.platform === "darwin") {
       const publishBytes = Buffer.from([0, 1, 2, 255, 10]);
       const publishName = "anonymous-published.bin";
       const directory = await open(root, constants.O_RDONLY | constants.O_DIRECTORY);
@@ -324,7 +327,7 @@ async function main() {
         "Anonymous publication did not preserve an existing target claimant.",
       );
       assert(anonymousNoStage, "Anonymous publication exposed a target-side stage name.");
-      anonymousPublish = "otmpfile-linkat";
+      anonymousPublish = process.platform === "linux" ? "otmpfile-linkat" : "staged-renameatx-excl";
     } else {
       let unsupportedCode;
       try {

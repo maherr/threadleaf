@@ -348,6 +348,7 @@ describe("NodeVaultWatcher", () => {
     await fs.mkdir(path.join(vaultPath, ".archive"));
     await fs.writeFile(path.join(vaultPath, "Alpha.md"), "alpha", "utf8");
     await fs.writeFile(path.join(vaultPath, "Folder", "Unicode.md"), "cafe\u0301", "utf8");
+    await fs.writeFile(path.join(vaultPath, "Folder", "Board.canvas"), "{}", "utf8");
     await fs.writeFile(path.join(vaultPath, ".archive", "Hidden.md"), "hidden", "utf8");
     const policy = await VaultPathPolicy.open(vaultPath);
 
@@ -368,6 +369,7 @@ describe("NodeVaultWatcher", () => {
       },
     ]);
     expect([...captured.snapshot.keys()]).toEqual(["Alpha.md", "Folder/Unicode.md"]);
+    expect(captured.canvasPaths).toEqual(["Folder/Board.canvas"]);
     for (const document of captured.documents) {
       expect(captured.snapshot.get(document.path)).toMatchObject({
         path: document.path,
@@ -412,6 +414,48 @@ describe("NodeVaultWatcher", () => {
 
     expect(batch).toMatchObject({
       streamId: "startup-catch-up",
+      sequence: 1,
+      changes: [{ kind: "upsert", state: { path: "Beta.md" } }],
+    });
+    expect(batches).toEqual([batch]);
+    await watcher.close();
+  });
+
+  it("does not rescan when a watcher buffered no startup activity", async () => {
+    await fs.writeFile(path.join(vaultPath, "Alpha.md"), "alpha", "utf8");
+    const policy = await VaultPathPolicy.open(vaultPath);
+    const watcher = NodeVaultWatcher.fromSnapshot(policy, new Map(), {
+      streamId: "buffered-clean-startup",
+    });
+    watcher.startBuffering();
+    const captured = await captureVaultBootstrap(policy);
+    watcher.installStartupSnapshot(captured.snapshot);
+    const list = vi.spyOn(policy, "listMarkdownPaths");
+
+    await expect(watcher.finishBufferedStart(() => undefined)).resolves.toBeNull();
+    expect(list).not.toHaveBeenCalled();
+    await watcher.close();
+  });
+
+  it("rescans once when startup activity arrived after the buffered baseline", async () => {
+    await fs.writeFile(path.join(vaultPath, "Alpha.md"), "alpha", "utf8");
+    const policy = await VaultPathPolicy.open(vaultPath);
+    const captured = await captureVaultBootstrap(policy);
+    const watcher = NodeVaultWatcher.fromSnapshot(policy, new Map(), {
+      streamId: "buffered-dirty-startup",
+    });
+    watcher.startBuffering();
+    watcher.installStartupSnapshot(captured.snapshot);
+    await fs.writeFile(path.join(vaultPath, "Beta.md"), "beta", "utf8");
+    await vi.waitFor(() => expect(watcher.activityVersionForPath("Beta.md")).toBeGreaterThan(0));
+    const batches: VaultChangeBatch[] = [];
+
+    const batch = await watcher.finishBufferedStart((value) => {
+      batches.push(value);
+    });
+
+    expect(batch).toMatchObject({
+      streamId: "buffered-dirty-startup",
       sequence: 1,
       changes: [{ kind: "upsert", state: { path: "Beta.md" } }],
     });

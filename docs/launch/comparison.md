@@ -10,7 +10,7 @@ about Obsidian describe widely known, stable facts about its product; Obsidian's
 public, so those statements are general knowledge rather than citations into a repository, and are
 kept intentionally general rather than pinned to specific numbers that could go stale.
 
-This is maintained against Threadleaf 0.1.0 and its 2026-08-18 Phase 3 acceptance state.
+This is maintained against Threadleaf 0.1.0 and its 2026-08-19 Phase 3 acceptance state.
 Threadleaf is a young pre-1.0 application. Read this alongside the [project charter](../charter.md) and
 [roadmap](../roadmap.md), which are more current than any snapshot comparison can stay.
 

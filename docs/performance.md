@@ -244,13 +244,40 @@ THREADLEAF_STARTUP_PROBE_VAULT=/absolute/path/to/vault \
   pnpm test:startup-readiness
 ```
 
+The default uses a fresh temporary Electron profile. To measure a real warm restart without
+changing the vault, set `THREADLEAF_STARTUP_USER_DATA_DIR` to one dedicated private directory and
+run the command twice. The second launch must report `userDataMode: "reused-external"`; it reuses
+Threadleaf workspace state and the derived-index cache while the harness continues to make no vault
+mutation. `THREADLEAF_STARTUP_EXIT_BUDGET_MS` may raise the default 10-second process-exit bound for
+a diagnostic large-vault run; the result is emitted only after a clean exit and includes the actual
+`processExitMs`. `THREADLEAF_STARTUP_POST_READY_WAIT_MS` may keep that diagnostic process open after
+full readiness so a first cache generation can finish before the harness requests close. Remove that
+dedicated profile after the comparison.
+
 Set `THREADLEAF_STARTUP_SCREENSHOT_DIR` to retain dark and light captures. The two budgets separately
 gate first-window and full-target readiness, and the probe also requires a clean application exit.
 The 90-second ready budget includes background census completion, which took about 79.8 seconds on
 the measured 200K corpus.
 Peak main-process resident memory remained about 2.6 GB during the traced large-workspace run.
-Progress counts, visible-note prioritization, lower memory use, cancellation, and public
-cross-platform regression corpora remain required before this observation becomes a release budget.
+Progress counts, visible-note prioritization, lower peak memory use, and public cross-platform
+regression corpora remain required before this observation becomes a release budget. Close-time
+cancellation for the optional derived-cache replacement is now implemented and covered below.
+
+### 2026-08-19 real-vault cache repair
+
+The first persistent search-cache format was 1.7 GiB for the 20,968-note MEGA corpus and kept the
+process alive for 42.8 seconds when the harness closed immediately after full readiness. It stored
+the 364 MiB note corpus in both an ordinary content table and FTS's private content table, then kept
+789.5 MiB of trigram position postings that Threadleaf never consumed.
+
+Schema 5 stores note bodies once and uses contentless `detail=none` trigram candidates. The same
+cache is 553 MiB, including 45.4 MiB of trigram postings. A deliberate 30-second post-ready wait let
+the first generation commit, after which close took 639 ms. Three same-profile warm launches had a
+5,585 ms median usable-workspace time, 7,545 ms median full-ready time, and 686 ms median close.
+The owner-observed Obsidian 1.13.7 launch over the same folder was 14,081 ms. That makes this specific
+Threadleaf warm full-ready median about 1.9 times faster, not a universal product claim. Full source,
+rights boundaries, schema disposition, and executable proof are in
+[compact derived search cache](research/compact-derived-search-cache-2026-08-19.md).
 
 ## Representative copied-vault desktop trial
 

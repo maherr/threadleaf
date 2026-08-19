@@ -270,6 +270,11 @@ async function assertIsolatedX11Renderer() {
 }
 
 async function targetCenter(selector) {
+  const scrolled = await evaluate(
+    `(() => { const element = document.querySelector(${JSON.stringify(selector)}); if (!(element instanceof HTMLElement)) return false; element.scrollIntoView({ block: "center", inline: "center" }); return true; })()`,
+  );
+  assert(scrolled, `Pointer target is unavailable: ${selector}`);
+  await delay(50);
   const target = await evaluate(
     "(() => {" +
       "const element = document.querySelector(" +
@@ -283,6 +288,7 @@ async function targetCenter(selector) {
       "return {" +
       "error: null, x, y, width: rect.width, height: rect.height," +
       "hit: Boolean(hit && (hit === element || element.contains(hit)))," +
+      "hitDescription: hit instanceof Element ? hit.tagName.toLowerCase() + '#' + hit.id + '.' + [...hit.classList].join('.') : null," +
       "hidden: element.hidden || getComputedStyle(element).display === 'none'," +
       "disabled: 'disabled' in element ? Boolean(element.disabled) : false" +
       "};" +
@@ -291,7 +297,10 @@ async function targetCenter(selector) {
   assert(target && !target.error, `Pointer target is unavailable: ${selector}`);
   assert(!target.hidden && !target.disabled, `Pointer target is not interactive: ${selector}`);
   assert(target.width > 0 && target.height > 0, `Pointer target has no geometry: ${selector}`);
-  assert(target.hit, `Pointer target is covered at its center: ${selector}`);
+  assert(
+    target.hit,
+    `Pointer target is covered at its center: ${selector}; hit=${target.hitDescription}`,
+  );
   return target;
 }
 

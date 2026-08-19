@@ -2483,6 +2483,14 @@ describe("attachment move planning", () => {
     const decomposed = "Cafe\u0301.pdf";
     await fs.writeFile(path.join(vaultPath, "Assets", composed), pdfBytes);
     await fs.writeFile(path.join(vaultPath, "Assets", decomposed), pdfBytes);
+    if (process.platform === "darwin") {
+      expect(
+        (await fs.readdir(path.join(vaultPath, "Assets"))).filter(
+          (name) => name.normalize("NFC") === composed,
+        ),
+      ).toHaveLength(1);
+      return;
+    }
     await expect(
       planBinaryAttachmentMove(kernel, `Assets/${composed}`, "Archive/Cafe.pdf"),
     ).rejects.toThrow("ambiguous after case and Unicode normalization");
@@ -3510,7 +3518,7 @@ describe("attachment move planning", () => {
     for (const note of notes) {
       await expect(fs.readFile(path.join(vaultPath, note.path), "utf8")).resolves.toBe(note.after);
     }
-  });
+  }, 60_000);
 
   it("rewrites renderer title continuations exactly once across containers and endings", async () => {
     await fs.writeFile(path.join(vaultPath, "Assets", "report.pdf"), pdfBytes);

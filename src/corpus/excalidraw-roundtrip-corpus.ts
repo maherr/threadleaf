@@ -535,7 +535,7 @@ async function runAttachmentRenameCase(
     attachment.snapshot.revision,
     { plan, acceptCurrentRewrites: true },
   );
-  if (process.platform !== "linux") {
+  if (process.platform === "win32") {
     assert(
       rename.status === "conflict" && rename.reason === "attachment-publish-unavailable",
       "unsupported platform did not fail attachment publication closed",

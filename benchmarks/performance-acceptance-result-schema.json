@@ -76,7 +76,7 @@
       "properties": {
         "electronWorkspaceOpen": { "$ref": "#/$defs/electronLeg" },
         "coldKernel": { "$ref": "#/$defs/coldKernelLeg" },
-        "warmPersistedIndex": { "$ref": "#/$defs/abortedLeg" },
+        "warmPersistedIndex": { "$ref": "#/$defs/electronLeg" },
         "incremental": { "$ref": "#/$defs/generalLeg" },
         "timeToUsableShell": { "$ref": "#/$defs/generalLeg" },
         "backgroundCompletion": { "$ref": "#/$defs/generalLeg" },
@@ -129,6 +129,7 @@
         "usableShellMs",
         "backgroundCompletionMs",
         "responsivenessProbes",
+        "runtimeDiagnostics",
         "rss",
         "finalSurface"
       ],
@@ -141,6 +142,11 @@
         "usableShellMs": { "type": ["number", "null"], "minimum": 0 },
         "backgroundCompletionMs": { "type": ["number", "null"], "minimum": 0 },
         "responsivenessProbes": { "type": "array", "minItems": 0, "maxItems": 3 },
+        "runtimeDiagnostics": {
+          "type": "array",
+          "maxItems": 80,
+          "items": { "type": "string" }
+        },
         "rss": { "type": "object" },
         "finalSurface": { "type": ["object", "null"] },
         "reason": { "type": "string" }

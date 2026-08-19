@@ -8,6 +8,12 @@ import path from "node:path";
 const appRoot = process.cwd();
 const electronPath = path.join(appRoot, "node_modules", ".bin", "electron");
 const fixtureVault = path.join(appRoot, "fixtures", "vaults", "basic");
+const fixturePlugin = path.join(
+  appRoot,
+  "fixtures",
+  "plugin-packages",
+  "threadleaf-workspace-docks-fixture",
+);
 const testRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-workspace-docks-"));
 const vaultPath = path.join(testRoot, "vault-one");
 const secondVaultPath = path.join(testRoot, "vault-two");
@@ -92,6 +98,25 @@ async function terminateMarkedProcesses() {
   }
   const remaining = await markedProcessIds();
   assert(remaining.length === 0, `Could not stop test processes: ${remaining.join(", ")}`);
+}
+
+async function makeTestTreeRemovable(rootPath) {
+  let stat;
+  try {
+    stat = await fs.lstat(rootPath);
+  } catch (error) {
+    if (error?.code === "ENOENT") return;
+    throw error;
+  }
+  if (stat.isSymbolicLink()) return;
+  if (!stat.isDirectory()) {
+    await fs.chmod(rootPath, 0o600);
+    return;
+  }
+  await fs.chmod(rootPath, 0o700);
+  for (const name of await fs.readdir(rootPath)) {
+    await makeTestTreeRemovable(path.join(rootPath, name));
+  }
 }
 
 async function waitFor(probe, message, timeoutMs = 15_000) {
@@ -559,29 +584,18 @@ try {
     path.join(vaultPath, "Drawing.excalidraw.md"),
     "# Drawing\n\nPop-out target.\n",
   );
-  const pluginMain = `const { ItemView, Plugin } = require("obsidian");
-class DrawingView extends ItemView {
-  getViewType() { return "excalidraw"; }
-  getDisplayText() { return "Drawing"; }
-  async onOpen() { this.containerEl.textContent = "Threadleaf drawing fixture"; }
-  async onClose() {}
-}
-module.exports = class WorkspaceDocksFixture extends Plugin {
-  onload() {
-    this.registerView("excalidraw", (leaf) => new DrawingView(leaf));
-  }
-};
-`;
-  await fs.writeFile(
-    path.join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture", "main.js"),
-    pluginMain,
-  );
+  const pluginsPath = path.join(vaultPath, ".obsidian", "plugins");
+  await fs.rm(pluginsPath, { recursive: true, force: true });
+  await fs.mkdir(pluginsPath, { recursive: true });
+  await fs.cp(fixturePlugin, path.join(pluginsPath, "threadleaf-workspace-docks-fixture"), {
+    recursive: true,
+  });
   await fs.mkdir(userDataPath, { recursive: true });
   await fs.symlink(vaultPath, pickerLink);
   const canonicalVaultPath = await fs.realpath(vaultPath);
   const vaultId = createHash("sha256").update(canonicalVaultPath).digest("hex");
   const fixtureBundle = await fs.readFile(
-    path.join(vaultPath, ".obsidian", "plugins", "threadleaf-fixture", "main.js"),
+    path.join(pluginsPath, "threadleaf-workspace-docks-fixture", "main.js"),
   );
   await fs.writeFile(
     path.join(userDataPath, "settings.json"),
@@ -593,9 +607,9 @@ module.exports = class WorkspaceDocksFixture extends Plugin {
         pluginsByVault: {
           [vaultId]: {
             compatibilityMode: "enabled",
-            enabledPluginIds: ["threadleaf-fixture"],
+            enabledPluginIds: ["threadleaf-workspace-docks-fixture"],
             capabilityGrantsByPlugin: {
-              "threadleaf-fixture": {
+              "threadleaf-workspace-docks-fixture": {
                 bundleSha256: createHash("sha256").update(fixtureBundle).digest("hex"),
                 capabilities: ["workspace-ui"],
               },
@@ -611,8 +625,19 @@ module.exports = class WorkspaceDocksFixture extends Plugin {
 
   phase = "isolated X11 launch";
   let port = await launchApplication();
-  await waitForReady();
+  const initial = await waitForReady();
   await assertIsolatedX11Renderer();
+  const authorityReview = await evaluate(
+    `window.threadleaf.setPluginCapabilityGrant(${JSON.stringify(initial.vault.id)}, "threadleaf-workspace-docks-fixture", ${JSON.stringify(createHash("sha256").update(fixtureBundle).digest("hex"))}, true)`,
+  );
+  assert(
+    authorityReview?.status === "updated",
+    `The reviewed workspace fixture could not be enabled: ${JSON.stringify(authorityReview)}`,
+  );
+  await waitFor(
+    async () => ((await snapshot()).integrations?.viewTypes.includes("excalidraw") ? true : null),
+    "The reviewed workspace fixture did not register",
+  );
 
   phase = "keyboard tab movement and pointer cancellation";
   await clickSelector('[data-note-path="Welcome.md"]');
@@ -822,10 +847,27 @@ module.exports = class WorkspaceDocksFixture extends Plugin {
         : null,
     "Drawing tab did not become active",
   );
-  await waitFor(
-    async () => ((await snapshot()).integrations?.viewTypes.includes("excalidraw") ? true : null),
-    "Supported plugin view did not register",
-  );
+  let pluginRegistrationSnapshot;
+  try {
+    await waitFor(async () => {
+      const current = await snapshot();
+      pluginRegistrationSnapshot = current;
+      return current.integrations?.viewTypes.includes("excalidraw") ? true : null;
+    }, "Supported plugin view did not register");
+  } catch (error) {
+    const pluginCatalog = pluginRegistrationSnapshot?.vault?.id
+      ? await evaluate(
+          `(async () => window.threadleaf.getPlugins(${JSON.stringify(pluginRegistrationSnapshot.vault.id)}))()`,
+        ).catch(() => null)
+      : null;
+    const pluginDirectories = await fs
+      .readdir(path.join(vaultPath, ".obsidian", "plugins"))
+      .catch(() => []);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; observed=${JSON.stringify({ vault: pluginRegistrationSnapshot?.vault, startup: pluginRegistrationSnapshot?.startup, workspaceLayout: pluginRegistrationSnapshot?.workspaceLayout, plugins: pluginRegistrationSnapshot?.plugins, integrations: pluginRegistrationSnapshot?.integrations, notices: pluginRegistrationSnapshot?.notices, events: pluginRegistrationSnapshot?.events, toast: await evaluate('document.querySelector("#toast")?.textContent ?? null'), pluginDirectories, pluginCatalog })}`,
+      { cause: error },
+    );
+  }
   await clickSelector("#plugin-view");
   await waitFor(
     async () => ((await snapshot()).pluginSurface?.viewType === "excalidraw" ? true : null),
@@ -1184,6 +1226,7 @@ module.exports = class WorkspaceDocksFixture extends Plugin {
   try {
     await closeApplication();
   } finally {
+    await makeTestTreeRemovable(testRoot);
     await fs.rm(testRoot, { recursive: true, force: true });
   }
 }

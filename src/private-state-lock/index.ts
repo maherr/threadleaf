@@ -58,6 +58,14 @@ export interface NativeStateLockHandle {
 export interface ThreadleafNativeBinding {
   acquire(lockPath: string): NativeStateLockHandle;
   renameNoReplace(sourcePath: string, targetPath: string): void;
+  openDirectoryNoFollowAt(parentDirectoryFd: number, name: string): number;
+  openFileNoFollowAt(directoryFd: number, name: string, create: boolean): number;
+  renameNoReplaceAt(
+    sourceDirectoryFd: number,
+    sourceName: string,
+    targetDirectoryFd: number,
+    targetName: string,
+  ): void;
   probeAnonymousPublishNoName(targetDirectoryFd: number): void;
   publishBufferNoReplace(targetDirectoryFd: number, targetName: string, bytes: Buffer): void;
   platform(): StateLockPlatform;
@@ -214,6 +222,9 @@ export function loadThreadleafNativeBindingForInternalUse(): ThreadleafNativeBin
       if (
         typeof loaded.acquire === "function" &&
         typeof loaded.renameNoReplace === "function" &&
+        typeof loaded.openDirectoryNoFollowAt === "function" &&
+        typeof loaded.openFileNoFollowAt === "function" &&
+        typeof loaded.renameNoReplaceAt === "function" &&
         typeof loaded.probeAnonymousPublishNoName === "function" &&
         typeof loaded.publishBufferNoReplace === "function" &&
         typeof loaded.platform === "function" &&

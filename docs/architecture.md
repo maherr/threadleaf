@@ -111,18 +111,19 @@ application-data location.
 
 ### Visible physical inventory
 
-The desktop Files navigator has a read-only physical inventory separate from the Markdown metadata
-index. Its complete projection represents visible physical folders, Markdown notes, JSON Canvas
-documents, and ordinary files. It preserves explicit empty folders and gives folders an immediate
-visible-child count. Search, tags, links, note summaries, and the flat Notes view remain projections
-of saved Markdown metadata.
+The desktop Files navigator is a read-only physical projection separate from the Markdown metadata
+index. On deferred large-vault startup it remains lazy: each tree request enumerates only one
+contained visible directory, and Reveal Active Note walks only the requested ancestor chain and
+page offsets. This preserves empty folders and immediate visible-child counts without materializing
+the entire folder graph or holding every visible path in memory. Search, tags, links, note summaries,
+and the flat Notes view remain projections of saved Markdown metadata.
 
-The inventory has its own opaque generation. A path-set change rotates that generation, while a
-content-only Markdown edit does not. Initial inventory work waits until the first metadata census
-succeeds or fails, then scans outside the index mutation lock. Publication is a short guarded step:
-if a newer invalidation arrived, the candidate is discarded and rebuilt. A failed scan exposes a
-degraded state while retaining the last complete projection, never a partial result or invented
-empty vault, and the next request retries.
+The lazy inventory has its own opaque generation, rotated by path invalidation but not by a
+content-only Markdown edit. Operations that truly require vault-wide ambiguity resolution may
+explicitly promote it to a complete projection outside the index mutation lock. Publication is a
+short guarded step: if a newer invalidation arrived, the candidate is discarded and rebuilt. A
+failed promoted scan exposes a degraded state while retaining the last complete projection, never a
+partial result or invented empty vault, and the next request retries.
 
 Visible inventory uses the kernel's contained broad path policy. Every dot-prefixed segment,
 transaction artifact, private or outside target, broken link, folder symlink, and unsupported
@@ -238,11 +239,22 @@ before it opens the configured or restored vault. A startup snapshot names the r
 disables bootstrap writes and search while the target builds its derived index. Open vault remains
 available. After the first bootstrap render, the sandboxed renderer sends a one-way shell-ready
 signal; only then may the main process begin restored-vault activation. A generation guard prevents
-a late restore from replacing a vault picked while it was opening. The target bootstrap reads each
-visible Markdown file once and uses the same stable byte snapshots to seed both watcher state and
-the derived metadata index. Metadata construction yields to the event loop at bounded intervals so
-window and IPC work remain serviceable during a large build. The watcher starts from that exact
-observation and reconciles later filesystem events instead of repeating the initial corpus read.
+a late restore from replacing a vault picked while it was opening. A deferred runtime restores only
+the saved active-note snapshots needed for its first workspace and returns before the full census.
+The background census starts watcher buffering, then opens the private versioned SQLite derived-index
+cache when available. Cached fingerprints and parsed metadata hydrate concurrently with a current
+filesystem snapshot; their diff reparses only changed notes before the new index is published. The
+cache also provides lazily loaded full-text bodies and a saved projection, and accepted watcher
+changes update it transactionally. Note bodies are stored once. A contentless, position-free
+trigram index supplies only candidate paths; Threadleaf's existing matcher verifies exact search
+behavior from the retained source. Any incompatible, malformed, or stale cache is discarded and
+rebuilt from canonical vault bytes. An unfinished cold replacement rolls back when the app closes
+instead of delaying process exit. On a cold build, each visible Markdown file is read once and the
+same stable snapshots seed the watcher and derived index. Metadata construction yields to the event
+loop at bounded intervals so window and IPC work remain serviceable. Selecting a visible Markdown
+file that the census has not indexed yet performs one bounded stable read, retains that exact
+active-note snapshot, and opens it without mutating the shared partial index. The eventual census
+remains authoritative for complete links, backlinks, search, and metadata.
 Environment overrides are never persisted. After adoption, Threadleaf reconciles only the plugins
 explicitly selected in its private per-vault settings. A vault with no saved plugin preference
 starts restricted. An unavailable or malformed saved selection falls back to the bundled fixture
@@ -376,6 +388,18 @@ behavior on one contract. The settings surface records or clears one binding at 
 duplicates before persistence, and resets all bindings through the same durable path. Keyboard
 events resolve to action IDs. Workspace and editor targets then use the same renderer command
 catalog as visible controls and the command palette.
+
+The renderer presents Settings as a searchable, keyboard-navigable window with stable sidebar
+sections, nested result filtering, focus restoration, and one consistent control scale. Core rows
+publish bounded search labels and descriptions. Compatibility-plugin setting tabs may additionally
+provide Obsidian 1.13-style declarative definitions through `getSettingDefinitions()`. Threadleaf
+renders common controls, groups, lists, pages, conditional visibility and disabled state, validation,
+add, delete, and reorder actions, and secret values, then persists accepted control changes through
+the plugin's existing data store. A non-empty declarative result takes precedence; the established
+imperative `display()` path remains the fallback. Definitions are also sampled once at registration
+so compatible plugin rows can participate in global settings search without executing I/O in the
+search path. The primary-source behavior and rights boundary is recorded in
+[Obsidian 1.13 settings and image interaction mining](research/obsidian-1.13-settings-images-2026-08-19.md).
 
 ### Private per-vault note bookmarks
 
@@ -573,6 +597,13 @@ on close, renderer crash, replacement, and application shutdown. A fresh rendere
 vault boundary and surface policy when the user explicitly reloads the culprit. Healthy siblings
 and the native workspace continue running.
 
+Plugin-surface environment propagation is vault scoped. A candidate runtime receives its own
+bridge before activation, so current and candidate vaults may coexist during validated selection
+without serializing unrelated plugin environment traffic through one global identity. Adoption
+retires and clears the prior vault's bridge only after the new runtime succeeds. A failed candidate
+closes its own bridge and leaves the active vault's appearance, CSS, editor, and workspace
+environment unchanged. Shutdown clears every remaining bridge.
+
 Lifecycle ownership includes commands, event registrations, view and extension factories,
 processors, editor suggestions, ribbons, status items, settings tabs, leaves, and transient modals
 that retain a direct reference to their creating plugin. Targeted unload closes only that plugin's
@@ -675,13 +706,16 @@ The Quick Switcher and command palette retain their established compatibility pr
 NFKD-based ranking behavior is intentionally separate from vault full-text search so this policy
 does not change existing picker matches for compatibility characters.
 
-The initial index is an in-memory normalized scan. That is the simplest correct implementation and
-already clears the current interactive scale baseline. `pnpm benchmark:search` measures rebuild,
-rare-query, and deliberately broad-query behavior over a deterministic 10,000-note corpus. The
-public `benchmarks/` module adds filesystem-backed smoke, standard, and large corpora with manifest
-hashes, index/link correctness checks, watcher bursts, runtime activation, and opt-in relative
-timing budgets. A future inverted or SQLite FTS index must be earned by those measurements and
-preserve the same rebuildable contract, rather than adding canonical database state speculatively.
+The cold index is an in-memory normalized scan. A private SQLite FTS5 trigram table accelerates warm
+queries, but it is deliberately contentless and stores no positions, snippets, ranking, or
+canonical result state. It returns candidate paths only; the existing grapheme-aware matcher loads
+their retained source and remains authoritative for inclusion, context, counts, and ranking.
+`pnpm benchmark:search` measures rebuild, rare-query, and deliberately broad-query behavior over a
+deterministic 10,000-note corpus. The public `benchmarks/` module adds filesystem-backed smoke,
+standard, and large corpora with manifest hashes, index/link correctness checks, watcher bursts,
+runtime activation, and opt-in relative timing budgets. The search cache decision and measured
+storage boundary are recorded in
+[compact derived search cache](research/compact-derived-search-cache-2026-08-19.md).
 
 ### Live Preview, Source, Reading, and source mapping
 
@@ -704,6 +738,12 @@ undo, drafts, autosaves, conflicts, and recovery remain one path.
 Reading view is an explicit document mode, not an implicit write or a second source of truth. It
 renders the current CodeMirror document while the ordinary autosave coordinator remains active.
 Switching modes stores only an application preference outside the vault.
+
+Hydrated raster images are keyboard-focusable and can open a full-screen lightbox. The lightbox
+receives only the bounded data URLs already authorized for the current rendered note, plus display
+names and order. It supports previous and next navigation, filename and position, zoom, reset,
+wheel zoom, drag pan, Escape close, and focus restoration. It performs no filesystem or network
+request and adds no image-decoder authority beyond Chromium's existing bounded raster display.
 
 The first renderer uses Markdown-it for deterministic block parsing and DOMPurify with a narrow
 element and attribute allowlist. Raw HTML is accepted only after sanitization. Scripts, event
@@ -1089,25 +1129,27 @@ against a malicious process running as the same operating-system user, which can
 operations after validation. Symlink and canonical-path checks fail closed whenever such a change
 is observed.
 
-Attachment publication opts into a stricter transaction seam. The tested implementation is
-Linux-only: each attachment ancestor and final name is reopened from held descriptor-relative
-no-follow handles, and the exact source snapshot and revision are recorded in a private durable
-journal and evidence blob. The native boundary creates an unnamed `O_TMPFILE` inode in the held
-destination directory, writes the exact bytes with mode 0600, fsyncs the inode, and atomically links
-it at the absent basename with `linkat`. It first uses `AT_EMPTY_PATH` and retains the documented
-`/proc/self/fd` plus `AT_SYMLINK_FOLLOW` fallback for hosts that reject the empty-path form. The
-directory is then fsynced and the published bytes are verified. No target-side staging pathname
-exists for another process to replace before publication.
+Attachment publication opts into a stricter transaction seam on Linux and macOS. Each attachment
+ancestor and final name is reopened from held descriptor-relative no-follow handles, and the exact
+source snapshot and revision are recorded in a private durable journal and evidence blob. On Linux,
+the native boundary creates an unnamed `O_TMPFILE` inode in the held destination directory, writes
+the exact bytes with mode 0600, fsyncs the inode, and atomically links it at the absent basename with
+`linkat`. It first uses `AT_EMPTY_PATH` and retains the documented `/proc/self/fd` plus
+`AT_SYMLINK_FOLLOW` fallback for hosts that reject the empty-path form. On macOS, the native boundary
+exclusively creates and fsyncs a random hidden stage through the held destination descriptor, then
+publishes it in the same directory with `renameatx_np(RENAME_EXCL)`. A successful macOS publication
+leaves no stage residue; a late failure or target race retains the stage as recovery evidence. Both
+paths fsync the directory and verify the published bytes without replacing a target claimant.
 
 Vault open/create performs a non-mutating host-binding, descriptor-containment, and
 filesystem-device preflight only. A strict destination parent must already exist and remain
 contained. Before Threadleaf creates a transaction journal, evidence blob, target, or Markdown
-change, it opens that exact target parent through a held descriptor and performs a no-name probe: it
-creates an unnamed `O_TMPFILE` inode, writes one bounded byte, applies mode 0600, fsyncs the inode
-and directory, and closes it. The probe establishes anonymous-inode create, write, and durability on
-that exact target filesystem and directory while creating no vault pathname. It cannot prove `linkat`
-at the requested basename without creating a visible name, so the final exact-basename `linkat` and
-directory sync remain the authoritative no-overwrite publication checks before Markdown mutation.
+change, it opens that exact target parent through a held descriptor and performs a no-name probe.
+Linux exercises unnamed-inode create, write, and durability. macOS validates that the retained
+descriptor still names the intended directory; its final exclusive hidden-stage publication is the
+write-capability proof. The final exact-basename `linkat` on Linux or `renameatx_np(RENAME_EXCL)` on
+macOS, followed by directory sync, remains the authoritative no-overwrite check before Markdown
+mutation.
 For a publication that rewrites links, every rewritten note parent and the receipt-gated private
 rollback-claim directory need the descriptor and same-device receipt, not the no-name probe, because
 they do not publish the attachment. A cross-device layout is rejected before the destination copy is
@@ -1124,23 +1166,24 @@ equivalent claimant is a manual conflict: Threadleaf leaves the claimant and exa
 in place and does not proceed with Markdown mutation. This is a detection barrier, not an atomic
 normalized-name reservation. A same-UID process can race a pathname during or after a scan, while
 descriptor-contained reads and writes still prevent that pathname race from redirecting a mutation.
-Linux's native no-clobber link protects only the exact basename; that residual normalized-name race
+The native no-clobber publication protects only the exact basename; that residual normalized-name race
 remains outside the strict transaction guarantee.
 
-There is no exclusive-copy fallback because a crash could expose a partial final target. Missing
-`O_TMPFILE` or `linkat` support, `EXDEV`, durability failure, Windows sharing behavior, and
-unsupported descriptor or reparse primitives are typed capability conflicts before Markdown
-mutation. Failure before the final link closes the unnamed inode without creating a vault name. A
+There is no unchecked final-target copy fallback because a crash could expose partial final bytes.
+Missing anonymous-inode, exclusive-rename, or link support, `EXDEV`, durability failure, Windows
+sharing behavior, and unsupported descriptor or reparse primitives are typed capability conflicts
+before Markdown mutation. Failure before the final Linux link closes the unnamed inode without
+creating a vault name. A
 late native publication capability failure after durable intent returns
 `attachment-publish-unavailable`, leaves the source and Markdown unchanged, and retains the private
 journal and evidence for recovery or explicit manual review. It does not infer that the target is
-absent: failure after `linkat` or its directory sync may leave the exact destination in place, so no
+absent: failure after the exact publication primitive or its directory sync may leave the exact destination in place, so no
 mutable target is deleted. The original source name is retained. Markdown rewrites begin only after
 the target publication is verified, and the terminal result is `published-source-retained`, not a
 rename. A destination claim, source replacement, parent symlink or reparse change, crash, sharing
 error, or recovery mismatch preserves external bytes and private evidence and reports a conflict.
-Other platforms, including Darwin and Windows, fail the strict attachment request before mutation
-until an equivalent no-follow primitive and sharing contract is proven.
+Windows fails the strict attachment request before mutation until an equivalent no-follow primitive
+and sharing contract is proven.
 Ordinary private writers retain their cross-platform durability path. These guarantees protect
 against crashes and ordinary editors, not a malicious same-UID process that races after a check;
 that remains outside the threat model. Strict attachment claims never use a pathname unlink: they

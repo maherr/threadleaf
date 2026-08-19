@@ -34,13 +34,13 @@
     {
       "id": "obsidian-runtime.confirmation-modal.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 3263,
+      "line": 3264,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.core-events-files-vault.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1867,
+      "line": 1868,
       "status": "positive"
     },
     {
@@ -52,19 +52,19 @@
     {
       "id": "obsidian-runtime.editor-core.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1870,
+      "line": 1871,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.file-manager-mutations.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1556,
+      "line": 1557,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.file-system-adapter-mutations.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1557,
+      "line": 1558,
       "status": "positive"
     },
     {
@@ -94,7 +94,7 @@
     {
       "id": "obsidian-runtime.markdown-view-family.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 2471,
+      "line": 2472,
       "status": "positive"
     },
     {
@@ -166,25 +166,25 @@
     {
       "id": "obsidian-runtime.render-views.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 2470,
+      "line": 2471,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.secret-component.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 3195,
+      "line": 3196,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.setting-tabs.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 3705,
+      "line": 3706,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.settings-components.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 2845,
+      "line": 2846,
       "status": "positive"
     },
     {
@@ -196,13 +196,13 @@
     {
       "id": "obsidian-runtime.suggest-components.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 3814,
+      "line": 3815,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.tasks.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 3637,
+      "line": 3638,
       "status": "positive"
     },
     {
@@ -232,43 +232,43 @@
     {
       "id": "obsidian-runtime.value-core.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 3353,
+      "line": 3354,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.value-extended.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 3446,
+      "line": 3447,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.vault-mutations.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1555,
+      "line": 1556,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.view-lifecycle.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 2698,
+      "line": 2699,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.workspace-core.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1868,
+      "line": 1869,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.workspace-extended.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 2263,
+      "line": 2264,
       "status": "positive"
     },
     {
       "id": "obsidian-runtime.workspace-hierarchy.v1",
       "path": "src/runtime/obsidian-runtime-ledger-evidence.test.ts",
-      "line": 1869,
+      "line": 1870,
       "status": "positive"
     },
     {

@@ -83,7 +83,7 @@ interface IndexedHeading extends IndexedLine {
   normalized: string;
 }
 
-interface IndexedSearchDocument {
+export interface CachedFullTextSearchDocument {
   path: string;
   canonicalPath: string;
   normalizedPath: string;
@@ -99,9 +99,9 @@ interface IndexedSearchDocument {
    * 31.45 million lines), to describe text this field already holds. Lines are
    * derived from here at query time, for matched documents only.
    */
-  content: string;
+  content: string | null;
   /** The case-folded whole-note key. Always a second copy: a note almost always contains a capital. */
-  normalizedContent: string;
+  normalizedContent: string | null;
   /**
    * The case-preserving whole-note key, kept only when folding gave back a
    * string equal to `content`, which is the common case: `foldSearchText`
@@ -128,6 +128,18 @@ interface IndexedSearchDocument {
   }>;
 }
 
+type IndexedSearchDocument = CachedFullTextSearchDocument;
+
+export interface PersistedSearchContent {
+  content: string;
+  normalizedContent: string;
+}
+
+export interface FullTextSearchContentStore {
+  pathsContaining(terms: readonly string[]): readonly ReadonlySet<string>[];
+  load(paths: readonly string[]): ReadonlyMap<string, PersistedSearchContent>;
+}
+
 interface ContextCandidate extends FullTextSearchContext {
   coverage: number;
   occurrences: number;
@@ -148,6 +160,9 @@ function lineFeedContent(content: string): string {
 
 /** The whole-note comparable key for one query, rebuilt only when it is not held. */
 function comparableContent(document: IndexedSearchDocument, caseSensitive: boolean): string {
+  if (document.content === null || document.normalizedContent === null) {
+    throw new Error(`Search content was not loaded for ${document.path}.`);
+  }
   if (!caseSensitive) {
     return document.normalizedContent;
   }
@@ -444,6 +459,46 @@ function containsTerm(
   );
 }
 
+function containsMetadataTerm(
+  document: IndexedSearchDocument,
+  term: string,
+  caseSensitive: boolean,
+): boolean {
+  return (
+    containsComparable(
+      comparableText(document.canonicalTitle, document.normalizedTitle, caseSensitive),
+      term,
+      document.titleSimple,
+    ) ||
+    containsComparable(
+      comparableText(document.canonicalPath, document.normalizedPath, caseSensitive),
+      term,
+      document.pathSimple,
+    ) ||
+    document.headings.some((heading) =>
+      containsComparable(
+        comparableText(heading.canonical, heading.normalized, caseSensitive),
+        term,
+        heading.simple,
+      ),
+    ) ||
+    document.tags.some((tag) =>
+      containsComparable(
+        comparableText(tag.canonical, tag.normalized, caseSensitive),
+        term,
+        tag.simple,
+      ),
+    ) ||
+    document.properties.some((property) =>
+      containsComparable(
+        comparableText(property.canonical, property.normalized, caseSensitive),
+        term,
+        property.simple,
+      ),
+    )
+  );
+}
+
 function scoreDocument(
   document: IndexedSearchDocument,
   terms: string[],
@@ -529,6 +584,9 @@ function contextCandidates(
   caseSensitive: boolean,
   exactContext: boolean,
 ): ContextCandidate[] {
+  if (document.content === null) {
+    throw new Error(`Search content was not loaded for ${document.path}.`);
+  }
   const candidates: ContextCandidate[] = [];
   for (const line of deriveLines(document.content)) {
     const comparison = comparableLine(line, caseSensitive);
@@ -644,7 +702,7 @@ function scoreMatch(
   ) {
     return null;
   }
-  const content = comparableContent(document, caseSensitive);
+  const content = terms.length > 0 ? comparableContent(document, caseSensitive) : "";
   if (!terms.every((term) => containsTerm(document, term, caseSensitive, content))) {
     return null;
   }
@@ -679,8 +737,11 @@ function documentContexts(
   maxContexts: number,
   exactContext: boolean,
 ): FullTextSearchContext[] {
+  if (terms.length > 0 && document.content === null) {
+    throw new Error(`Search content was not loaded for ${document.path}.`);
+  }
   const candidates = [
-    ...contextCandidates(document, terms, caseSensitive, exactContext),
+    ...(terms.length > 0 ? contextCandidates(document, terms, caseSensitive, exactContext) : []),
     ...matchingTagFilters(document, tagFilters).map(
       (tag): ContextCandidate => ({
         kind: "tag",
@@ -718,6 +779,7 @@ function documentContexts(
 
 export class FullTextSearchIndex {
   readonly #documents = new Map<string, IndexedSearchDocument>();
+  #contentStore: FullTextSearchContentStore | null = null;
 
   replace(documents: Iterable<FullTextSearchDocument>): void {
     const next = new Map<string, IndexedSearchDocument>();
@@ -725,6 +787,7 @@ export class FullTextSearchIndex {
       next.set(document.path, indexDocument(document));
     }
     this.#documents.clear();
+    this.#contentStore = null;
     for (const [filePath, document] of next) {
       this.#documents.set(filePath, document);
     }
@@ -732,6 +795,18 @@ export class FullTextSearchIndex {
 
   upsert(document: FullTextSearchDocument): void {
     this.#documents.set(document.path, indexDocument(document));
+  }
+
+  upsertCached(document: CachedFullTextSearchDocument): void {
+    this.#documents.set(document.path, document);
+  }
+
+  setContentStore(store: FullTextSearchContentStore | null): void {
+    this.#contentStore = store;
+  }
+
+  cachedDocument(filePath: string): CachedFullTextSearchDocument | undefined {
+    return this.#documents.get(filePath);
   }
 
   remove(filePath: string): void {
@@ -754,9 +829,52 @@ export class FullTextSearchIndex {
     }
     const matches: ScoredDocument[] = [];
     const folderPrefix = options.folder ? `${options.folder.replace(/\/+$/, "")}/` : "";
-    for (const document of this.#documents.values()) {
+    let candidatePaths: ReadonlySet<string> | null = null;
+    let persistedContent: ReadonlyMap<string, PersistedSearchContent> = new Map();
+    if (this.#contentStore && terms.length > 0) {
+      const storeTerms = terms.map((term) => (caseSensitive ? foldSearchText(term) : term));
+      const contentMatches = this.#contentStore.pathsContaining(storeTerms);
+      const candidates = new Set<string>();
+      for (const document of this.#documents.values()) {
+        if (folderPrefix && !document.path.startsWith(folderPrefix)) continue;
+        if (
+          terms.every(
+            (term, index) =>
+              containsMetadataTerm(document, term, caseSensitive) ||
+              (document.content !== null &&
+                containsComparable(
+                  comparableContent(document, caseSensitive),
+                  term,
+                  document.contentSimple,
+                )) ||
+              contentMatches[index]?.has(document.path) === true,
+          )
+        ) {
+          candidates.add(document.path);
+        }
+      }
+      candidatePaths = candidates;
+      persistedContent = this.#contentStore.load(
+        [...candidates].filter((filePath) => this.#documents.get(filePath)?.content === null),
+      );
+    }
+    for (const storedDocument of this.#documents.values()) {
+      if (candidatePaths && !candidatePaths.has(storedDocument.path)) continue;
+      let document = storedDocument;
       if (folderPrefix && !document.path.startsWith(folderPrefix)) {
         continue;
+      }
+      if (terms.length > 0 && (document.content === null || document.normalizedContent === null)) {
+        const loaded = persistedContent.get(document.path);
+        if (!loaded) {
+          throw new Error(`The derived search cache is missing ${document.path}.`);
+        }
+        document = {
+          ...document,
+          content: loaded.content,
+          normalizedContent: loaded.normalizedContent,
+          canonicalContent: null,
+        };
       }
       const match = scoreMatch(document, terms, tagFilters, caseSensitive);
       if (match) {

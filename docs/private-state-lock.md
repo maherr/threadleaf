@@ -84,19 +84,22 @@ Electron Builder unpacks `dist/native/**/*.node` under
 exact artifact, checks its OS and architecture, loads/acquires/asserts/releases
 it in an independent process, and runs the packaged Electron executable with
 `--native-lock-probe`. macOS and Windows signed lanes additionally verify the
-native artifact inside the signed application. Local proof currently covers
-Linux x64; macOS and Windows runtime and signing proof remain pending until
-their hosted runners execute.
+native artifact inside the signed application. Local proof covers Linux x64
+and macOS ARM64. Windows runtime proof and every signed-package proof remain
+pending until their hosted runners execute.
 
-The same project-owned addon exposes one Linux-only filesystem primitive for
-strict attachment publication. `renameNoReplace(source, target)` calls
-`renameat2(RENAME_NOREPLACE)`: a missing target receives the complete staged
-inode atomically, while an existing target returns `exists` and leaves both
-names unchanged. Threadleaf passes descriptor-relative `/proc/self/fd` paths,
-so the already-held parent directory remains the path authority. macOS and
-Windows return `unsupported` until equivalent native primitives and package
-proof exist. This operation does not broaden the cooperative state-lock threat
-model or authorize pathname cleanup.
+The same project-owned addon exposes strict attachment-publication primitives
+on Linux and macOS. Linux publishes an unnamed `O_TMPFILE` inode with `linkat`
+under the held destination descriptor. macOS exclusively creates and fsyncs a
+random hidden stage through that held descriptor, then calls
+`renameatx_np(RENAME_EXCL)` in the same directory. A missing target receives
+the complete bytes atomically, while an existing target returns `exists` and
+leaves the claimant unchanged. macOS can retain the hidden stage as explicit
+recovery evidence after a late failure or target race; successful publication
+leaves no stage residue. Windows returns `unsupported` until equivalent native
+descriptor and sharing primitives have executable package proof. These
+operations do not broaden the cooperative state-lock threat model or authorize
+pathname cleanup.
 
 The GUI profile has a separate hardening layer: the Electron main process calls
 `app.requestSingleInstanceLock()` before readiness and before constructing
@@ -122,6 +125,6 @@ negative control, and the independent-process `CLI-LOCK-01` matrix. It copies
 the addon into a simulated `resources/app.asar.unpacked` tree and loads it from
 an unrelated working directory. `pnpm run test:native-lock-source` performs the
 Node-API-only, pinned ABI, path-safety, permission, host-target, Electron-target,
-release-lane, and Linux no-clobber-rename checks. The extracted-package and
+release-lane, and Linux/macOS no-clobber-rename checks. The extracted-package and
 Electron probes require a collision to preserve both source and target. They
-never claim a Windows or macOS runtime result on Linux.
+never claim a runtime result for an operating system other than their host.

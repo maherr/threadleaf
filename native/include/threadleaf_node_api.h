@@ -12,6 +12,7 @@
  */
 
 #include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 /* Keep the Node-API contract explicit and stable across Node and Electron. */
@@ -105,6 +106,14 @@ THREADLEAF_NAPI_EXTERN napi_status napi_get_value_int32(
     napi_env env,
     napi_value value,
     int32_t* result);
+THREADLEAF_NAPI_EXTERN napi_status napi_get_value_bool(
+    napi_env env,
+    napi_value value,
+    bool* result);
+THREADLEAF_NAPI_EXTERN napi_status napi_create_int32(
+    napi_env env,
+    int32_t value,
+    napi_value* result);
 THREADLEAF_NAPI_EXTERN napi_status napi_get_buffer_info(
     napi_env env,
     napi_value value,

@@ -1429,13 +1429,14 @@ async function recoverInProcess(port) {
   }
   styleCdp.close();
   styleCdp = null;
-  await evaluate(mainCdp, `window.threadleaf.openPluginSettings(${JSON.stringify(pluginId)})`);
+  await evaluate(mainCdp, `window.threadleaf.reloadPlugin(${JSON.stringify(pluginId)})`);
   await waitFor(
     mainCdp,
-    `(async () => { const snapshot = await window.threadleaf.getSnapshot(); const plugin = snapshot.plugins?.find((candidate) => candidate.id === ${JSON.stringify(pluginId)}); return plugin?.state === 'loaded' && snapshot.notices?.some((notice) => notice.includes('compatibility renderer recovered')); })()`,
+    `(async () => { const snapshot = await window.threadleaf.getSnapshot(); const plugin = snapshot.plugins?.find((candidate) => candidate.id === ${JSON.stringify(pluginId)}); return plugin?.state === 'loaded' && snapshot.events?.some((event) => event.message.includes('Recovered the compatibility renderer')); })()`,
     "in-process Style Settings renderer reload",
     60_000,
   );
+  await evaluate(mainCdp, `window.threadleaf.openPluginSettings(${JSON.stringify(pluginId)})`);
   const replacement = await findPluginTarget(
     port,
     `(() => Boolean(document.getElementById('threadleaf-compat-appearance-source')?.textContent?.includes(${JSON.stringify(fixtureCss)}) && document.getElementById('css-settings-manager')))()`,

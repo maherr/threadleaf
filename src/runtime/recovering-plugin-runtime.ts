@@ -107,6 +107,7 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
   private operationTail: Promise<void> = Promise.resolve();
   private readonly seenRuntimeEventSequences = new Set<number>();
   private environment: PluginRendererEnvironment | null = null;
+  private vaultMarkdownPaths: string[] | null = null;
 
   private constructor(
     current: T,
@@ -147,6 +148,23 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
         this.environment = structuredClone(environment);
       },
     );
+  }
+
+  seedVaultMarkdownPaths(paths: readonly string[]): Promise<void> {
+    const seeded = [...paths];
+    return this.runSnapshot(
+      { operation: "seed-vault-markdown-paths" },
+      async (runtime) => {
+        if (!runtime.seedVaultMarkdownPaths) {
+          throw new Error("The active plugin runtime does not support vault inventory seeding.");
+        }
+        await runtime.seedVaultMarkdownPaths(seeded);
+        return runtime.getSnapshot();
+      },
+      () => {
+        this.vaultMarkdownPaths = seeded;
+      },
+    ).then(() => undefined);
   }
 
   closePluginView(): Promise<RuntimeSnapshot> {
@@ -383,6 +401,12 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
         throw new Error("Plugin compatibility runtime is closed.", { cause: failure });
       }
       this.current = replacement;
+      if (this.vaultMarkdownPaths) {
+        if (!replacement.seedVaultMarkdownPaths) {
+          throw new Error("The replacement plugin runtime cannot restore its vault inventory.");
+        }
+        await replacement.seedVaultMarkdownPaths(this.vaultMarkdownPaths);
+      }
       if (this.environment) {
         if (!replacement.applyEnvironment) {
           throw new Error("The replacement plugin runtime cannot restore its environment.");
@@ -410,10 +434,10 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
       "The plugin operation was stopped. The compatibility renderer recovered; reload plugins to reactivate them.";
     try {
       let recoveredSnapshot = await replacement.getSnapshot();
-      const recoveryPath =
-        failure instanceof FatalPluginRuntimeError && failure.operation === "renderer-exit"
-          ? "renderer-death-restoration"
-          : "automatic-recovery";
+      if (failure instanceof FatalPluginRuntimeError && failure.operation === "renderer-exit") {
+        return this.rememberSnapshot(recoveredSnapshot, recoveryNotice);
+      }
+      const recoveryPath = "automatic-recovery";
       for (const tracked of activeBeforeRecovery) {
         const recoveryRequest = {
           ...tracked.request,

@@ -7,6 +7,57 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Added a searchable, keyboard-navigable Settings window that indexes core controls and compatible
+  plugin rows, restores focus across nested pages, and keeps form typography and density consistent.
+- Added Obsidian 1.13-style declarative plugin settings support for common controls, validation,
+  conditional visibility and disabled state, groups, lists, nested pages, add/delete/reorder
+  actions, secret values, persistence, and the established imperative fallback.
+- Added a full-screen reading-view image lightbox with filename and position, previous/next keyboard
+  navigation, zoom, reset, wheel zoom, drag pan, Escape close, and focus restoration.
+- Added a deterministic 18-case visual matrix entry for settings search and the image lightbox, plus
+  two bounded image fixtures and direct lightbox state tests.
+- Added a current primary-source research record for the Obsidian 1.13 settings and image seams,
+  including explicit rights, reuse, and executable-proof boundaries.
+
+### Changed
+
+- Rebuilt Longstitch around neutral Paper and Graphite themes, compact 28-pixel explorer rows,
+  coherent Hanken Grotesk interface and document typography, restrained violet interaction state,
+  and less ornamental workspace chrome.
+- Made large-vault Files navigation permanently lazy: directory expansion and Reveal Active Note
+  resolve only the required filesystem pages, while global inventory is reserved for operations
+  that require vault-wide ambiguity resolution. A visible Markdown note not yet in the partial
+  index can open through one bounded stable read without mutating that partial index; the completed
+  census remains metadata authority.
+- Added a private SQLite derived-index cache with per-note fingerprints, parsed metadata, search
+  content, and projections. Warm startup hydrates it concurrently with a current filesystem scan,
+  reparses only changed notes, and invalidates safely on schema or integrity failure.
+- Replaced duplicate full-detail search persistence with a contentless, position-free trigram
+  candidate index. The measured real-vault cache fell from 1.7 GiB to 553 MiB while exact cold and
+  warm search pages remained equivalent, and app close now cancels an unfinished replacement
+  transaction instead of waiting on optional derived work.
+- Made plugin-surface environment propagation vault scoped so a candidate vault can validate its
+  plugin runtime before the active vault retires its own environment bridge.
+- Advanced the canonical Excalidraw packaged workflow to exercise visible authority grant and
+  enablement, command-palette drawing creation, edit/save/reopen, embed insertion, PNG and SVG
+  export, plugin settings, pop-out detach and recovery, plugin-renderer crash, vault switching,
+  explicit reload, restart, and byte-manifest verification.
+
+### Fixed
+
+- Prevented a candidate vault from hanging during plugin activation behind the active vault's
+  singleton plugin-environment lane.
+- Prevented a recovered plugin renderer from silently re-executing plugin code after an unknown
+  renderer exit; explicit reload is now required while native workspace state remains available.
+- Refreshed recovered isolated runtime slots before snapshot publication, preserved fatal renderer
+  exit codes, and broadcast the native workspace after plugin-surface failure.
+- Preserved first-write workspace compare-and-save semantics for a deferred large-vault session
+  without weakening malformed or unreadable private-state protection.
+- Yielded large bootstrap and snapshot scans at bounded intervals so Electron window and IPC work
+  remain serviceable during full-vault startup.
+
 ## [0.1.0]
 
 ### Added

@@ -1,50 +1,52 @@
 # Longstitch component grammar
 
-**Last updated:** 2026-08-15
+**Last updated:** 2026-08-19
 
-## Sewn navigator
+## File navigator
 
-Each tree row is gathered onto a dotted vertical thread at its depth station. The current note adds
-a brass diamond knot, an active-row material, and `aria-current="page"`. Disclosure state remains a
-separate chevron and accessible expanded state.
+Each tree row uses compact, consistent indentation and a dedicated disclosure control. The current
+note adds a violet side rail, an active-row material, and `aria-current="page"`. Disclosure state
+remains a separate chevron and accessible expanded state.
 
 Required states: resting, hover, keyboard focus, current, collapsed branch, empty tree, and search
-result. The thread may change value by theme, but hierarchy cannot depend on its color alone.
+result. Indentation and disclosure state remain readable without color.
 
-Forbidden default: a plain list of rounded rows with only a blue selection bar.
+Forbidden default: rounded card rows, clipped names, or color as the only selected-state cue.
 
-## Binding signatures
+## Theme signatures
 
-Pressroom carries an alternating red-cloth and cream headband across the navigator edge. Lampside
-omits it and places a radial lamp pool along the status bar. Each signature appears only in its own
-theme and never carries status meaning.
+Paper uses a neutral near-white editor canvas against light grey chrome. Graphite uses a dark editor
+canvas against a deeper navigator and status layer. Violet marks the same interactive states in
+both themes and never carries pass or failure meaning.
 
-Required states: both signatures must survive desktop and narrow layouts without changing content
+Required states: both bindings must survive desktop and narrow layouts without changing content
 height, clipping controls, or creating horizontal overflow.
 
-Forbidden default: showing both signatures together or treating the dark theme as a color-inverted
-Pressroom.
+Forbidden default: decorative gradients, ornamental rails, or a dark theme that changes capability.
 
-## Working leaf
+## Document workspace
 
-The open document uses Literata for note title, Markdown hierarchy, and reading prose; Hanken
-Grotesk for application controls; and JetBrains Mono for paths, counts, tags, code, and compact
-metadata. Raised and sunken materials describe page depth. The reading scale multiplies the inline
-title and every heading level along with body text.
+The open document uses Hanken Grotesk for the default note title, Markdown hierarchy, prose, and
+application controls; JetBrains Mono remains reserved for paths, counts, code, and compact metadata.
+Raised and sunken materials describe depth. The reading scale multiplies the inline title and every
+heading level along with body text.
 
 Required states: Live Preview, source, reading, loading, no selection, long title, and text scale up
-to 1.8. Decorative marks cannot widen the content rail.
+to 1.8. Decorative marks cannot widen the content rail. Visible application chrome never drops
+below the 11px machine-metadata floor, and reading headings stay subordinate to the active note
+title instead of jumping to display-poster proportions.
 
 Forbidden default: one undifferentiated font voice or enlarged body copy under fixed-size headings.
 
-## Foil-label tags
+## Tags
 
-Tags are compact square labels with a brass frame and mono text. Hover and keyboard focus add the
-blue interaction channel. An untagged state uses a dashed frame plus the visible word `Untagged`.
+Tags are compact square labels with a neutral frame and readable text. Hover and keyboard focus add
+the violet interaction channel. An untagged state uses a dashed frame plus the visible word
+`Untagged`.
 
 Required states: ordinary, nested path, hover, focus, selected navigator row, count, and untagged.
 
-Forbidden default: generic rounded pills or hue-only hierarchy.
+Forbidden default: oversized pills or hue-only hierarchy.
 
 ## Stitched tasks
 
@@ -53,7 +55,7 @@ Task markers retain their Markdown meaning in Live Preview and Reading view:
 - open: empty square and ordinary text;
 - completed: checked square and completed semantics;
 - cancelled: dashed square with a dash, muted struck text, and cancelled semantics;
-- question: brass question glyph, italic text, and question semantics;
+- question: question glyph, italic text, and question semantics;
 - custom: literal marker shape and a custom-state accessible name.
 
 Native `checked` state belongs only to `x` and `X`. Every state has text or shape in addition to
@@ -74,8 +76,8 @@ Forbidden default: pale category tints, color-only identity, or a generic card s
 
 ## Supporting controls
 
-Tabs, metadata fields, dialogs, menus, status rows, and commands inherit the same type roles, paper
-or walnut layers, restrained radii, and blue interaction channel. Loading preserves the final
+Tabs, metadata fields, dialogs, menus, status rows, and commands inherit the same type roles,
+neutral layers, restrained radii, and violet interaction channel. Loading preserves the final
 footprint. No support control introduces another metaphor.
 
 Command results state the whole result count before the runnable subset. Disabled commands remain
