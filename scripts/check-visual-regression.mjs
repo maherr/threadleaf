@@ -18,6 +18,7 @@ const positiveControl = args.has("--positive-control");
 const redControl = args.has("--red-control") || process.env.THREADLEAF_VISUAL_RED_CONTROL === "1";
 const updateRequested = args.has("--update") || process.env.THREADLEAF_VISUAL_UPDATE === "1";
 const requiredVisual = process.env.THREADLEAF_VISUAL_REQUIRED === "1";
+const keepCaptures = process.env.THREADLEAF_VISUAL_KEEP === "1";
 const runStartedAt = Date.now();
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -766,8 +767,8 @@ async function clearAllTabs() {
   }
   await delay(200);
   const remaining = await evaluate(`(async () => ({
-    count: document.querySelectorAll('#workspace-pane-primary .note-tab').length,
-    paths: [...document.querySelectorAll('#workspace-pane-primary .note-tab')].map((tab) => tab.textContent),
+    count: document.querySelectorAll('.note-tabs-shell[data-tab-pane-id="primary"] .note-tab').length,
+    paths: [...document.querySelectorAll('.note-tabs-shell[data-tab-pane-id="primary"] .note-tab')].map((tab) => tab.textContent),
     snapshot: (await window.threadleaf.getSnapshot()).workspace?.panes?.map((pane) => ({ id: pane.id, tabs: pane.tabs.map((tab) => ({ path: tab.path, pinned: tab.pinned, active: tab.active })) })),
   }))()`);
   assert(
@@ -1591,7 +1592,9 @@ try {
 } finally {
   cdp?.close();
   if (child?.pid && child.exitCode === null) child.kill("SIGKILL");
-  if (runOutput) {
+  if (runOutput && keepCaptures) {
+    console.log(`VISUAL_CAPTURES_KEPT: ${runOutput}`);
+  } else if (runOutput) {
     await fs.rm(runOutput, { recursive: true, force: true }).catch(() => undefined);
     runOutput = undefined;
   }

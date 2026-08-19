@@ -87,6 +87,12 @@ export function hasPrivateVaultSegment(relativePath: string): boolean {
   return relativePath.split(/[\\/]/).some(isPrivateVaultEntry);
 }
 
+export function isObsidianConfigPath(relativePath: string): boolean {
+  return (
+    relativePath.replaceAll("\\", "/").split("/")[0]?.toLocaleLowerCase("en-US") === ".obsidian"
+  );
+}
+
 export function hasHiddenVaultSegment(relativePath: string): boolean {
   return relativePath.split(/[\\/]/).some(isHiddenVaultEntry);
 }
@@ -259,12 +265,18 @@ export class VaultPathPolicy {
     return absolutePath;
   }
 
-  async createDirectory(relativeDirectory: string): Promise<VaultDirectoryCreateResult> {
+  async createDirectory(
+    relativeDirectory: string,
+    options: { allowObsidianConfig?: boolean } = {},
+  ): Promise<VaultDirectoryCreateResult> {
     const normalized = normalizeVaultDirectoryPath(relativeDirectory);
     if (normalized === "") {
       return { path: "", created: false };
     }
-    if (hasPrivateVaultSegment(normalized)) {
+    if (
+      hasPrivateVaultSegment(normalized) &&
+      !(options.allowObsidianConfig === true && isObsidianConfigPath(normalized))
+    ) {
       throw new VaultPathError(
         `Vault directories cannot use private application paths: ${normalized}`,
       );

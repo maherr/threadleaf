@@ -84,6 +84,8 @@ import {
   type PluginRendererEnvironment,
   parsePluginEditorContext,
   parsePluginMutationWaitOptions,
+  parsePluginOpenFileRequest,
+  parsePluginSurfaceChangedRequest,
   parsePluginVaultCreateBinaryRequest,
   parsePluginVaultCreateFolderRequest,
   parsePluginVaultCreateRequest,
@@ -482,9 +484,9 @@ async function applyPluginSurfaceTheme(theme: "dark" | "light"): Promise<void> {
   pluginSurfaceTheme = theme;
   if (mainWindow && !mainWindow.isDestroyed() && process.platform !== "darwin") {
     mainWindow.setTitleBarOverlay({
-      color: theme === "dark" ? "#1c1c20" : "#f2f2f4",
+      color: theme === "dark" ? "#1c1c1e" : "#f1f1f3",
       symbolColor: theme === "dark" ? "#dedee3" : "#2f3035",
-      height: 40,
+      height: 44,
     });
   }
   await publishPluginSurfaceEnvironment({ theme });
@@ -2142,6 +2144,32 @@ function registerIpcHandlers(): void {
       throw new Error("The active vault changed before the plugin folder could be created.");
     }
     return workspaceController.createPluginFolder(request.folderPath, workspaceController.vaultId);
+  });
+  ipcMain.handle(pluginRendererChannels.openFile, async (event, value: unknown) => {
+    if (!isPluginRuntimeSender(event.sender)) {
+      throw new Error("Plugin file navigation requires the active compatibility runtime.");
+    }
+    const request = parsePluginOpenFileRequest(value);
+    if (resolve(request.vaultPath) !== resolve(workspaceController.vaultPath)) {
+      throw new Error("The active vault changed before the plugin file could be opened.");
+    }
+    return workspaceSnapshotWithLayout(await workspaceController.openNote(request.filePath));
+  });
+  ipcMain.handle(pluginRendererChannels.surfaceChanged, (event, value: unknown) => {
+    if (!isPluginRuntimeSender(event.sender)) {
+      throw new Error("Plugin surface updates require the active compatibility runtime.");
+    }
+    const request = parsePluginSurfaceChangedRequest(value);
+    if (resolve(request.vaultPath) !== resolve(workspaceController.vaultPath)) {
+      throw new Error("The active vault changed before the plugin surface update completed.");
+    }
+    globalThis.setTimeout(() => {
+      void workspaceController
+        .getSnapshot()
+        .then((snapshot) => broadcastWorkspaceSnapshot(snapshot))
+        .catch((error) => console.error("Could not publish plugin surface update:", error));
+    }, 0);
+    return { status: "accepted" };
   });
   ipcMain.handle(pluginRendererChannels.vaultListMarkdownPaths, async (event, value: unknown) => {
     if (!isPluginRuntimeSender(event.sender)) {
@@ -4456,9 +4484,9 @@ async function createWindow(trustedWorkspace = false): Promise<void> {
       process.platform === "darwin"
         ? true
         : {
-            color: pluginSurfaceTheme === "dark" ? "#1c1c20" : "#f2f2f4",
+            color: pluginSurfaceTheme === "dark" ? "#1c1c1e" : "#f1f1f3",
             symbolColor: pluginSurfaceTheme === "dark" ? "#dedee3" : "#2f3035",
-            height: 40,
+            height: 44,
           },
     show: false,
     webPreferences: {

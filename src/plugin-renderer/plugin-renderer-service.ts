@@ -38,6 +38,8 @@ export interface PluginRendererVaultMutations {
   trashFile?(request: PluginVaultTrashRequest): Promise<PluginVaultTrashResponse>;
   writeBinary?(request: PluginVaultWriteBinaryRequest): Promise<PluginVaultWriteBinaryResponse>;
   writeText(request: PluginVaultWriteRequest): Promise<PluginVaultWriteResponse>;
+  openFile?(request: { filePath: string; vaultPath: string }): Promise<unknown>;
+  surfaceChanged?(request: { vaultPath: string }): Promise<unknown>;
 }
 
 const compatibilityEnvironmentStyleIds = {
@@ -217,6 +219,24 @@ export class PluginRendererService {
                           content: new Uint8Array(content).buffer,
                           expectedRevision,
                         }),
+                    }
+                  : {}),
+              }
+            : undefined,
+          vaultMutations?.openFile || vaultMutations?.surfaceChanged
+            ? {
+                ...(vaultMutations.openFile
+                  ? {
+                      onOpenFile: async (filePath: string) => {
+                        await vaultMutations.openFile?.({ vaultPath, filePath });
+                      },
+                    }
+                  : {}),
+                ...(vaultMutations.surfaceChanged
+                  ? {
+                      onSurfaceChange: () => {
+                        void vaultMutations.surfaceChanged?.({ vaultPath });
+                      },
                     }
                   : {}),
               }

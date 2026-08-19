@@ -3793,8 +3793,7 @@ describe("Obsidian 1.13.7 runtime ledger evidence", () => {
             itemsAfterDisplay: [{ type: "control", key: "enabled" }],
             displayCopiedDefinitions: true,
             baseControlValue: undefined,
-            baseWriteError:
-              "SettingTab control writes require a kernel-owned vault configuration adapter.",
+            baseWriteError: "",
             hiddenChildren: 0,
             pluginDefinitions: [],
             pluginValueBefore: false,

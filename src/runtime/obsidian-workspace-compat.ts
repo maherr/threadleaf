@@ -366,6 +366,7 @@ export class Workspace extends Events {
       }
       this.recentFiles.unshift(activeFile.path);
       this.recentFiles.splice(10);
+      this.trigger("file-open", activeFile);
     }
     const recentLeafIndex = this.recentLeaves.indexOf(leaf);
     if (recentLeafIndex >= 0) {

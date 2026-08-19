@@ -10,6 +10,7 @@ import {
 export interface TrustedPluginHostFactoryOptions {
   editorFields?: EditorCompatibilityFields;
   onEditorExtensionsChange?(extensions: readonly unknown[]): void;
+  onOpenFile?(filePath: string): void | Promise<void>;
   pluginModuleResolver: PluginModuleResolver;
   reader?: VaultReadPort;
   vaultPath: string;
@@ -22,6 +23,7 @@ export function createTrustedPluginHost(options: TrustedPluginHostFactoryOptions
     ...(options.onEditorExtensionsChange
       ? { onEditorExtensionsChange: options.onEditorExtensionsChange }
       : {}),
+    ...(options.onOpenFile ? { onOpenFile: options.onOpenFile } : {}),
   };
   return new PluginHost(
     options.vaultPath,

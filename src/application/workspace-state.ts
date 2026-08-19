@@ -111,12 +111,6 @@ function normalizeWorkspacePath(value: unknown): string {
     throw new Error("Workspace note paths must be strings.");
   }
   const normalized = normalizeVaultPath(value);
-  const folded = normalized.toLocaleLowerCase("en-US");
-  if (!folded.endsWith(".md") && !folded.endsWith(".canvas") && !folded.endsWith(".excalidraw")) {
-    throw new Error(
-      `Workspace tabs can contain only Markdown notes, JSON Canvases, or native Excalidraw scenes: ${normalized}`,
-    );
-  }
   if (normalized.toLocaleLowerCase("en-US").startsWith(".obsidian/")) {
     throw new Error("Workspace tabs cannot point inside .obsidian.");
   }

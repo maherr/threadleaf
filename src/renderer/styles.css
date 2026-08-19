@@ -10758,3 +10758,268 @@ a.tag.property-tag {
 .inspector-item {
   font-size: 12px;
 }
+
+/* Integrated desktop chrome. The active pane's tabs share the native titlebar,
+   so the top of the window reads as one work surface instead of a brand banner
+   stacked above a second tab bar. */
+.app-frame {
+  grid-template-rows: 44px minmax(0, 1fr) 26px;
+}
+
+.topbar {
+  grid-template-columns: 42px 226px minmax(0, 1fr) 34px auto;
+  align-items: stretch;
+  min-height: 44px;
+  background: var(--surface-sunken);
+}
+
+.brand {
+  justify-content: center;
+  width: 42px;
+  padding: 0;
+  border-right: 0;
+}
+
+.brand-copy {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.brand-mark,
+:root[data-theme="dark"] .brand-mark {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--ink-muted);
+  background: transparent;
+}
+
+.brand-mark svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.brand:hover .brand-mark,
+.brand:focus-visible .brand-mark {
+  color: var(--ink);
+  background: var(--background-modifier-hover);
+}
+
+.vault-switcher {
+  width: 226px;
+  padding: 0 8px 0 4px;
+  border-right: 1px solid var(--line);
+}
+
+.vault-identity {
+  overflow: hidden;
+}
+
+.vault-identity strong {
+  max-width: 154px;
+  font-size: 13px;
+  font-weight: 640;
+}
+
+.state-word[data-state="ready"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.state-word:not([data-state="ready"]) {
+  flex: 0 0 auto;
+  max-width: 92px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.titlebar-tabs-host {
+  display: flex;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+}
+
+.titlebar-tabs-host > .note-tabs-shell {
+  width: 100%;
+  height: 44px;
+  border: 0;
+  background: transparent;
+}
+
+.titlebar-tabs-host .note-tabs {
+  align-items: end;
+  gap: 2px;
+  padding: 6px 4px 0;
+  scrollbar-width: none;
+}
+
+.titlebar-tabs-host .note-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.titlebar-tabs-host .note-tab {
+  height: 38px;
+  min-width: 112px;
+  max-width: 220px;
+  flex: 0 1 220px;
+  grid-template-columns: minmax(0, 1fr) 26px 26px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.titlebar-tabs-host .note-tab:hover {
+  background: color-mix(in srgb, var(--background-modifier-hover) 74%, transparent);
+}
+
+.titlebar-tabs-host .note-tab[data-active="true"] {
+  border-color: var(--line);
+  border-bottom-color: var(--surface-raised);
+  background: var(--surface-raised);
+  box-shadow: 0 -1px 0 rgb(255 255 255 / 4%);
+}
+
+.titlebar-tabs-host .note-tab[data-pinned="true"] {
+  border-top-color: var(--accent);
+}
+
+.titlebar-tabs-host .note-tab-activate {
+  padding-left: 11px;
+  font-size: 13px;
+  font-weight: 530;
+}
+
+.titlebar-tabs-host .note-tab[data-active="true"] .note-tab-activate {
+  font-weight: 650;
+}
+
+.titlebar-tabs-host .note-tab-mark {
+  font-size: 10px;
+  opacity: 0.58;
+}
+
+.titlebar-tabs-host .note-tab-pin,
+.titlebar-tabs-host .note-tab-close {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.titlebar-tabs-host .note-tab:hover .note-tab-pin,
+.titlebar-tabs-host .note-tab:hover .note-tab-close,
+.titlebar-tabs-host .note-tab:focus-within .note-tab-pin,
+.titlebar-tabs-host .note-tab:focus-within .note-tab-close,
+.titlebar-tabs-host .note-tab[data-active="true"] .note-tab-close,
+.titlebar-tabs-host .note-tab[data-pinned="true"] .note-tab-pin {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.titlebar-tabs-host .pane-layout-actions {
+  align-self: center;
+  height: 30px;
+  border-left: 0;
+}
+
+.titlebar-tabs-host .pane-layout-actions button {
+  width: 28px;
+  border-left: 0;
+  border-radius: 5px;
+  background: transparent;
+}
+
+.titlebar-new-note {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  align-self: center;
+  justify-self: center;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  color: var(--ink-muted);
+  background: transparent;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-new-note:hover:not(:disabled),
+.titlebar-new-note:focus-visible {
+  color: var(--ink);
+  background: var(--background-modifier-hover);
+}
+
+.topbar-actions {
+  width: auto;
+  padding-left: 4px;
+  border-left: 0;
+}
+
+.workspace-pane[data-tabs-in-titlebar="true"] {
+  grid-template-rows: 36px minmax(0, 1fr);
+}
+
+.workspace-pane[data-tabs-in-titlebar="true"]::after {
+  content: none;
+}
+
+@media (max-width: 980px) {
+  .topbar {
+    grid-template-columns: 42px 196px minmax(0, 1fr) 34px auto;
+  }
+
+  .vault-switcher {
+    width: 196px;
+  }
+
+  .vault-identity strong {
+    max-width: 124px;
+  }
+
+  .titlebar-tabs-host .pane-layout-actions button:nth-of-type(n + 3) {
+    display: none;
+  }
+}
+
+:root[data-platform="darwin"] .topbar {
+  grid-template-columns: 78px 190px minmax(0, 1fr) 34px auto;
+}
+
+:root[data-platform="darwin"] .brand {
+  width: 78px;
+  padding: 0;
+}
+
+:root[data-platform="darwin"] .brand-mark {
+  display: none;
+}
+
+:root[data-platform="darwin"] .vault-switcher {
+  width: 190px;
+}

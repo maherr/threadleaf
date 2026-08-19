@@ -1,0 +1,28 @@
+{
+  "$schema": "./reviewed-authority-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profileId": "omnisearch-1.30.1-obsidian-installed",
+  "profileRevision": 1,
+  "packageIdentity": {
+    "pluginId": "omnisearch",
+    "manifestVersion": "1.30.1",
+    "distributionTag": "1.30.1+obsidian-installed",
+    "manifestSha256": "4f008822a325abad9ff6fbbdbb05a73a3fa4a2c9ec034d63f87c10a5aef1906e",
+    "mainSha256": "4ea4d51f5ce283ea0f83ceb1f1db8e8f8c3ae156fab69a5f8f4c4e09d101a314",
+    "stylesSha256": "c6a56b1a18ff867f12ebbb3a139060a249704281e1b449003ff487969621a2e6",
+    "packageTreeSha256": "1daeea1cacb9c94ab9fce9c1a149b136559ef65091ee73b790c957b047339016"
+  },
+  "packageIdentityDigest": "fcd8dd7655ccc1fada326eee48d6a0eecfa346838d9f8489b6d612936b8f6f33",
+  "expectedStaticCapabilities": ["vault-read", "network", "workspace-ui"],
+  "requiredAuthorities": [
+    "vault-read",
+    "network",
+    "workspace-ui",
+    "filesystem",
+    "subprocess",
+    "host-environment"
+  ],
+  "executionProfile": "trusted-node-renderer",
+  "allowedPlatforms": ["linux", "darwin", "win32"],
+  "authorityDigest": "27cbdcbd0663735c7fb531796d18e75c3929f86c36fee3c4460b752d151cd426"
+}

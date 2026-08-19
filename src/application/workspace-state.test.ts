@@ -143,20 +143,17 @@ describe("workspace state", () => {
     });
   });
 
-  it("persists native Excalidraw tabs without admitting ordinary files", () => {
+  it("persists plugin-owned custom-document tabs without granting private paths", () => {
     const state = createWorkspaceState(
       vaultId,
-      ["Notes/Source.md", "Drawings/Native Scene.excalidraw"],
-      "Drawings/Native Scene.excalidraw",
+      ["Notes/Source.md", "Data/Record.json", "Drawings/Native Scene.excalidraw"],
+      "Data/Record.json",
     );
     expect(createWorkspaceStateDocument(state)).toMatchObject({
-      openPaths: ["Notes/Source.md", "Drawings/Native Scene.excalidraw"],
-      activePath: "Drawings/Native Scene.excalidraw",
+      openPaths: ["Notes/Source.md", "Data/Record.json", "Drawings/Native Scene.excalidraw"],
+      activePath: "Data/Record.json",
     });
     expect(parseWorkspaceState(createWorkspaceStateDocument(state), vaultId)).toEqual(state);
-    expect(() => createWorkspaceState(vaultId, ["Attachment.json"], "Attachment.json")).toThrow(
-      "native Excalidraw scenes",
-    );
   });
 
   it("rejects crossed vaults, duplicates, private paths, and invalid active tabs", () => {
@@ -172,7 +169,6 @@ describe("workspace state", () => {
     expect(() =>
       createWorkspaceState(vaultId, [".obsidian/State.md"], ".obsidian/State.md"),
     ).toThrow("inside .obsidian");
-    expect(() => createWorkspaceState(vaultId, ["Note.txt"], "Note.txt")).toThrow("only Markdown");
     expect(() => createWorkspaceState(vaultId, ["Note.md"], "Other.md")).toThrow(
       "also be an open tab",
     );

@@ -47,6 +47,7 @@ interface TrustedPluginHostFactory {
   createTrustedPluginHost(options: {
     editorFields: EditorCompatibilityFields;
     onEditorExtensionsChange(extensions: readonly unknown[]): void;
+    onOpenFile?(filePath: string): void | Promise<void>;
     pluginModuleResolver: NodeJS.Require;
     reader?: VaultReadPort;
     vaultPath: string;
@@ -250,6 +251,10 @@ class TrustedPluginRendererService {
         this.host = factory.createTrustedPluginHost({
           editorFields: rendererEditorCompatibilityFields,
           onEditorExtensionsChange: (extensions) => editorExtensionSink?.(extensions),
+          onOpenFile: (filePath) =>
+            ipcRenderer
+              ?.invoke(pluginRendererChannels.openFile, { vaultPath, filePath })
+              .then(() => undefined),
           pluginModuleResolver: createModuleResolver(packageRequire, trustedHostModules),
           reader: this.createVaultReader(vaultPath),
           vaultPath,

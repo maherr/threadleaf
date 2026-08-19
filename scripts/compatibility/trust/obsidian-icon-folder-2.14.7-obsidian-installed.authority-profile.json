@@ -1,0 +1,36 @@
+{
+  "$schema": "./reviewed-authority-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profileId": "obsidian-icon-folder-2.14.7-obsidian-installed",
+  "profileRevision": 1,
+  "packageIdentity": {
+    "pluginId": "obsidian-icon-folder",
+    "manifestVersion": "2.14.7",
+    "distributionTag": "2.14.7+obsidian-installed",
+    "manifestSha256": "f524a18d69e990a244173a3595681c39a20bcbc9dc18b59af51e45660fef5ca2",
+    "mainSha256": "b68bcfd318d678892f671736e54396fd72414180736e58f164fb17a3f72a22e1",
+    "stylesSha256": "56ffeb8349f4af97dab8a14fcadcb0019d3b37b116d7a34aa21e958e98455a89",
+    "packageTreeSha256": "8f22798ce5b9cacac26062c88602f4cf22b7d359031c7d3b9b08cad09067b7e5"
+  },
+  "packageIdentityDigest": "5d31364cd0b25c19efb62a04c4c2c94fafd59791bb5d08266ee3817330e22280",
+  "expectedStaticCapabilities": [
+    "vault-read",
+    "network",
+    "editor-extension",
+    "workspace-ui",
+    "dynamic-code"
+  ],
+  "requiredAuthorities": [
+    "vault-read",
+    "network",
+    "editor-extension",
+    "workspace-ui",
+    "dynamic-code",
+    "filesystem",
+    "subprocess",
+    "host-environment"
+  ],
+  "executionProfile": "trusted-node-renderer",
+  "allowedPlatforms": ["linux", "darwin", "win32"],
+  "authorityDigest": "48e9a62eae9387956b21020a683db363194f1797a50388f0d432151cc9a48569"
+}

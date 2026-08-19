@@ -351,13 +351,30 @@ async function targetCenter(selector) {
 }
 
 async function clickSelector(selector) {
+  const hover = await evaluate(`(() => {
+    const element = document.querySelector(${JSON.stringify(selector)});
+    if (!(element instanceof HTMLElement)) return null;
+    const interactionRoot = element.closest("button, [role=button]") ?? element;
+    const rect = interactionRoot.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  })()`);
+  assert(hover, `Pointer target is unavailable before hover: ${selector}`);
+  await cdp.send("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    button: "none",
+    buttons: 0,
+    clickCount: 0,
+    x: hover.x,
+    y: hover.y,
+  });
+  await delay(40);
   const target = await targetCenter(selector);
-  for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
+  for (const type of ["mousePressed", "mouseReleased"]) {
     await cdp.send("Input.dispatchMouseEvent", {
       type,
-      button: type === "mouseMoved" ? "none" : "left",
+      button: "left",
       buttons: type === "mousePressed" ? 1 : 0,
-      clickCount: type === "mouseMoved" ? 0 : 1,
+      clickCount: 1,
       x: target.x,
       y: target.y,
     });

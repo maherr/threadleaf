@@ -171,7 +171,7 @@ function registeredFilePluginRuntime(initiallyLoaded = true): PluginRuntimePort 
 }
 
 describe("WorkspaceRuntime JSON Canvas surface", () => {
-  it("opens a registered native file as a plugin document without indexing it as Markdown", async () => {
+  it("opens registered custom files as plugin documents without indexing them as Markdown", async () => {
     const nativeScene = '{"type":"excalidraw","version":2,"elements":[]}\n';
     await fs.writeFile(path.join(vaultPath, "Native Scene.excalidraw"), nativeScene, "utf8");
     await fs.writeFile(path.join(vaultPath, "Registered.drawing"), "opaque\n", "utf8");
@@ -206,9 +206,13 @@ describe("WorkspaceRuntime JSON Canvas surface", () => {
     await expect(runtime.openNote("Ordinary.json")).rejects.toThrow(
       "Workspace tabs do not support this ordinary file type",
     );
-    await expect(runtime.openNote("Registered.drawing")).rejects.toThrow(
-      "Workspace tabs do not support this ordinary file type",
-    );
+    const registered = await runtime.openNote("Registered.drawing");
+    expect(registered.workspace?.panes[0]?.activePluginFile).toMatchObject({
+      path: "Registered.drawing",
+      title: "Registered",
+      viewType: "drawing-view",
+    });
+    expect(registered.workspace?.files.map((file) => file.path)).toEqual(["Welcome.md"]);
   });
 
   it("loads plugin registration before restoring a persisted native scene", async () => {

@@ -422,6 +422,16 @@ describe("VaultKernel path policy", () => {
     await expect(kernel.createDirectory(".obsidian/Plugins")).rejects.toThrow(
       "private application paths",
     );
+    await expect(kernel.createPluginDirectory(".obsidian/icons")).resolves.toEqual({
+      path: ".obsidian/icons",
+      created: true,
+    });
+    await expect(kernel.createPluginDirectory("Nested/.obsidian/icons")).rejects.toThrow(
+      "private application paths",
+    );
+    await expect(kernel.createPluginDirectory(".git/plugin-cache")).rejects.toThrow(
+      "private application paths",
+    );
 
     await fs.symlink("Excalidraw", path.join(vaultPath, "Linked"), "dir");
     await expect(kernel.createDirectory("Linked/New")).rejects.toThrow("symbolic links");

@@ -59,13 +59,13 @@
   font-synthesis: none;
 
   /* Paper: neutral editor canvas, familiar hierarchy, Threadleaf violet. */
-  --background-primary: #f7f7f8;
-  --background-primary-alt: #ffffff;
-  --background-secondary: #ececef;
-  --background-secondary-alt: #f2f2f4;
-  --background-modifier-border: #d8d8dc;
-  --background-modifier-border-hover: #bdbdc4;
-  --background-modifier-hover: #e8e8ec;
+  --background-primary: #ffffff;
+  --background-primary-alt: #fafafa;
+  --background-secondary: #e9e9eb;
+  --background-secondary-alt: #f1f1f3;
+  --background-modifier-border: #d7d7da;
+  --background-modifier-border-hover: #b9b9bf;
+  --background-modifier-hover: #e6e6e9;
   --background-modifier-error: #f8e9df;
   --text-normal: #2f3035;
   --text-muted: #606169;
@@ -138,13 +138,13 @@
   color-scheme: dark;
 
   /* Graphite: Obsidian-familiar depth with a clearer active-state violet. */
-  --background-primary: #202024;
-  --background-primary-alt: #27272b;
-  --background-secondary: #17171a;
-  --background-secondary-alt: #1c1c20;
-  --background-modifier-border: #36363c;
-  --background-modifier-border-hover: #505059;
-  --background-modifier-hover: #2d2d32;
+  --background-primary: #202022;
+  --background-primary-alt: #262628;
+  --background-secondary: #171719;
+  --background-secondary-alt: #1c1c1e;
+  --background-modifier-border: #343438;
+  --background-modifier-border-hover: #505057;
+  --background-modifier-hover: #2d2d30;
   --background-modifier-error: #4a2c1d;
   --text-normal: #dedee3;
   --text-muted: #a9a9b2;

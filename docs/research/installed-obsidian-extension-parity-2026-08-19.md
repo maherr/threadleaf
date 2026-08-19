@@ -1,0 +1,82 @@
+# Installed Obsidian extension parity study
+
+**Last updated:** 2026-08-19
+
+## Decision
+
+Threadleaf must treat an Obsidian-installed plugin bundle as a distinct exact distribution identity when its bytes differ from the publisher's release asset. It must not weaken exact-package authority or silently rewrite a user's installed plugin. Reviewed identities may cover both the publisher asset and the deterministic Obsidian-installed form, but compatibility still requires a named executable workflow for each exact version.
+
+This study covers the five community plugins and one community theme present in the acceptance vault on 2026-08-19. It is a bounded first compatibility corpus, not evidence of universal plugin or theme parity.
+
+## Rights and evidence boundary
+
+- The evidence sources are public project repositories, public release assets, public licenses, exact hashes from a local installed tree, and independently executed Threadleaf workflows.
+- No Obsidian proprietary implementation text or asset is copied into Threadleaf.
+- A plugin's public source can explain its own API use. It cannot prove Threadleaf compatibility. Only the exact installed bytes running through a named Threadleaf workflow can do that.
+- Reviewed authority profiles store hashes, declared capability sets, and policy metadata. They do not store third-party plugin source.
+
+## Exact acceptance inventory
+
+| Package | Version | Upstream | License | Installed `main.js` SHA-256 | Initial workflow target |
+|---|---:|---|---|---|---|
+| Data Files Editor | 1.3.0 | [zuktol/obsidian-data-files-editor](https://github.com/zuktol/obsidian-data-files-editor/tree/1.3.0) | MIT | `1f962a44845adad7ea3de6792bbf536f111ee131b0fcd16fa9cf4d18ff0d0676` | Open, edit, save, reopen JSON and YAML through registered file views |
+| Excalidraw | 2.25.3 | [zsviczian/obsidian-excalidraw-plugin](https://github.com/zsviczian/obsidian-excalidraw-plugin/tree/2.25.3) | AGPL-3.0 | `3baa63e288992c910fa5ac10e3811aaea4210211b29781446c07259b6df96391` | Create, draw, embed, export, detach, crash-recover, switch vault, reload, and restart |
+| Iconize | 2.14.7 | [florianwoelki/obsidian-iconize](https://github.com/florianwoelki/obsidian-iconize/tree/2.14.7) | MIT | `b68bcfd318d678892f671736e54396fd72414180736e58f164fb17a3f72a22e1` | Assign and remove file and folder icons, rename, reload, and restart |
+| Minimal Theme Settings | 8.2.3 | [kepano/obsidian-minimal-settings](https://github.com/kepano/obsidian-minimal-settings/tree/8.2.3) | MIT | `70573512ec859fad644e79ca9883d0b6d7dfb5369cde66e366884638317efdf3` | Change representative Minimal controls, verify computed styles, reload, and restart |
+| Omnisearch | 1.30.1 | [scambier/obsidian-omnisearch](https://github.com/scambier/obsidian-omnisearch/tree/1.30.1) | GPL-3.0 | `4ea4d51f5ce283ea0f83ceb1f1db8e8f8c3ae156fab69a5f8f4c4e09d101a314` | Index a fixture vault, search from its command and ribbon surface, open a result, modify, and reindex |
+| Minimal theme | 8.2.0 | [kepano/obsidian-minimal](https://github.com/kepano/obsidian-minimal/tree/8.2.0) | MIT | `theme.css` is `c75b6043bb8e7de95efaf835b509c3e995fe5fd49c43d7639a6b4a9efe934bdd` | Apply with Minimal Settings, verify representative components in light and dark, reload, and restart |
+
+The local Minimal 8.2.0 `theme.css` and `manifest.json` hashes exactly match the two [official 8.2.0 release assets](https://github.com/kepano/obsidian-minimal/releases/tag/8.2.0).
+
+## Pass 1, distribution identity and installation normalization
+
+All five installed `manifest.json` files and all five installed `styles.css` files exactly match their official release assets. All five installed `main.js` files differ from the official asset.
+
+Four official bundles have no trailing source map. Their installed form is the exact release bytes followed by `\n/* nosourcemap */`. Iconize's official bundle contains a trailing inline source map. Its installed form preserves the executable prefix exactly, removes the source-map line, and appends the same marker. The installed Iconize bundle is 414,155 bytes instead of the release asset's 1,003,749 bytes.
+
+This is a distribution transformation, not a code change. Nevertheless, exact authority correctly treats the transformed bytes as a different identity. The original Excalidraw 2.25.3 authority profile matched only the public GitHub asset, so the user's real installed package was denied before runtime construction. The repair adds a second exact reviewed identity rather than canonicalizing two byte strings into one trust record.
+
+The package-directory inspector also initially treated mutable `data.json` as an unknown distribution entry. Threadleaf's sealed package policy already excludes `data.json`, `.threadleaf-package.json`, and atomic data temporary files. The directory adapter now applies the same boundary while retaining every genuinely unknown distribution entry for rejection.
+
+## Pass 2, plugin-owned API seams
+
+The second pass inspected the public tagged source and existing Threadleaf runtime ledger independently of the bundle hash pass.
+
+### Data Files Editor 1.3.0
+
+The plugin registers `TextFileView` subclasses for JSON, YAML, TXT, and XML, binds extensions to view types, emits a CodeMirror compatibility event, adds file-menu commands, creates files, and persists settings. Threadleaf already exports `TextFileView`, extension registration, file-menu events, settings persistence, vault creation, leaf opening, and the compatibility menu. The load-bearing open question is the legacy CodeMirror editor object expected by its views, so activation alone is insufficient.
+
+Disposition: **Adapt** the existing file-view and editor bridge, then **Benchmark** exact JSON and YAML persistence. Do not build a separate data editor.
+
+### Excalidraw 2.25.3
+
+The package uses file views, workspace layout readiness, editor extensions, settings, vault reads and writes, external navigation, clipboard, network assets, and dynamic module selection. Threadleaf's existing 2.26.4 workflow already exercised the broad surface, but the installed 2.25.3 identity and its recovery path had not been proven.
+
+Disposition: **Adapt** the reviewed identity list and retry state. **Benchmark** the full exact installed workflow. Result on 2026-08-19: passed create, draw-edit, compressed and native scene open, embed, PNG and SVG export, settings, command palette, popout, induced popout and renderer crash recovery, vault switching, visible reload, restart, and byte preservation in isolated mode.
+
+### Iconize 2.14.7
+
+The plugin uses workspace and vault events, file menus, modals, metadata cache, Markdown processors, CodeMirror extensions, CSS-change and layout-change events, icon registration and DOM rendering, and settings persistence. Threadleaf has public equivalents for the principal APIs. File-explorer decoration is the critical integration seam because a plugin can run successfully while its icons remain invisible in Threadleaf's native navigator.
+
+Disposition: **Adapt** navigator decoration and context-menu projection. **Benchmark** assignment, removal, rename, reload, restart, and both themes. Reject an activation-only claim.
+
+### Minimal Theme Settings 8.2.3
+
+The plugin reads vault configuration, listens for configuration and CSS changes, adds a settings tab and commands, writes classes and CSS variables, and persists settings. Threadleaf already exposes settings components, `loadData` and `saveData`, `vault.getConfig`, CSS-change events, and theme/snippet controls. Its value depends on the paired Minimal theme, so plugin-only evidence would be misleading.
+
+Disposition: **Depend** on the unchanged public plugin and theme assets. **Adapt** any missing configuration or CSS-event semantics. **Benchmark** paired computed styles and pixels in light and dark.
+
+### Omnisearch 1.30.1
+
+The plugin uses vault create, delete, modify, and rename events, metadata-cache ignore rules, modals, ribbon and command surfaces, vault adapter cache files under `.obsidian/plugins/omnisearch`, and optional HTTP features. Threadleaf already provides the core modal, ribbon, command, event, metadata, and adapter surfaces. Search-index storage and the bundled Svelte modal lifecycle are the highest-risk seams.
+
+Disposition: **Depend** on the plugin's own index and UI. **Adapt** missing metadata and modal semantics. **Benchmark** initial index, query ranking, result open, mutation reindex, reload, and restart. Do not substitute Threadleaf's native search and call it plugin parity.
+
+## Saturation and stop gate
+
+Two independent passes changed the implementation order:
+
+1. The byte and release pass found the installed-distribution identity mismatch and mutable-state inspection bug.
+2. The tagged-source and local-ledger pass separated activation from visible workflow requirements, especially Iconize navigator decoration, Data Files Editor's legacy editor object, Minimal's paired theme behavior, and Omnisearch's own index and modal lifecycle.
+
+Additional discovery would not change authority, rights, or implementation order before the executable workflows run. The next evidence must therefore come from the exact-package matrix. A package stays unverified until its named workflow passes in a disposable vault and the visible surface is inspected.

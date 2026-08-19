@@ -317,6 +317,20 @@ async function clickSelector(selector) {
   })()`);
   assert(scrolled, `Pointer target is unavailable: ${selector}`);
   await delay(50);
+  const hover = await evaluate(`(() => {
+    const element = document.querySelector(${JSON.stringify(selector)});
+    if (!(element instanceof HTMLElement)) return null;
+    const interactionRoot = element.closest('button, [role="button"], .cm-editor') ?? element;
+    const rect = interactionRoot.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  })()`);
+  assert(hover, `Pointer target is unavailable before hover: ${selector}`);
+  await cdp.send("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    x: hover.x,
+    y: hover.y,
+  });
+  await delay(40);
   const target = await evaluate(`(() => {
     const element = document.querySelector(${JSON.stringify(selector)});
     if (!(element instanceof HTMLElement)) return { error: "missing" };
@@ -509,7 +523,7 @@ try {
     `A fresh workspace did not auto-open exactly one fixture note: ${JSON.stringify(current.workspace.panes[0].tabs)}`,
   );
   const repeatedActionTargets = await evaluate(`(() => {
-    const close = document.querySelector('[data-pane-id="primary"] .note-tab-close');
+    const close = document.querySelector('.note-tabs-shell[data-tab-pane-id="primary"] .note-tab-close');
     const modes = [...document.querySelectorAll('[data-pane-id="primary"] .document-view-switch button')]
       .filter((mode) =>
         mode instanceof HTMLButtonElement && !mode.hidden && getComputedStyle(mode).display !== 'none'
@@ -533,7 +547,7 @@ try {
   );
 
   phase = "deterministic empty workspace";
-  await clickSelector('[data-pane-id="primary"] .note-tab-close');
+  await clickSelector('.note-tabs-shell[data-tab-pane-id="primary"] .note-tab-close');
   await waitFor(
     async () => (await snapshot()).workspace?.panes[0]?.tabs.length === 0,
     "The startup tab did not close through the visible tab control",
@@ -683,14 +697,14 @@ try {
   });
 
   phase = "pointer-driven split";
-  await clickSelector('[data-note-path="Welcome.md"]');
+  await clickSelector('#file-list [data-note-path="Welcome.md"]');
   await waitFor(
     async () => (await paneState("primary"))?.path === "Welcome.md",
     "Welcome.md did not open in the primary pane",
   );
 
   phase = "note history and quick switcher real input";
-  await clickSelector('[data-note-path="Linked Note.md"]');
+  await clickSelector('#file-list [data-note-path="Linked Note.md"]');
   await waitFor(
     async () => (await paneState("primary"))?.path === "Linked Note.md",
     "Linked Note.md did not open in the primary pane for history",
@@ -810,7 +824,9 @@ try {
 
   const closeTabMarker = "THREADLEAF-CLOSE-TAB-AUTOSAVE";
   await appendToPane("primary", `\n\n${closeTabMarker}`);
-  await clickSelector('[data-pane-id="primary"] .note-tab-close[data-note-path="Linked Note.md"]');
+  await clickSelector(
+    '.note-tabs-shell[data-tab-pane-id="primary"] .note-tab-close[data-note-path="Linked Note.md"]',
+  );
   await waitFor(async () => {
     const state = await paneState("primary");
     const candidate = await snapshot();
@@ -823,7 +839,7 @@ try {
     (await fs.readFile(path.join(vaultPath, "Linked Note.md"), "utf8")).includes(closeTabMarker),
     "Closing a tab mid-edit did not autosave its pending bytes.",
   );
-  await clickSelector('[data-note-path="Linked Note.md"]');
+  await clickSelector('#file-list [data-note-path="Linked Note.md"]');
   await waitFor(
     async () => (await paneState("primary"))?.path === "Linked Note.md",
     "The close-tab autosave fixture could not reopen Linked Note.md",
@@ -833,7 +849,9 @@ try {
     async () => (await paneState("primary"))?.path === "Welcome.md",
     "The history hotkey did not traverse back to Welcome.md",
   );
-  await clickSelector('[data-pane-id="primary"] .note-tab-close[data-note-path="Linked Note.md"]');
+  await clickSelector(
+    '.note-tabs-shell[data-tab-pane-id="primary"] .note-tab-close[data-note-path="Linked Note.md"]',
+  );
   await waitFor(async () => {
     const candidate = await snapshot();
     return paneTabPaths(candidate, "primary").join("\n") === "Welcome.md" ? candidate : null;
@@ -858,7 +876,9 @@ try {
     async () => (await paneState("primary"))?.path === "Welcome.md",
     "History navigation did not return to Welcome.md after the autosave check.",
   );
-  await clickSelector('[data-pane-id="primary"] .note-tab-close[data-note-path="Linked Note.md"]');
+  await clickSelector(
+    '.note-tabs-shell[data-tab-pane-id="primary"] .note-tab-close[data-note-path="Linked Note.md"]',
+  );
   await waitFor(async () => {
     const candidate = await snapshot();
     return paneTabPaths(candidate, "primary").join("\n") === "Welcome.md" ? candidate : null;
@@ -917,7 +937,7 @@ try {
       "vertical",
     "The persisted split was not visible in the renderer layout.",
   );
-  await clickSelector('[data-note-path="Linked Note.md"]');
+  await clickSelector('#file-list [data-note-path="Linked Note.md"]');
   await waitFor(
     async () => (await paneState("secondary"))?.path === "Linked Note.md",
     "Linked Note.md did not open in the secondary pane",
@@ -939,7 +959,7 @@ try {
   );
   assert(
     await evaluate(`(() => {
-      const back = document.querySelector('[data-pane-id="secondary"] [id^="navigate-back"]');
+      const back = document.querySelector('.note-tabs-shell[data-tab-pane-id="secondary"] [id^="navigate-back"]');
       return back instanceof HTMLButtonElement && !back.disabled;
     })()`),
     "Autosaving an inactive pane disabled history in the active pane.",

@@ -1,0 +1,27 @@
+{
+  "$schema": "./reviewed-authority-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profileId": "obsidian-minimal-settings-8.2.3-obsidian-installed",
+  "profileRevision": 1,
+  "packageIdentity": {
+    "pluginId": "obsidian-minimal-settings",
+    "manifestVersion": "8.2.3",
+    "distributionTag": "8.2.3+obsidian-installed",
+    "manifestSha256": "1682a33b6d117f4815a452b355b5090187aac05ee6eaab8f0e8377b3a79c4453",
+    "mainSha256": "70573512ec859fad644e79ca9883d0b6d7dfb5369cde66e366884638317efdf3",
+    "stylesSha256": "50084760da927a5bf5ac1b9d3b960dc52e1d0a3bf690e54df8f4d76f8212628c",
+    "packageTreeSha256": "bddc0534c277763c19bbedd23b8be65c2190d76f8594c8c773c86bc1cd531678"
+  },
+  "packageIdentityDigest": "7ebd273381308c60c9fd65245de0a24eda6e0639d5849242b7ffafcaea1f07d8",
+  "expectedStaticCapabilities": ["workspace-ui"],
+  "requiredAuthorities": [
+    "workspace-ui",
+    "network",
+    "filesystem",
+    "subprocess",
+    "host-environment"
+  ],
+  "executionProfile": "trusted-node-renderer",
+  "allowedPlatforms": ["linux", "darwin", "win32"],
+  "authorityDigest": "fbdd5c2eee81a764b66679c192d4d369c5fc5c6ff8e0b6c24a5d42f684e01124"
+}

@@ -190,6 +190,8 @@ export const pluginRendererChannels = {
   vaultCreate: "threadleaf:plugin-renderer-vault-create",
   vaultCreateBinary: "threadleaf:plugin-renderer-vault-create-binary",
   vaultCreateFolder: "threadleaf:plugin-renderer-vault-create-folder",
+  openFile: "threadleaf:plugin-renderer-open-file",
+  surfaceChanged: "threadleaf:plugin-renderer-surface-changed",
   vaultListMarkdownPaths: "threadleaf:plugin-renderer-vault-list-markdown-paths",
   vaultReadText: "threadleaf:plugin-renderer-vault-read-text",
   vaultRename: "threadleaf:plugin-renderer-vault-rename",
@@ -201,6 +203,10 @@ export const pluginRendererChannels = {
 export interface PluginVaultCreateRequest {
   content: string;
   filePath: string;
+  vaultPath: string;
+}
+
+export interface PluginSurfaceChangedRequest {
   vaultPath: string;
 }
 
@@ -225,6 +231,11 @@ export type PluginVaultCreateBinaryResponse = PluginVaultCreateResponse;
 
 export interface PluginVaultCreateFolderRequest {
   folderPath: string;
+  vaultPath: string;
+}
+
+export interface PluginOpenFileRequest {
+  filePath: string;
   vaultPath: string;
 }
 
@@ -694,6 +705,33 @@ export function parsePluginVaultCreateFolderRequest(
     throw new Error("Plugin vault folder creates require vault and folder strings.");
   }
   return { vaultPath: candidate.vaultPath, folderPath: candidate.folderPath };
+}
+
+export function parsePluginOpenFileRequest(value: unknown): PluginOpenFileRequest {
+  if (!value || typeof value !== "object") {
+    throw new Error("Plugin file-open request must be an object.");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.vaultPath !== "string" ||
+    candidate.vaultPath.length === 0 ||
+    typeof candidate.filePath !== "string" ||
+    candidate.filePath.length === 0
+  ) {
+    throw new Error("Plugin file-open requests require vault and file paths.");
+  }
+  return { vaultPath: candidate.vaultPath, filePath: candidate.filePath };
+}
+
+export function parsePluginSurfaceChangedRequest(value: unknown): PluginSurfaceChangedRequest {
+  if (!value || typeof value !== "object") {
+    throw new Error("Plugin surface-change request must be an object.");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (typeof candidate.vaultPath !== "string" || candidate.vaultPath.length === 0) {
+    throw new Error("Plugin surface-change requests require a vault path.");
+  }
+  return { vaultPath: candidate.vaultPath };
 }
 
 export function requirePayloadString(request: PluginRendererRequest, key: string): string {

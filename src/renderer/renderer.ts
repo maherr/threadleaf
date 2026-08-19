@@ -262,6 +262,8 @@ const elements = {
   filesHeading: getElement("files-heading"),
   fileCount: getElement("file-count"),
   newNote: getButton("new-note"),
+  titlebarNewNote: getButton("titlebar-new-note"),
+  titlebarTabsHost: getElement("titlebar-tabs-host"),
   navigatorViewToggle: getButton("navigator-view-toggle"),
   navigatorTagToggle: getButton("navigator-tag-toggle"),
   navigatorSearchField: getElement("navigator-search-field"),
@@ -754,6 +756,34 @@ const paneElements = new Map<WorkspacePaneId, WorkspacePaneElements>([
   ["primary", paneElementsFor("primary", elements.workspacePane)],
   ["secondary", paneElementsFor("secondary", secondaryPaneRoot)],
 ]);
+
+for (const [paneId, pane] of paneElements) {
+  const shell = pane.noteTabs.closest<HTMLElement>(".note-tabs-shell");
+  if (shell) shell.dataset.tabPaneId = paneId;
+}
+
+let titlebarPaneId: WorkspacePaneId | null = null;
+
+function dockPaneTabsInTitlebar(paneId: WorkspacePaneId): void {
+  if (titlebarPaneId === paneId) return;
+  if (titlebarPaneId) {
+    const previousPane = paneElements.get(titlebarPaneId);
+    const previousShell = previousPane?.noteTabs.closest<HTMLElement>(".note-tabs-shell");
+    if (previousPane && previousShell) {
+      previousPane.workspacePane.prepend(previousShell);
+      delete previousPane.workspacePane.dataset.tabsInTitlebar;
+    }
+  }
+  const nextPane = paneElements.get(paneId);
+  const nextShell = nextPane?.noteTabs.closest<HTMLElement>(".note-tabs-shell");
+  if (!nextPane || !nextShell) return;
+  elements.titlebarTabsHost.append(nextShell);
+  elements.titlebarTabsHost.dataset.tabPaneId = paneId;
+  nextPane.workspacePane.dataset.tabsInTitlebar = "true";
+  titlebarPaneId = paneId;
+}
+
+dockPaneTabsInTitlebar("primary");
 
 const canvasViews = new Map<WorkspacePaneId, CanvasViewController>();
 for (const [paneId, pane] of paneElements) {
@@ -7935,6 +7965,7 @@ async function setPluginCapabilityGrant(
 }
 
 async function reloadPlugins(): Promise<void> {
+  pluginViewSuppressedPath = null;
   await updatePlugins(
     (vaultId) => window.threadleaf.reloadPlugins(vaultId),
     "Reloading enabled community plugins…",
@@ -10763,6 +10794,7 @@ function renderWorkspacePanes(
   const availablePaneIds = new Set(workspace?.panes.map((pane) => pane.id) ?? ["primary"]);
   const activePaneId = workspace?.activePaneId ?? "primary";
   const paneCount = availablePaneIds.size;
+  dockPaneTabsInTitlebar(activePaneId);
   elements.workspacePanes.dataset.splitDirection = workspace?.splitDirection ?? "none";
 
   for (const paneId of ["primary", "secondary"] as const) {
@@ -11165,6 +11197,13 @@ function render(snapshot: RuntimeSnapshot): void {
       : needsAttention
         ? "Needs attention"
         : "Ready";
+  elements.runtimeState.dataset.state = opening
+    ? "opening"
+    : warming
+      ? "warming"
+      : needsAttention
+        ? "degraded"
+        : "ready";
   elements.statusShape.dataset.state =
     opening || warming ? "opening" : needsAttention ? "degraded" : "ready";
   elements.indexStatus.textContent = opening
@@ -11228,6 +11267,7 @@ function render(snapshot: RuntimeSnapshot): void {
   elements.fileSearch.disabled = opening;
   elements.openVault.disabled = busy;
   elements.newNote.disabled = opening || readOnlyVault() || busy;
+  elements.titlebarNewNote.disabled = opening || readOnlyVault() || busy;
   if (elements.newNoteDialog.open) {
     renderNewNoteDialog();
   }
@@ -11681,7 +11721,7 @@ function renderTabs(tabs: WorkspaceTabSummary[], displayedPath: string | null): 
     const mark = document.createElement("span");
     mark.className = "note-tab-mark";
     mark.ariaHidden = "true";
-    mark.textContent = tab.pinned ? "PIN" : "◇";
+    mark.textContent = tab.pinned ? "PIN" : "";
     const title = document.createElement("span");
     title.className = "note-tab-title";
     title.textContent = tab.title;
@@ -14031,6 +14071,7 @@ function renderEditControls(): void {
   const paneCount = currentSnapshot?.workspace?.panes.length ?? 1;
   const splitBlocked = busy;
   elements.newNote.disabled = opening || readOnly || busy;
+  elements.titlebarNewNote.disabled = opening || readOnly || busy;
   elements.noteEmptyCreate.disabled = opening || readOnly || busy || !currentSnapshot?.vault.id;
   elements.exportNote.disabled =
     opening || busy || publishExportBusy || !loadedNote || !loadedVaultId;
@@ -14417,6 +14458,7 @@ function activateWorkspacePaneLocally(paneId: WorkspacePaneId): void {
     void window.threadleaf.closePluginView().catch(() => undefined);
   }
   activatePaneContext(paneId);
+  dockPaneTabsInTitlebar(paneId);
   for (const [candidateId, candidateElements] of paneElements) {
     candidateElements.workspacePane.dataset.active = String(candidateId === paneId);
     candidateElements.workspacePane.setAttribute(
@@ -14536,6 +14578,7 @@ function setActionState(nextBusy: boolean): void {
   const opening = vaultOpening();
   elements.openVault.disabled = busy;
   elements.newNote.disabled = opening || readOnlyVault() || busy;
+  elements.titlebarNewNote.disabled = opening || readOnlyVault() || busy;
   elements.navigatorTagToggle.disabled = opening || busy;
   if (elements.newFolderDialog.open) {
     renderNewFolderDialog();
@@ -14995,6 +15038,10 @@ elements.openVault.addEventListener(
   () => void executeRendererCommand("workspace.open-vault"),
 );
 elements.newNote.addEventListener(
+  "click",
+  () => void executeRendererCommand("workspace.create-note"),
+);
+elements.titlebarNewNote.addEventListener(
   "click",
   () => void executeRendererCommand("workspace.create-note"),
 );

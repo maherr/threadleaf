@@ -1290,8 +1290,11 @@ export class Modal {
     this.containerEl.className = "modal-container mod-dim";
     this.bgEl = doc.createElement("div");
     this.bgEl.className = "modal-bg";
+    this.bgEl.style.zIndex = "0";
     this.modalEl = doc.createElement("div");
     this.modalEl.className = "modal";
+    this.modalEl.style.position = "relative";
+    this.modalEl.style.zIndex = "1";
     this.headerEl = doc.createElement("div");
     this.headerEl.className = "modal-header";
     this.titleEl = doc.createElement("div");
@@ -1483,6 +1486,7 @@ export class SuggestModal<T> extends Modal {
   readonly resultContainerEl: HTMLElement;
   private instructions: Instruction[] = [];
   private suggestions: T[] = [];
+  private activeSuggestionIndex = 0;
 
   constructor(app: App) {
     super(app);
@@ -1493,6 +1497,7 @@ export class SuggestModal<T> extends Modal {
     this.resultContainerEl.className = "suggestion-container";
     this.contentEl.append(this.inputEl, this.resultContainerEl);
     this.inputEl.addEventListener("input", () => void this.refreshSuggestions());
+    this.inputEl.addEventListener("keydown", (event) => this.handleKeyDown(event));
   }
 
   setPlaceholder(placeholder: string): void {
@@ -1516,9 +1521,9 @@ export class SuggestModal<T> extends Modal {
   }
 
   selectActiveSuggestion(event: MouseEvent | KeyboardEvent): void {
-    const first = this.suggestions[0];
-    if (first !== undefined) {
-      this.selectSuggestion(first, event);
+    const active = this.suggestions[this.activeSuggestionIndex];
+    if (active !== undefined) {
+      this.selectSuggestion(active, event);
     }
   }
 
@@ -1539,18 +1544,54 @@ export class SuggestModal<T> extends Modal {
   private async refreshSuggestions(): Promise<void> {
     const values = await this.getSuggestions(this.inputEl.value);
     this.suggestions = values.slice(0, this.limit);
+    this.activeSuggestionIndex = 0;
     this.resultContainerEl.replaceChildren();
     if (this.suggestions.length === 0) {
       this.onNoSuggestion();
       return;
     }
-    for (const suggestion of this.suggestions) {
+    for (const [index, suggestion] of this.suggestions.entries()) {
       const element = this.resultContainerEl.ownerDocument.createElement("div");
       element.className = "suggestion-item";
+      element.classList.toggle("is-selected", index === this.activeSuggestionIndex);
       this.renderSuggestion(suggestion, element);
       element.addEventListener("click", (event) => this.selectSuggestion(suggestion, event));
+      element.addEventListener("mouseenter", () => {
+        this.activeSuggestionIndex = index;
+        this.renderActiveSuggestion();
+      });
       this.resultContainerEl.append(element);
     }
+  }
+
+  private handleKeyDown(event: KeyboardEvent): void {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      this.close();
+      return;
+    }
+    if (this.suggestions.length === 0) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      this.activeSuggestionIndex =
+        (this.activeSuggestionIndex + direction + this.suggestions.length) %
+        this.suggestions.length;
+      this.renderActiveSuggestion();
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      this.selectActiveSuggestion(event);
+    }
+  }
+
+  private renderActiveSuggestion(): void {
+    const elements = this.resultContainerEl.querySelectorAll<HTMLElement>(".suggestion-item");
+    for (const [index, element] of [...elements].entries()) {
+      element.classList.toggle("is-selected", index === this.activeSuggestionIndex);
+    }
+    elements[this.activeSuggestionIndex]?.scrollIntoView({ block: "nearest" });
   }
 }
 
@@ -2687,7 +2728,19 @@ export abstract class EditableFileView extends FileView {}
 
 export class TextFileView extends EditableFileView {
   data = "";
-  requestSave = (): void => {};
+  requestSave = (): void => {
+    if (this.requestSaveTimer !== null) {
+      globalThis.clearTimeout(this.requestSaveTimer);
+    }
+    this.requestSaveTimer = globalThis.setTimeout(() => {
+      this.requestSaveTimer = null;
+      void this.enqueueRequestedSave().catch(() => undefined);
+    }, 250);
+  };
+
+  private requestSaveTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+  private requestSaveTail: Promise<void> = Promise.resolve();
+  private requestSaveFailure: unknown = null;
 
   constructor(leaf: WorkspaceLeaf) {
     super(leaf);
@@ -2700,6 +2753,7 @@ export class TextFileView extends EditableFileView {
   }
 
   override async onUnloadFile(file: TFile): Promise<void> {
+    await this.flushRequestedSave();
     await super.onUnloadFile(file);
     this.file = null;
   }
@@ -2726,6 +2780,32 @@ export class TextFileView extends EditableFileView {
 
   clear(): void {
     this.data = "";
+  }
+
+  private enqueueRequestedSave(): Promise<void> {
+    const requested = this.requestSaveTail.then(() => this.save(false));
+    this.requestSaveTail = requested.then(
+      () => {
+        this.requestSaveFailure = null;
+      },
+      (error: unknown) => {
+        this.requestSaveFailure = error;
+      },
+    );
+    return requested;
+  }
+
+  private async flushRequestedSave(): Promise<void> {
+    if (this.requestSaveTimer !== null) {
+      globalThis.clearTimeout(this.requestSaveTimer);
+      this.requestSaveTimer = null;
+      await this.enqueueRequestedSave();
+    } else {
+      await this.requestSaveTail;
+    }
+    if (this.requestSaveFailure) {
+      throw this.requestSaveFailure;
+    }
   }
 }
 
@@ -2785,6 +2865,7 @@ export type EditorCommandName =
   | "unfoldAll";
 
 export class Editor {
+  editorComponent: MarkdownView | null = null;
   private anchor = 0;
   private focused = false;
   private head = 0;
@@ -3185,6 +3266,7 @@ export class MarkdownView extends TextFileView {
     this.editor = new Editor((value) => {
       this.data = value;
     });
+    this.editor.editorComponent = this;
     const PreviewView = markdownPreviewViewConstructor;
     if (PreviewView === null) {
       throw new Error("MarkdownView preview constructor has not been registered.");

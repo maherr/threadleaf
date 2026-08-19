@@ -129,6 +129,29 @@ describe("Obsidian compatibility vault writes", () => {
     expect(() => vault.getResourcePath(foreignFile)).toThrow("active compatibility vault");
   });
 
+  it("roundtrips vault configuration and emits the public config-changed event", async () => {
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-config-"));
+    temporaryDirectories.push(rootPath);
+    await fs.mkdir(path.join(rootPath, ".obsidian"));
+    await fs.writeFile(
+      path.join(rootPath, ".obsidian", "app.json"),
+      `${JSON.stringify({ baseFontSize: 16, foldHeading: true }, null, 2)}\n`,
+      "utf8",
+    );
+    const vault = new Vault(rootPath);
+    const changes: Array<[unknown, unknown]> = [];
+    vault.on("config-changed", (key, value) => changes.push([key, value]));
+
+    expect(vault.getConfig("baseFontSize")).toBe(16);
+    await vault.setConfig("baseFontSize", 17.5);
+
+    expect(vault.getConfig("baseFontSize")).toBe(17.5);
+    expect(changes).toEqual([["baseFontSize", 17.5]]);
+    await expect(
+      fs.readFile(path.join(rootPath, ".obsidian", "app.json"), "utf8"),
+    ).resolves.toContain('"baseFontSize": 17.5');
+  });
+
   it("allows internal resource symlinks but rejects resource paths that resolve outside", async () => {
     const sandboxPath = await fs.mkdtemp(
       path.join(os.tmpdir(), "threadleaf-plugin-resource-link-"),

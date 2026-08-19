@@ -1,0 +1,28 @@
+{
+  "$schema": "./reviewed-authority-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profileId": "data-files-editor-1.3.0-obsidian-installed",
+  "profileRevision": 1,
+  "packageIdentity": {
+    "pluginId": "data-files-editor",
+    "manifestVersion": "1.3.0",
+    "distributionTag": "1.3.0+obsidian-installed",
+    "manifestSha256": "b769f23ba720461fb5e55da516795397b3784eece8622113fa96608e6488d457",
+    "mainSha256": "1f962a44845adad7ea3de6792bbf536f111ee131b0fcd16fa9cf4d18ff0d0676",
+    "stylesSha256": "8ecd667b016ebc6e25ca5fb70538b1a00ae1b9ef5f851dd0911101aca718cb0c",
+    "packageTreeSha256": "88703773f835ef23a6ea3c1b202cf5205b312b65cbb837142861465cbd6811e4"
+  },
+  "packageIdentityDigest": "8e50d972f8867168367688d810fa1524fb99065e63b8c2e8052271a72aec516c",
+  "expectedStaticCapabilities": ["editor-extension", "workspace-ui"],
+  "requiredAuthorities": [
+    "editor-extension",
+    "workspace-ui",
+    "network",
+    "filesystem",
+    "subprocess",
+    "host-environment"
+  ],
+  "executionProfile": "trusted-node-renderer",
+  "allowedPlatforms": ["linux", "darwin", "win32"],
+  "authorityDigest": "91ba5d8a218b722b1b48222fc58c2a31ca5583ddc75c8f73472b519b940293c6"
+}

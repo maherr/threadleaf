@@ -244,6 +244,10 @@ export interface CompatibilityVaultWritePort {
   ): Promise<VaultWriteResult>;
 }
 
+const defaultVaultConfigValues: Readonly<Record<string, unknown>> = Object.freeze({
+  baseFontSize: 16,
+});
+
 export class TAbstractFile {
   readonly path: string;
   readonly name: string;
@@ -686,6 +690,8 @@ export class Vault extends Events {
   private mutationSequence = 0;
   private mutationVersion = 0;
   private readonly revisions = new Map<string, string>();
+  private readonly configOverrides = new Map<string, unknown>();
+  private configWriteTail: Promise<void> = Promise.resolve();
   private readerFiles: TFile[] | null = null;
   private readerInitialization: Promise<void> | null = null;
 
@@ -923,8 +929,46 @@ export class Vault extends Events {
     return this.adapter.getResourcePath(file.path);
   }
 
-  getConfig(_key: string): unknown {
-    return undefined;
+  getConfig(key: string): unknown {
+    if (this.configOverrides.has(key)) return this.configOverrides.get(key);
+    const persisted = readVaultAppSettings(this)[key];
+    return persisted === undefined ? defaultVaultConfigValues[key] : persisted;
+  }
+
+  setConfig(key: string, value: unknown): Promise<void> {
+    if (!key || key.includes("\0")) {
+      return Promise.reject(new Error("Vault configuration keys must be non-empty."));
+    }
+    this.configOverrides.set(key, value);
+    this.trigger("config-changed", key, value);
+    const operation = this.configWriteTail.then(async () => {
+      const settings = readVaultAppSettings(this);
+      for (const [overrideKey, overrideValue] of this.configOverrides) {
+        settings[overrideKey] = overrideValue;
+      }
+      const relativePath = path.posix.join(this.configDir, "app.json");
+      const serialized = `${JSON.stringify(settings, null, 2)}\n`;
+      let existingBytes: Buffer | null = null;
+      try {
+        existingBytes = await fs.readFile(this.resolveVaultPath(relativePath));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      if (this.#writer) {
+        if (existingBytes) {
+          await this.#writer.writeText(relativePath, serialized, revisionOf(existingBytes));
+        } else if (this.#writer.createText) {
+          await this.#writer.createText(relativePath, serialized);
+        } else {
+          throw new Error("Vault configuration creation requires a plugin writer.");
+        }
+      } else {
+        await fs.mkdir(path.dirname(this.resolveVaultPath(relativePath)), { recursive: true });
+        await atomicWriteFile(this.resolveVaultPath(relativePath), Buffer.from(serialized, "utf8"));
+      }
+    });
+    this.configWriteTail = operation.catch(() => undefined);
+    return operation;
   }
 
   async read(file: TFile): Promise<string> {
@@ -3179,6 +3223,8 @@ export class App {
   readonly secretStorage = new SecretStorage();
   private readonly localStorageFallback = new Map<string, string>();
   private readonly pluginModals = new Map<string, Set<{ close(): void }>>();
+  private pluginModalChangeListener: (() => void) | null = null;
+  private activePluginExecutionOwnerId: string | null = null;
 
   constructor(vault: Vault, commands: CommandRegistry, notices: NoticeBus) {
     activeCompatibilityApp = this;
@@ -3244,18 +3290,36 @@ export class App {
   }
 
   registerPluginModal(modal: { close(): void }): () => void {
-    const pluginId = this.plugins.ownerIdForReference(modal);
+    const pluginId = this.plugins.ownerIdForReference(modal) ?? this.activePluginExecutionOwnerId;
     if (!pluginId) {
       return () => {};
     }
     const modals = this.pluginModals.get(pluginId) ?? new Set<{ close(): void }>();
     modals.add(modal);
     this.pluginModals.set(pluginId, modals);
+    this.pluginModalChangeListener?.();
     return () => {
       modals.delete(modal);
       if (modals.size === 0 && this.pluginModals.get(pluginId) === modals) {
         this.pluginModals.delete(pluginId);
       }
+      this.pluginModalChangeListener?.();
+    };
+  }
+
+  setPluginModalChangeListener(listener: (() => void) | null): void {
+    this.pluginModalChangeListener = listener;
+  }
+
+  activePluginModalOwnerId(): string | null {
+    return [...this.pluginModals.keys()].at(-1) ?? null;
+  }
+
+  beginPluginExecution(pluginId: string): () => void {
+    const previousOwnerId = this.activePluginExecutionOwnerId;
+    this.activePluginExecutionOwnerId = pluginId;
+    return () => {
+      this.activePluginExecutionOwnerId = previousOwnerId;
     };
   }
 
@@ -3299,6 +3363,16 @@ export class App {
         element.classList.contains("dark")
       );
     });
+  }
+
+  updateFontSize(): void {
+    if (typeof document === "undefined") return;
+    const configured = this.vault.getConfig("baseFontSize");
+    if (typeof configured !== "number" || !Number.isFinite(configured) || configured <= 0) return;
+    const value = `${configured}px`;
+    document.documentElement.style.setProperty("--font-text-size", value);
+    document.body.style.setProperty("--font-text-size", value);
+    this.workspace.trigger("css-change");
   }
 
   loadLocalStorage(key: string): unknown | null {

@@ -1,7 +1,9 @@
 import { ipcRenderer } from "electron";
 import { installObsidianDomCompatibility } from "../runtime/obsidian-dom";
 import {
+  type PluginOpenFileRequest,
   type PluginRendererResponse,
+  type PluginSurfaceChangedRequest,
   type PluginVaultCreateBinaryResponse,
   type PluginVaultCreateFolderResponse,
   type PluginVaultCreateResponse,
@@ -19,6 +21,10 @@ installActiveWindowGlobal(window, globalThis);
 installObsidianDomCompatibility(window, globalThis);
 
 const service = new PluginRendererService({
+  openFile: (request: PluginOpenFileRequest) =>
+    ipcRenderer.invoke(pluginRendererChannels.openFile, request) as Promise<unknown>,
+  surfaceChanged: (request: PluginSurfaceChangedRequest) =>
+    ipcRenderer.invoke(pluginRendererChannels.surfaceChanged, request) as Promise<unknown>,
   createBinary: (request) =>
     ipcRenderer.invoke(
       pluginRendererChannels.vaultCreateBinary,

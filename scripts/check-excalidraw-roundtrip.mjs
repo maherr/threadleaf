@@ -13,26 +13,42 @@ const fixtureRoot = path.join(appRoot, "fixtures", "corpus", "excalidraw-roundtr
 const fixtureVault = path.join(fixtureRoot, "vault");
 const sourceVaultOverride = process.env.THREADLEAF_EXCALIDRAW_SOURCE_VAULT?.trim();
 const sourceVault = sourceVaultOverride ? path.resolve(sourceVaultOverride) : fixtureVault;
+const installedPluginMatrixRoot = process.env.THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT?.trim();
+const installedThemeMatrixRoot = process.env.THREADLEAF_INSTALLED_THEME_MATRIX_ROOT?.trim();
+const installedPluginMatrixClean = process.env.THREADLEAF_INSTALLED_PLUGIN_MATRIX_CLEAN === "1";
 const pluginId = "obsidian-excalidraw-plugin";
-const pluginVersion = "2.26.4";
+const pluginVersion = process.env.THREADLEAF_EXCALIDRAW_VERSION?.trim() || "2.26.4";
+const pluginProfileVariant = process.env.THREADLEAF_EXCALIDRAW_PROFILE_VARIANT?.trim() || "";
 const repository = "zsviczian/obsidian-excalidraw-plugin";
 const authorityProfilePath = path.join(
   appRoot,
   "scripts",
   "compatibility",
   "trust",
-  `${pluginId}-${pluginVersion}.authority-profile.json`,
+  `${pluginId}-${pluginVersion}${pluginProfileVariant}.authority-profile.json`,
 );
-const pinnedPlugin = {
-  id: pluginId,
-  version: pluginVersion,
-  manifestSha256: "f6b817daea2fa2106671a62d7236cdc8d806f52465f1ff3ab5343231c020b703",
-  manifestBytes: 463,
-  mainSha256: "b26f3fc8cfa39cfefe8c11c82e43f80afdc642d8ca4d4ece3bdd817f72d4cf5a",
-  mainBytes: 5_106_385,
-  stylesSha256: "615b560c5193b2ca4ef3ff1844d2807913bc51c40333c79fdd08a840b0c42735",
-  stylesBytes: 224_752,
-};
+const pinnedPlugin =
+  pluginVersion === "2.25.3" && pluginProfileVariant === "-obsidian-installed"
+    ? {
+        id: pluginId,
+        version: pluginVersion,
+        manifestSha256: "43f18bc17c5c3f76af1a9a4191daa1c3566e2875aa4430561d57b7828785282e",
+        manifestBytes: 463,
+        mainSha256: "3baa63e288992c910fa5ac10e3811aaea4210211b29781446c07259b6df96391",
+        mainBytes: 4_898_066,
+        stylesSha256: "236a113fee3581ec59856af22c6cecf79faf3521afae66227a40f6ff6cd98969",
+        stylesBytes: 205_354,
+      }
+    : {
+        id: pluginId,
+        version: pluginVersion,
+        manifestSha256: "f6b817daea2fa2106671a62d7236cdc8d806f52465f1ff3ab5343231c020b703",
+        manifestBytes: 463,
+        mainSha256: "b26f3fc8cfa39cfefe8c11c82e43f80afdc642d8ca4d4ece3bdd817f72d4cf5a",
+        mainBytes: 5_106_385,
+        stylesSha256: "615b560c5193b2ca4ef3ff1844d2807913bc51c40333c79fdd08a840b0c42735",
+        stylesBytes: 224_752,
+      };
 const electronPath = path.join(appRoot, "node_modules", ".bin", "electron");
 const screenshotDirectoryOverride = process.env.THREADLEAF_EXCALIDRAW_SCREENSHOT_DIR;
 const keepTemporaryRoot = process.env.THREADLEAF_EXCALIDRAW_KEEP_TEMP === "1";
@@ -46,6 +62,12 @@ const secondVaultPath = path.join(testRoot, "vault-two");
 const pickerLink = path.join(testRoot, "picker-target");
 const userDataPath = path.join(testRoot, "user-data");
 const pluginPath = path.join(vaultPath, ".obsidian", "plugins", pluginId);
+const installedMatrixPlugins = [
+  { id: "data-files-editor", version: "1.3.0" },
+  { id: "obsidian-icon-folder", version: "2.14.7" },
+  { id: "obsidian-minimal-settings", version: "8.2.3" },
+  { id: "omnisearch", version: "1.30.1" },
+];
 const screenshotDirectory = screenshotDirectoryOverride ?? path.join(testRoot, "screenshots");
 const output = [];
 const screenshots = [];
@@ -124,6 +146,19 @@ async function waitForStableFileBytes(filePath, quietMs = 1_200, timeoutMs = 15_
   throw new Error(`File did not settle before the acceptance deadline: ${filePath}`);
 }
 
+async function waitForExactFileText(filePath, expected, timeoutMs = 20_000) {
+  const deadline = Date.now() + timeoutMs;
+  let observed = null;
+  while (Date.now() < deadline) {
+    observed = await fs.readFile(filePath, "utf8").catch(() => null);
+    if (observed === expected) return observed;
+    await delay(80);
+  }
+  throw new Error(
+    `File did not reach the expected text before the acceptance deadline: ${JSON.stringify({ filePath, expected, observed })}`,
+  );
+}
+
 async function exists(filePath) {
   try {
     await fs.access(filePath);
@@ -166,9 +201,18 @@ function connectCdp(webSocketUrl) {
     }
     if (message.method === "Network.loadingFailed") {
       const url = networkRequests.get(message.params.requestId) ?? "<unknown>";
-      output.push(
-        `[renderer:network-error] ${url} ${message.params.errorText ?? "failed"} ${message.params.blockedReason ?? ""}\n`,
-      );
+      const excalidrawFontFailure =
+        url.includes("/excalidraw-assets/Xiaolai-Regular-") && url.endsWith(".woff2");
+      if (
+        !excalidrawFontFailure ||
+        !output.some((line) => line.startsWith("[renderer:network-error] Excalidraw font assets"))
+      ) {
+        output.push(
+          excalidrawFontFailure
+            ? `[renderer:network-error] Excalidraw font assets ${message.params.errorText ?? "failed"} ${message.params.blockedReason ?? ""}\n`
+            : `[renderer:network-error] ${url} ${message.params.errorText ?? "failed"} ${message.params.blockedReason ?? ""}\n`,
+        );
+      }
       while (output.length > 80) output.shift();
       networkRequests.delete(message.params.requestId);
       return;
@@ -282,6 +326,10 @@ async function targetCenter(connection, selector) {
         disabled: root instanceof HTMLButtonElement || root instanceof HTMLInputElement || root instanceof HTMLSelectElement || root instanceof HTMLTextAreaElement ? root.disabled : false,
         hidden: root.hidden || style.display === "none" || style.visibility === "hidden",
         hit: Boolean(hit && (hit === root || root.contains(hit))),
+        hitTag: hit?.tagName ?? null,
+        hitClass: hit instanceof HTMLElement ? hit.className : null,
+        targetTag: root.tagName,
+        targetClass: root instanceof HTMLElement ? root.className : null,
         x: rect.left + rect.width / 2,
         y: rect.top + rect.height / 2,
         width: rect.width,
@@ -295,7 +343,7 @@ async function targetCenter(connection, selector) {
     !target.hidden && target.width > 0 && target.height > 0,
     `Pointer target is hidden: ${selector}`,
   );
-  assert(target.hit, `Pointer target is covered: ${selector}`);
+  assert(target.hit, `Pointer target is covered: ${selector}: ${JSON.stringify(target)}`);
   return target;
 }
 
@@ -322,6 +370,7 @@ async function clickRowAction(connection, containerSelector, label) {
   const selector = await evaluate(
     connection,
     `(() => {
+      document.querySelectorAll('#threadleaf-e2e-row-action').forEach((candidate) => candidate.removeAttribute('id'));
       const container = document.querySelector(${JSON.stringify(containerSelector)});
       const button = [...(container?.querySelectorAll('button') ?? [])].find(
         (candidate) => candidate.textContent?.trim() === ${JSON.stringify(label)}
@@ -561,6 +610,7 @@ function assertPinnedPlugin(plugin) {
 }
 
 async function exactReviewedIdentity(plugin) {
+  const profile = JSON.parse(await fs.readFile(authorityProfilePath, "utf8"));
   const files = [
     {
       path: "manifest.json",
@@ -573,13 +623,12 @@ async function exactReviewedIdentity(plugin) {
   const packageIdentity = {
     pluginId,
     manifestVersion: pluginVersion,
-    distributionTag: pluginVersion,
+    distributionTag: profile.packageIdentity.distributionTag,
     manifestSha256: pinnedPlugin.manifestSha256,
     mainSha256: pinnedPlugin.mainSha256,
     stylesSha256: pinnedPlugin.stylesSha256,
     packageTreeSha256: authorityJsonSha256({ schemaVersion: 1, files }),
   };
-  const profile = JSON.parse(await fs.readFile(authorityProfilePath, "utf8"));
   const authorityPayload = {
     schemaVersion: profile.schemaVersion,
     profileId: profile.profileId,
@@ -593,7 +642,7 @@ async function exactReviewedIdentity(plugin) {
   };
   const packageIdentityDigest = authorityJsonSha256(packageIdentity);
   assert(
-    profile.profileId === `${pluginId}-${pluginVersion}` &&
+    profile.profileId === `${pluginId}-${pluginVersion}${pluginProfileVariant}` &&
       profile.packageIdentityDigest === packageIdentityDigest &&
       authorityJsonSha256(profile.packageIdentity) === packageIdentityDigest,
     "The Excalidraw release bytes did not match the exact reviewed package identity.",
@@ -630,6 +679,469 @@ async function writePluginFixture() {
     mainSha256: sha256(plugin.main),
     mainBytes: plugin.main.length,
     stylesSha256: plugin.styles ? sha256(plugin.styles) : null,
+  };
+}
+
+async function prepareInstalledPluginMatrix() {
+  if (!installedPluginMatrixRoot) return;
+  for (const plugin of installedMatrixPlugins) {
+    const source = path.join(path.resolve(installedPluginMatrixRoot), plugin.id);
+    const target = path.join(vaultPath, ".obsidian", "plugins", plugin.id);
+    assert(await exists(source), `Installed matrix source is missing: ${plugin.id}`);
+    await fs.cp(source, target, { recursive: true });
+  }
+  const installedIconsRoot = path.join(
+    path.dirname(path.resolve(installedPluginMatrixRoot)),
+    "icons",
+  );
+  if (!installedPluginMatrixClean && (await exists(installedIconsRoot))) {
+    await fs.cp(installedIconsRoot, path.join(vaultPath, ".obsidian", "icons"), {
+      recursive: true,
+    });
+  }
+  if (installedThemeMatrixRoot) {
+    const source = path.resolve(installedThemeMatrixRoot);
+    const target = path.join(vaultPath, ".obsidian", "themes", "Minimal");
+    assert(await exists(source), "Installed Minimal theme matrix source is missing.");
+    await fs.cp(source, target, { recursive: true });
+  }
+  await fs.mkdir(path.join(vaultPath, "Data"), { recursive: true });
+  await fs.writeFile(
+    path.join(vaultPath, "Data", "sample.json"),
+    `${JSON.stringify({ project: "Threadleaf", status: "matrix", count: 3 }, null, 2)}\n`,
+  );
+  await fs.writeFile(
+    path.join(vaultPath, "Data", "sample.yaml"),
+    "project: Threadleaf\nstatus: matrix\ncount: 3\n",
+  );
+}
+
+async function grantAndEnableInstalledPlugin(candidate) {
+  const installedRow = `.plugin-row[data-plugin-id=${JSON.stringify(candidate.id)}]`;
+  await waitFor(
+    cdp,
+    `Boolean(document.querySelector(${JSON.stringify(installedRow)}))`,
+    `${candidate.id} installed row`,
+  );
+  const version = await evaluate(
+    cdp,
+    `(() => {
+      const row = document.querySelector(${JSON.stringify(installedRow)});
+      return {
+        text: row?.textContent ?? '',
+        actions: [...(row?.querySelectorAll('button') ?? [])].map((button) => ({
+          label: button.textContent?.trim() ?? '',
+          disabled: button.disabled,
+        })),
+      };
+    })()`,
+  );
+  assert(
+    version.text.includes(candidate.version),
+    `${candidate.id} exact version was not visible.`,
+  );
+  await waitFor(
+    cdp,
+    `(() => [...(document.querySelector(${JSON.stringify(installedRow)})?.querySelectorAll('button') ?? [])].some((button) => button.textContent?.trim() === 'Review authority' && !button.disabled))()`,
+    `${candidate.id} authority action was unavailable: ${JSON.stringify(version)}`,
+    30_000,
+  );
+  await evaluate(
+    cdp,
+    `(() => {
+      const button = [...(document.querySelector(${JSON.stringify(installedRow)})?.querySelectorAll('button') ?? [])]
+        .find((candidate) => candidate.textContent?.trim() === 'Review authority');
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+      button.click();
+      return true;
+    })()`,
+  );
+  await waitFor(
+    cdp,
+    "document.querySelector('#plugin-authority-review-dialog')?.open === true",
+    `${candidate.id} authority review`,
+  );
+  await clickSelector(cdp, "#plugin-authority-review-grant");
+  await waitFor(
+    cdp,
+    `document.querySelector(${JSON.stringify(installedRow)})?.textContent?.includes('Exact bundle granted')`,
+    `${candidate.id} exact authority grant`,
+  );
+  await waitFor(
+    cdp,
+    `(() => { const toggle = document.querySelector(${JSON.stringify(`${installedRow} .plugin-toggle input`)}); return toggle instanceof HTMLInputElement && !toggle.disabled && !toggle.checked; })()`,
+    `${candidate.id} enabled toggle readiness`,
+    30_000,
+  );
+  const stabilityMarker = `threadleaf-e2e-${candidate.id}-${Date.now()}`;
+  const stabilityDeadline = Date.now() + 15_000;
+  let stableToggle = false;
+  while (Date.now() < stabilityDeadline) {
+    await evaluate(
+      cdp,
+      `(() => { const toggle = document.querySelector(${JSON.stringify(`${installedRow} .plugin-toggle input`)}); if (!(toggle instanceof HTMLInputElement) || toggle.disabled || toggle.checked) return false; toggle.dataset.threadleafE2eStability = ${JSON.stringify(stabilityMarker)}; return true; })()`,
+    );
+    await delay(600);
+    stableToggle = await evaluate(
+      cdp,
+      `document.querySelector(${JSON.stringify(`${installedRow} .plugin-toggle input`)})?.getAttribute('data-threadleaf-e2e-stability') === ${JSON.stringify(stabilityMarker)}`,
+    );
+    if (stableToggle) break;
+  }
+  assert(stableToggle, `${candidate.id} toggle never reached a stable rendered interval.`);
+  await clickSelector(cdp, `${installedRow} .plugin-toggle-track`);
+  const activation = await waitFor(
+    cdp,
+    `(async () => {
+      const snapshot = await window.threadleaf.getSnapshot();
+      const plugin = snapshot.plugins?.find((item) => item.id === ${JSON.stringify(candidate.id)});
+      return plugin?.state === 'loaded' || plugin?.state === 'failed'
+        ? { plugin, events: snapshot.events?.slice(-30), integrations: snapshot.integrations }
+        : null;
+    })()`,
+    `${candidate.id} visible activation`,
+    30_000,
+  ).catch(async (error) => {
+    const snapshot = await evaluate(cdp, "window.threadleaf.getSnapshot()");
+    const row = await evaluate(
+      cdp,
+      `document.querySelector(${JSON.stringify(installedRow)})?.textContent ?? null`,
+    );
+    const interfaceState = await evaluate(
+      cdp,
+      `({ pluginStatus: document.querySelector('#plugin-status')?.textContent ?? null, pluginStatusKind: document.querySelector('#plugin-status')?.getAttribute('data-kind') ?? null, toast: document.querySelector('#toast')?.textContent ?? null, toggle: (() => { const input = document.querySelector(${JSON.stringify(`${installedRow} .plugin-toggle input`)}); return input instanceof HTMLInputElement ? { checked: input.checked, disabled: input.disabled } : null; })() })`,
+    );
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}: ${JSON.stringify({
+        plugin: snapshot.plugins?.find((item) => item.id === candidate.id),
+        events: snapshot.events?.slice(-50),
+        integrations: snapshot.integrations,
+        row,
+        interfaceState,
+      })}`,
+    );
+  });
+  assert(
+    activation.plugin.state === "loaded",
+    `${candidate.id} activation failed: ${JSON.stringify(activation)}`,
+  );
+  return activation;
+}
+
+async function runInstalledPluginMatrix(vaultId, port) {
+  await clickSelector(cdp, "#settings-trigger");
+  await waitFor(
+    cdp,
+    "document.querySelector('#shortcut-settings')?.open === true",
+    "installed plugin matrix settings",
+  );
+  await clickSelector(cdp, "#settings-nav-plugins");
+  const activations = [];
+  for (const candidate of installedMatrixPlugins) {
+    activations.push({ id: candidate.id, ...(await grantAndEnableInstalledPlugin(candidate)) });
+  }
+  const snapshot = await evaluate(cdp, "window.threadleaf.getSnapshot()");
+  for (const candidate of installedMatrixPlugins) {
+    const plugin = snapshot.plugins?.find((item) => item.id === candidate.id);
+    assert(
+      plugin?.state === "loaded",
+      `${candidate.id} did not remain loaded after the combined matrix: ${JSON.stringify(plugin)}`,
+    );
+  }
+  const registrationSummary = installedMatrixPlugins.map((candidate) => ({
+    id: candidate.id,
+    commandCount: (snapshot.commands ?? []).filter((command) => command.ownerId === candidate.id)
+      .length,
+    commandIds: (snapshot.commands ?? [])
+      .filter((command) => command.ownerId === candidate.id)
+      .map((command) => command.id),
+    hasSettings: (snapshot.integrations?.settingTabPluginIds ?? []).includes(candidate.id),
+  }));
+  for (const registration of registrationSummary) {
+    assert(registration.hasSettings, `${registration.id} did not expose its settings surface.`);
+  }
+  await waitFor(
+    cdp,
+    "document.querySelector('#settings-close')?.disabled === false",
+    "installed plugin matrix settings completion",
+  );
+  await clickSelector(cdp, "#settings-close");
+  await waitFor(
+    cdp,
+    "document.querySelector('#shortcut-settings')?.open !== true",
+    "installed plugin matrix settings close",
+  );
+  const workflowSummary = [
+    await verifyDataFilesEditorWorkflow(vaultId, port),
+    await verifyIconizeWorkflow(vaultId, port),
+    await verifyMinimalSettingsWorkflow(vaultId, port),
+    await verifyOmnisearchWorkflow(vaultId, port),
+  ];
+  console.log(
+    JSON.stringify(
+      {
+        status: "activation-matrix-passed",
+        vaultId,
+        plugins: registrationSummary,
+        integrations: snapshot.integrations,
+        workflows: workflowSummary,
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+async function connectPluginSurfaceBySelector(
+  port,
+  selector,
+  label,
+  timeout = 30_000,
+  requirePointerHit = true,
+) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const targets = (await cdpTargets(port).catch(() => [])).filter(
+      (candidate) => candidate.type === "page" && candidate.url.includes("plugin-host.html"),
+    );
+    for (const target of targets) {
+      const candidate = connectCdp(target.webSocketDebuggerUrl);
+      try {
+        await candidate.send("Page.enable", {}, 2_000);
+        await candidate.send("Runtime.enable", {}, 2_000);
+        const matched = await evaluate(
+          candidate,
+          `(() => { const element = document.querySelector(${JSON.stringify(selector)}); if (!(element instanceof HTMLElement)) return null; const bounds = element.getBoundingClientRect(); if (!${JSON.stringify(requirePointerHit)}) return { width: bounds.width, height: bounds.height }; const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2); return bounds.width > 0 && bounds.height > 0 && hit ? { width: bounds.width, height: bounds.height } : null; })()`,
+        );
+        if (matched) return { connection: candidate, target, bounds: matched };
+      } catch {
+        // The candidate may still be loading or may belong to another isolated plugin.
+      }
+      candidate.close();
+    }
+    await delay(80);
+  }
+  throw new Error(`${label} did not expose ${selector} in an isolated plugin renderer.`);
+}
+
+async function verifyDataFilesEditorWorkflow(vaultId, port) {
+  const filePath = "Data/sample.json";
+  const expected = `${JSON.stringify(
+    { project: "Threadleaf", status: "edited-through-plugin", count: 4 },
+    null,
+    2,
+  )}\n`;
+  await openNavigatorPluginDocument(filePath);
+  await waitFor(
+    cdp,
+    `(async () => { const snapshot = await window.threadleaf.getSnapshot(); return snapshot.vault.id === ${JSON.stringify(vaultId)} && snapshot.pluginSurface?.viewType === 'json' && snapshot.pluginSurface?.filePath === ${JSON.stringify(filePath)}; })()`,
+    "Data Files Editor JSON view",
+    30_000,
+  );
+  const surface = await connectPluginSurfaceBySelector(
+    port,
+    ".datafile-source-view .cm-editor",
+    "Data Files Editor JSON view",
+  );
+  try {
+    await clickSelector(surface.connection, ".datafile-source-view .cm-content");
+    const focus = await evaluate(
+      surface.connection,
+      `(() => { const content = document.querySelector('.datafile-source-view .cm-content'); if (!(content instanceof HTMLElement)) return null; content.focus(); return { active: document.activeElement === content, contenteditable: content.getAttribute('contenteditable'), text: content.textContent }; })()`,
+    );
+    assert(
+      focus?.active && focus.contenteditable === "true",
+      `Data Files Editor did not expose a focusable CodeMirror input: ${JSON.stringify(focus)}`,
+    );
+    await pressKey(surface.connection, "a", "KeyA", 2);
+    await surface.connection.send("Input.insertText", { text: expected });
+    await waitFor(
+      surface.connection,
+      `document.querySelector('.datafile-source-view .cm-content')?.textContent?.includes('edited-through-plugin') === true`,
+      "Data Files Editor CodeMirror input",
+      10_000,
+    );
+    await evaluate(cdp, "window.threadleaf.waitForPluginMutations()", 30_000);
+    await waitForExactFileText(path.join(vaultPath, filePath), expected);
+  } finally {
+    surface.connection.close();
+  }
+  return { pluginId: "data-files-editor", workflow: "open-edit-autosave-json", filePath };
+}
+
+async function verifyIconizeWorkflow(vaultId, port) {
+  const filePath = "Notes/Source.md";
+  await evaluate(cdp, `window.threadleaf.openNote(${JSON.stringify(filePath)})`);
+  await waitFor(
+    cdp,
+    `(async () => { const snapshot = await window.threadleaf.getSnapshot(); return snapshot.vault.id === ${JSON.stringify(vaultId)} && snapshot.workspace?.activeNote?.path === ${JSON.stringify(filePath)}; })()`,
+    "Iconize active Markdown file",
+  );
+  const commandId = "obsidian-icon-folder:iconize:set-icon-for-file";
+  await runPaletteCommand(commandId, "set icon for file", `plugin.command.${commandId}`);
+  await waitFor(
+    cdp,
+    `(async () => { const snapshot = await window.threadleaf.getSnapshot(); const host = document.querySelector('#plugin-surface-host'); if (!(host instanceof HTMLElement)) return false; const bounds = host.getBoundingClientRect(); return snapshot.pluginSurface?.viewType === 'threadleaf-plugin-modal' && !host.hidden && bounds.width > 0 && bounds.height > 0; })()`,
+    "Iconize visible isolated modal surface",
+    30_000,
+  );
+  const surface = await connectPluginSurfaceBySelector(
+    port,
+    ".modal-container .prompt-input",
+    "Iconize picker",
+  );
+  try {
+    await clickSelector(surface.connection, ".modal-container .prompt-input");
+    await surface.connection.send("Input.insertText", { text: "star" });
+    await waitFor(
+      surface.connection,
+      "document.querySelectorAll('.iconize-modal .suggestion-item').length > 0",
+      "Iconize star suggestions",
+      20_000,
+    );
+    await pressKey(surface.connection, "Enter", "Enter");
+    await waitFor(
+      surface.connection,
+      "!document.querySelector('.iconize-modal')",
+      "Iconize picker close",
+      20_000,
+    );
+  } finally {
+    surface.connection.close();
+  }
+  const dataPath = path.join(
+    vaultPath,
+    ".obsidian",
+    "plugins",
+    "obsidian-icon-folder",
+    "data.json",
+  );
+  const deadline = Date.now() + 20_000;
+  let iconName = null;
+  while (Date.now() < deadline) {
+    const data = JSON.parse(await fs.readFile(dataPath, "utf8"));
+    if (typeof data[filePath] === "string" && data[filePath].length > 0) {
+      iconName = data[filePath];
+      break;
+    }
+    await delay(80);
+  }
+  assert(iconName, "Iconize did not persist the icon selected through its ordinary modal.");
+  assert(
+    await exists(path.join(vaultPath, ".obsidian", "icons")),
+    "Iconize did not create its clean-install .obsidian/icons directory.",
+  );
+  return {
+    pluginId: "obsidian-icon-folder",
+    workflow: "command-picker-select-persist",
+    filePath,
+    iconName,
+  };
+}
+
+async function verifyMinimalSettingsWorkflow(vaultId, port) {
+  const surface = await connectPluginSurfaceBySelector(
+    port,
+    "body.minimal-theme",
+    "Minimal Settings runtime",
+    30_000,
+    false,
+  );
+  const commandId = "obsidian-minimal-settings:increase-body-font-size";
+  try {
+    await runPaletteCommand(commandId, "increase body font size", `plugin.command.${commandId}`);
+    const appliedSize = await waitFor(
+      surface.connection,
+      "document.documentElement.style.getPropertyValue('--font-text-size') === '16.5px' && document.body.style.getPropertyValue('--font-text-size') === '16.5px' ? '16.5px' : null",
+      "Minimal body font command",
+      20_000,
+    );
+    assert(appliedSize === "16.5px", "Minimal body font command returned an invalid size.");
+  } finally {
+    surface.connection.close();
+  }
+  const appSettingsPath = path.join(vaultPath, ".obsidian", "app.json");
+  const pluginSettingsPath = path.join(
+    vaultPath,
+    ".obsidian",
+    "plugins",
+    "obsidian-minimal-settings",
+    "data.json",
+  );
+  const deadline = Date.now() + 20_000;
+  let persisted = null;
+  while (Date.now() < deadline) {
+    const appSettings = JSON.parse(await fs.readFile(appSettingsPath, "utf8").catch(() => "{}"));
+    const pluginSettings = JSON.parse(
+      await fs.readFile(pluginSettingsPath, "utf8").catch(() => "{}"),
+    );
+    if (appSettings.baseFontSize === 16.5 && pluginSettings.textNormal === 16.5) {
+      persisted = { appSettings, pluginSettings };
+      break;
+    }
+    await delay(80);
+  }
+  assert(persisted, "Minimal Settings did not persist its body font setting through both APIs.");
+  return {
+    pluginId: "obsidian-minimal-settings",
+    workflow: "command-config-css-persist",
+    vaultId,
+    fontSize: 16.5,
+  };
+}
+
+async function verifyOmnisearchWorkflow(vaultId, port) {
+  await evaluate(cdp, 'window.threadleaf.openNote("Notes/External.md")');
+  await waitFor(
+    cdp,
+    "document.querySelector('#note-path')?.textContent === 'Notes/External.md'",
+    "Omnisearch navigation origin",
+  );
+  const commandId = "omnisearch:show-modal";
+  await runPaletteCommand(commandId, "omnisearch", `plugin.command.${commandId}`);
+  await waitFor(
+    cdp,
+    `(async () => { const snapshot = await window.threadleaf.getSnapshot(); const host = document.querySelector('#plugin-surface-host'); if (!(host instanceof HTMLElement)) return false; const bounds = host.getBoundingClientRect(); return snapshot.pluginSurface?.viewType === 'threadleaf-plugin-modal' && !host.hidden && bounds.width > 0 && bounds.height > 0; })()`,
+    "Omnisearch visible isolated modal surface",
+    45_000,
+  );
+  const surface = await connectPluginSurfaceBySelector(
+    port,
+    ".omnisearch-modal .prompt-input",
+    "Omnisearch vault modal",
+    45_000,
+  );
+  try {
+    await clickSelector(surface.connection, ".omnisearch-modal .prompt-input");
+    await surface.connection.send("Input.insertText", { text: "Unicode scene" });
+    const resultSelector = '[data-result-id="Notes/Source.md"]';
+    await waitFor(
+      surface.connection,
+      `document.querySelector(${JSON.stringify(resultSelector)}) instanceof HTMLElement`,
+      "Omnisearch indexed Source result",
+      45_000,
+    );
+    await clickSelector(surface.connection, resultSelector);
+    await waitFor(
+      surface.connection,
+      "!document.querySelector('.omnisearch-modal')",
+      "Omnisearch result activation",
+      20_000,
+    );
+  } finally {
+    surface.connection.close();
+  }
+  await waitFor(
+    cdp,
+    `(async () => { const snapshot = await window.threadleaf.getSnapshot(); return snapshot.vault.id === ${JSON.stringify(vaultId)} && snapshot.workspace?.activeNote?.path === 'Notes/Source.md' && document.querySelector('#note-path')?.textContent === 'Notes/Source.md'; })()`,
+    "Omnisearch native note navigation",
+    30_000,
+  );
+  return {
+    pluginId: "omnisearch",
+    workflow: "command-query-result-native-open",
+    query: "Unicode scene",
+    resultPath: "Notes/Source.md",
   };
 }
 
@@ -1132,7 +1644,28 @@ async function openDrawing(filePath, vaultId, options = {}) {
     `(async () => { const s = await window.threadleaf.getSnapshot(); const host = document.querySelector('#plugin-surface-host'); const button = document.querySelector('#plugin-view'); return s.pluginSurface?.viewType === 'excalidraw' && s.pluginSurface?.filePath === ${JSON.stringify(filePath)} && host instanceof HTMLElement && !host.hidden && button?.getAttribute('aria-pressed') === 'true'; })()`,
     `automatic Excalidraw view ${filePath}`,
     30_000,
-  );
+  ).catch(async (error) => {
+    const diagnostic = await evaluate(
+      cdp,
+      `(async () => {
+        const snapshot = await window.threadleaf.getSnapshot();
+        const host = document.querySelector('#plugin-surface-host');
+        const button = document.querySelector('#plugin-view');
+        return {
+          button: button instanceof HTMLButtonElement ? { disabled: button.disabled, hidden: button.hidden, pressed: button.getAttribute('aria-pressed'), title: button.title } : null,
+          events: snapshot.events?.slice(-40),
+          host: host instanceof HTMLElement ? { hidden: host.hidden, childCount: host.childElementCount, text: host.textContent?.slice(0, 500) } : null,
+          integrations: snapshot.integrations,
+          pluginSurface: snapshot.pluginSurface,
+          plugins: snapshot.plugins,
+          workspace: snapshot.workspace,
+        };
+      })()`,
+    );
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}: ${JSON.stringify(diagnostic)}`,
+    );
+  });
   if (options.viaNavigator) {
     const selector = `#file-list [data-tree-path=${JSON.stringify(filePath)}]`;
     await waitFor(
@@ -1533,17 +2066,13 @@ async function exportPublicFixtures() {
   };
 }
 
-async function unloadPlugin() {
-  await evaluate(cdp, `window.threadleaf.unloadPlugin(${JSON.stringify(pluginId)})`);
+async function reloadPlugin(vaultId) {
   await waitFor(
     cdp,
-    `(async () => { const s = await window.threadleaf.getSnapshot(); return !(s.plugins ?? []).some((p) => p.id === ${JSON.stringify(pluginId)} && p.state === 'loaded'); })()`,
-    "Excalidraw unload",
+    "document.querySelector('#reload-plugin')?.disabled === false",
+    "visible Excalidraw reload control",
   );
-}
-
-async function reloadPlugin(vaultId) {
-  await evaluate(cdp, `window.threadleaf.reloadPlugin(${JSON.stringify(pluginId)})`);
+  await clickSelector(cdp, "#reload-plugin");
   await waitFor(
     cdp,
     `(async () => { const s = await window.threadleaf.getSnapshot(); return (s.plugins ?? []).some((p) => p.id === ${JSON.stringify(pluginId)} && p.state === 'loaded'); })()`,
@@ -1561,12 +2090,10 @@ async function reloadPlugin(vaultId) {
 }
 
 async function unloadReload(vaultId) {
-  await unloadPlugin();
   await reloadPlugin(vaultId);
 }
 
 async function reloadWithCompression(vaultId, compress) {
-  await unloadPlugin();
   const dataPath = path.join(pluginPath, "data.json");
   const settings = JSON.parse(await fs.readFile(dataPath, "utf8"));
   await fs.writeFile(dataPath, JSON.stringify({ ...settings, compress }));
@@ -2081,7 +2608,12 @@ async function exercisePluginRendererCrash(vaultId, filePath, port) {
   );
   const responseMs = await measureResponse(cdp, "main renderer after Excalidraw renderer crash");
   await capture(cdp, "excalidraw-plugin-crash-recovered-main", "dark");
-  await evaluate(cdp, `window.threadleaf.reloadPlugin(${JSON.stringify(pluginId)})`);
+  await waitFor(
+    cdp,
+    "document.querySelector('#reload-plugin')?.disabled === false",
+    "visible plugin reload after renderer crash",
+  );
+  await clickSelector(cdp, "#reload-plugin");
   await waitFor(
     cdp,
     `(async () => (await window.threadleaf.getSnapshot()).plugins?.some((plugin) => plugin.id === ${JSON.stringify(pluginId)} && plugin.state === 'loaded'))()`,
@@ -2110,8 +2642,13 @@ async function run() {
   const before = await canonicalManifest();
   const secondBefore = await canonicalManifest(secondVaultPath);
   const pluginState = await writePluginFixture();
+  await prepareInstalledPluginMatrix();
   const port = await availablePort();
   const first = await startApp(port, pluginState);
+  if (installedPluginMatrixRoot) {
+    await runInstalledPluginMatrix(first.vaultId, port);
+    return;
+  }
   const targetPort = port;
   const paletteCreatedPath = await createDrawingThroughOrdinaryPalette(first.vaultId, targetPort);
   await captureCurrentTheme(cdp, "excalidraw-command-created-app");

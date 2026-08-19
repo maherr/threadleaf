@@ -14,6 +14,7 @@ import type { PluginPackageInspectionReceipt } from "../shared/plugin-packages";
 import {
   type CommunityPluginGrantV2,
   isPluginConstructionRefusal,
+  isPluginDistributionPathIncluded,
   maxPluginBundleBytes,
   type PluginCapabilityReport,
   type PluginConstructionRequest,
@@ -1781,10 +1782,12 @@ export async function exactInputFromDirectory(
     Partial<Pick<PluginPackageProvenance, "pluginId" | "version" | "releaseTag">>,
 ): Promise<ExactPluginPackageInput> {
   const directoryEntries = await fs.readdir(directoryPath, { withFileTypes: true });
-  const entries: PluginPackageEntry[] = directoryEntries.map((entry) => ({
-    path: entry.name,
-    kind: entry.isFile() ? "file" : entry.isDirectory() ? "directory" : "symlink",
-  }));
+  const entries: PluginPackageEntry[] = directoryEntries
+    .filter((entry) => isPluginDistributionPathIncluded(entry.name))
+    .map((entry) => ({
+      path: entry.name,
+      kind: entry.isFile() ? "file" : entry.isDirectory() ? "directory" : "symlink",
+    }));
   const requiredNames = ["manifest.json", "main.js"] as const;
   for (const filename of requiredNames) {
     const entry = directoryEntries.find((candidate) => candidate.name === filename);

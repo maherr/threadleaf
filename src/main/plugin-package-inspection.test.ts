@@ -265,6 +265,42 @@ async function pathExists(target: string): Promise<boolean> {
 }
 
 describe("exact plugin package inspection", () => {
+  it("excludes mutable installed-plugin state while retaining unknown distribution entries", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-installed-plugin-input-"));
+    try {
+      await fs.cp(path.join(fixtureRoot, "inspection-safe"), root, { recursive: true });
+      await fs.writeFile(path.join(root, "data.json"), '{"userSetting":true}\n');
+      await fs.writeFile(path.join(root, ".threadleaf-package.json"), "{}\n");
+      const installed = await exactInputFromDirectory(root, {
+        kind: "local",
+        sourceUrl: null,
+        releaseUrl: null,
+        indexUrl: null,
+        indexSha256: null,
+      });
+
+      expect((installed.entries ?? []).map(({ path: entryPath }) => entryPath).sort()).toEqual([
+        "main.js",
+        "manifest.json",
+        "styles.css",
+      ]);
+
+      await fs.writeFile(path.join(root, "unexpected.bin"), "distribution byte\n");
+      const unexpected = await exactInputFromDirectory(root, {
+        kind: "local",
+        sourceUrl: null,
+        releaseUrl: null,
+        indexUrl: null,
+        indexSha256: null,
+      });
+      expect((unexpected.entries ?? []).map(({ path: entryPath }) => entryPath)).toContain(
+        "unexpected.bin",
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("records CITE's declared minimum Obsidian version without treating it as Threadleaf semver", async () => {
     const input = withManifest(await fixtureInput("inspection-safe"), {
       id: "cite",

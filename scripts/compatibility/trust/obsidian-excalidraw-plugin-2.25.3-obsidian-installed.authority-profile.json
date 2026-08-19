@@ -1,0 +1,42 @@
+{
+  "$schema": "./reviewed-authority-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profileId": "obsidian-excalidraw-plugin-2.25.3-obsidian-installed",
+  "profileRevision": 1,
+  "packageIdentity": {
+    "pluginId": "obsidian-excalidraw-plugin",
+    "manifestVersion": "2.25.3",
+    "distributionTag": "2.25.3+obsidian-installed",
+    "manifestSha256": "43f18bc17c5c3f76af1a9a4191daa1c3566e2875aa4430561d57b7828785282e",
+    "mainSha256": "3baa63e288992c910fa5ac10e3811aaea4210211b29781446c07259b6df96391",
+    "stylesSha256": "236a113fee3581ec59856af22c6cecf79faf3521afae66227a40f6ff6cd98969",
+    "packageTreeSha256": "fce6f783e16b1bbf5237b985f6342caa5a83a9c7a9adb6ccba83156afda4bbba"
+  },
+  "packageIdentityDigest": "e262c1b0601cde005de0395d75492fdc7652a5774b50748ac867824ed986a3e1",
+  "expectedStaticCapabilities": [
+    "vault-read",
+    "vault-write",
+    "network",
+    "clipboard",
+    "external-navigation",
+    "editor-extension",
+    "workspace-ui",
+    "dynamic-code"
+  ],
+  "requiredAuthorities": [
+    "vault-read",
+    "vault-write",
+    "network",
+    "filesystem",
+    "subprocess",
+    "host-environment",
+    "clipboard",
+    "external-navigation",
+    "editor-extension",
+    "workspace-ui",
+    "dynamic-code"
+  ],
+  "executionProfile": "trusted-node-renderer",
+  "allowedPlatforms": ["linux", "darwin", "win32"],
+  "authorityDigest": "cc61776498234fb16bbe2ae59243dd67f8f69f39efd6700f6ef3e81992076cdf"
+}

@@ -1,6 +1,9 @@
 import calendarProfileJson from "../../scripts/compatibility/trust/calendar-beta-2.0.0-beta.2.authority-profile.json" with {
   type: "json",
 };
+import dataFilesEditor130ObsidianInstalledProfileJson from "../../scripts/compatibility/trust/data-files-editor-1.3.0-obsidian-installed.authority-profile.json" with {
+  type: "json",
+};
 import inspectionRunawayProfileJson from "../../scripts/compatibility/trust/inspection-runaway-0.1.0.authority-profile.json" with {
   type: "json",
 };
@@ -13,10 +16,22 @@ import inspectionTeardownProfileJson from "../../scripts/compatibility/trust/ins
 import excalidraw2253ProfileJson from "../../scripts/compatibility/trust/obsidian-excalidraw-plugin-2.25.3.authority-profile.json" with {
   type: "json",
 };
+import excalidraw2253ObsidianInstalledProfileJson from "../../scripts/compatibility/trust/obsidian-excalidraw-plugin-2.25.3-obsidian-installed.authority-profile.json" with {
+  type: "json",
+};
 import excalidraw2264ProfileJson from "../../scripts/compatibility/trust/obsidian-excalidraw-plugin-2.26.4.authority-profile.json" with {
   type: "json",
 };
+import iconize2147ObsidianInstalledProfileJson from "../../scripts/compatibility/trust/obsidian-icon-folder-2.14.7-obsidian-installed.authority-profile.json" with {
+  type: "json",
+};
+import minimalSettings823ObsidianInstalledProfileJson from "../../scripts/compatibility/trust/obsidian-minimal-settings-8.2.3-obsidian-installed.authority-profile.json" with {
+  type: "json",
+};
 import styleSettingsProfileJson from "../../scripts/compatibility/trust/obsidian-style-settings-1.0.9.authority-profile.json" with {
+  type: "json",
+};
+import omnisearch1301ObsidianInstalledProfileJson from "../../scripts/compatibility/trust/omnisearch-1.30.1-obsidian-installed.authority-profile.json" with {
   type: "json",
 };
 import templaterProfileJson from "../../scripts/compatibility/trust/templater-obsidian-2.25.0.authority-profile.json" with {
@@ -260,12 +275,17 @@ function cloneProfile(profile: ReviewedAuthorityProfile): ReviewedAuthorityProfi
 const parsedProfiles = [
   parseReviewedAuthorityProfile(styleSettingsProfileJson),
   parseReviewedAuthorityProfile(calendarProfileJson),
+  parseReviewedAuthorityProfile(dataFilesEditor130ObsidianInstalledProfileJson),
   parseReviewedAuthorityProfile(templaterProfileJson),
   parseReviewedAuthorityProfile(inspectionSafeProfileJson),
   parseReviewedAuthorityProfile(inspectionRunawayProfileJson),
   parseReviewedAuthorityProfile(inspectionTeardownProfileJson),
   parseReviewedAuthorityProfile(excalidraw2253ProfileJson),
+  parseReviewedAuthorityProfile(excalidraw2253ObsidianInstalledProfileJson),
   parseReviewedAuthorityProfile(excalidraw2264ProfileJson),
+  parseReviewedAuthorityProfile(iconize2147ObsidianInstalledProfileJson),
+  parseReviewedAuthorityProfile(minimalSettings823ObsidianInstalledProfileJson),
+  parseReviewedAuthorityProfile(omnisearch1301ObsidianInstalledProfileJson),
   parseReviewedAuthorityProfile(trustedStateFixtureProfileJson),
   parseReviewedAuthorityProfile(trustedViewFixtureProfileJson),
   parseReviewedAuthorityProfile(workspaceDocksFixtureProfileJson),

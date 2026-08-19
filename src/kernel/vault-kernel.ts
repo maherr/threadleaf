@@ -1014,6 +1014,13 @@ export class VaultKernel implements VaultMutationPort {
     return this.withMutation(() => this.paths.createDirectory(relativeDirectory));
   }
 
+  async createPluginDirectory(relativeDirectory: string): Promise<VaultDirectoryCreateResult> {
+    this.assertWritable();
+    return this.withMutation(() =>
+      this.paths.createDirectory(relativeDirectory, { allowObsidianConfig: true }),
+    );
+  }
+
   async renameFile(
     sourcePath: string,
     targetPath: string,

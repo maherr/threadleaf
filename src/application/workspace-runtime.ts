@@ -17,6 +17,8 @@ import { displayTitleFromVaultPath, normalizeMarkdownNotePath } from "../kernel/
 import {
   hasHiddenVaultSegment,
   hasPrivateVaultSegment,
+  isObsidianConfigPath,
+  normalizeVaultDirectoryPath,
   normalizeVaultPath,
   type VisibleVaultPaths,
 } from "../kernel/path-policy";
@@ -112,7 +114,7 @@ import {
   parseVaultNoteWorkflowSettings,
   type VaultNoteWorkflowSettings,
 } from "../shared/note-workflows";
-import { isNativeExcalidrawPath, workspacePluginViewTypeForPath } from "../shared/plugin-document";
+import { workspacePluginViewTypeForPath } from "../shared/plugin-document";
 import type { PluginConstructionRequest } from "../shared/plugins";
 import { filterQuickSwitcherNotes } from "../shared/quick-switcher";
 import {
@@ -3213,10 +3215,12 @@ export class WorkspaceRuntime {
     }
     this.assertWritable("create plugin files");
     const normalizedPath = normalizeVaultPath(filePath);
-    if (hasPrivateVaultSegment(normalizedPath)) {
+    const privateConfigPath = isObsidianConfigPath(normalizedPath);
+    if (hasPrivateVaultSegment(normalizedPath) && !privateConfigPath) {
       throw new Error(`Plugin file creation cannot target private application paths: ${filePath}`);
     }
     const outcome = await this.kernel.createBinary(normalizedPath, content);
+    if (privateConfigPath) return outcome;
     this.invalidateVisibleInventory();
     const isMarkdown = normalizedPath.toLowerCase().endsWith(".md");
     await this.withIndexMutation(async () => {
@@ -3271,10 +3275,12 @@ export class WorkspaceRuntime {
     }
     this.assertWritable("save plugin files");
     const normalizedPath = normalizeVaultPath(filePath);
-    if (hasPrivateVaultSegment(normalizedPath)) {
+    const privateConfigPath = isObsidianConfigPath(normalizedPath);
+    if (hasPrivateVaultSegment(normalizedPath) && !privateConfigPath) {
       throw new Error(`Plugin file saves cannot target private application paths: ${filePath}`);
     }
     const outcome = await this.kernel.writeBinary(normalizedPath, content, expectedRevision);
+    if (privateConfigPath) return outcome;
     if (outcome.status === "committed") {
       this.#activePayloadEpoch += 1;
     }
@@ -3338,7 +3344,12 @@ export class WorkspaceRuntime {
     this.assertWritable("rename plugin files");
     const normalizedSource = normalizeVaultPath(filePath);
     const normalizedTarget = normalizeVaultPath(targetPath);
-    if (hasPrivateVaultSegment(normalizedSource) || hasPrivateVaultSegment(normalizedTarget)) {
+    const privateConfigRename =
+      isObsidianConfigPath(normalizedSource) && isObsidianConfigPath(normalizedTarget);
+    if (
+      (hasPrivateVaultSegment(normalizedSource) || hasPrivateVaultSegment(normalizedTarget)) &&
+      !privateConfigRename
+    ) {
       throw new Error(
         `Plugin file renames cannot target private application paths: ${filePath} to ${targetPath}`,
       );
@@ -3348,6 +3359,7 @@ export class WorkspaceRuntime {
       normalizedTarget,
       expectedRevision,
     );
+    if (privateConfigRename) return outcome;
     this.invalidateVisibleInventory();
     await this.withIndexMutation(async () => {
       if (outcome.status === "committed") {
@@ -3426,8 +3438,10 @@ export class WorkspaceRuntime {
       throw new Error("The active vault changed before this folder could be created.");
     }
     this.assertWritable("create plugin folders");
-    const outcome = await this.kernel.createDirectory(folderPath);
-    if (outcome.created) this.invalidateVisibleInventory();
+    const normalizedPath = normalizeVaultDirectoryPath(folderPath);
+    const privateConfigPath = isObsidianConfigPath(normalizedPath);
+    const outcome = await this.kernel.createPluginDirectory(normalizedPath);
+    if (outcome.created && !privateConfigPath) this.invalidateVisibleInventory();
     return outcome;
   }
 
@@ -3762,15 +3776,15 @@ export class WorkspaceRuntime {
       }
       this.#warmingVisiblePaths.add(filePath);
     } else {
-      if (!isNativeExcalidrawPath(filePath)) {
-        throw new Error(
-          `Workspace tabs do not support this ordinary file type because it is not indexed as a document: ${filePath}`,
-        );
+      if (filePath === ".obsidian" || filePath.startsWith(".obsidian/")) {
+        throw new Error(`Workspace file is not indexed in the active vault: ${filePath}`);
       }
       const pluginSnapshot = await this.pluginHost.getSnapshot();
       const viewType = workspacePluginViewTypeForPath(filePath, pluginSnapshot.integrations);
       if (!viewType) {
-        throw new Error(`No loaded plugin registered a document view for: ${filePath}`);
+        throw new Error(
+          `Workspace tabs do not support this ordinary file type because no loaded plugin registered a document view for: ${filePath}`,
+        );
       }
       if (!(await this.visibleFileExists(filePath))) {
         throw new Error(`Plugin document is not present in the active vault: ${filePath}`);

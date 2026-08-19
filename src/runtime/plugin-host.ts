@@ -55,6 +55,7 @@ import {
   Plugin,
   type PluginManifest,
   sleep,
+  TFile,
   Vault,
 } from "./obsidian-compat";
 import { Component } from "./obsidian-components";
@@ -111,6 +112,8 @@ export type PluginModuleResolver = NodeJS.Require;
 export interface PluginHostOptions {
   compatibilityEditorFields?: EditorCompatibilityFields;
   onEditorExtensionsChange?(extensions: readonly unknown[]): void;
+  onOpenFile?(filePath: string): void | Promise<void>;
+  onSurfaceChange?(): void;
 }
 
 export const maxConsumedPluginConstructionAttempts = 4_096;
@@ -206,6 +209,23 @@ export class PluginHost implements PluginRuntimePort {
         );
       }
     });
+    this.app.workspace.on("file-open", (file) => {
+      if (
+        file instanceof TFile &&
+        this.app.workspace.activeLeaf !== this.nativeMarkdownLeaf &&
+        options?.onOpenFile
+      ) {
+        void Promise.resolve(options.onOpenFile(file.path)).catch((error) => {
+          this.record(
+            "error",
+            `Plugin file navigation failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      }
+    });
+    if (options?.onSurfaceChange) {
+      this.app.setPluginModalChangeListener(options.onSurfaceChange);
+    }
     this.record("runtime", `Opened synthetic vault ${this.vault.getName()} in read-only mode.`);
   }
 
@@ -364,7 +384,15 @@ export class PluginHost implements PluginRuntimePort {
       } else {
         this.editorUpdate = null;
       }
-      const ran = await this.app.commands.run(commandId);
+      const releaseExecutionOwner = ownerId
+        ? this.app.beginPluginExecution(ownerId)
+        : () => undefined;
+      let ran: boolean;
+      try {
+        ran = await this.app.commands.run(commandId);
+      } finally {
+        releaseExecutionOwner();
+      }
       if (!ran || !command) {
         throw new Error("command is not available");
       }
@@ -784,6 +812,7 @@ export class PluginHost implements PluginRuntimePort {
         : typeof activePluginViewState?.file === "string" && activePluginViewState.file.length > 0
           ? activePluginViewState.file
           : null;
+    const activeModalPluginId = this.app.activePluginModalOwnerId();
     return {
       vault: {
         id: null,
@@ -809,13 +838,19 @@ export class PluginHost implements PluginRuntimePort {
               filePath: null,
               viewType: "threadleaf-plugin-settings",
             }
-          : activePluginLeaf?.view && activePluginLeaf !== this.nativeMarkdownLeaf
+          : activeModalPluginId
             ? {
-                displayText: activePluginLeaf.view.getDisplayText(),
-                filePath: activePluginFilePath,
-                viewType: activePluginLeaf.view.getViewType(),
+                displayText: `${this.plugins.get(activeModalPluginId)?.summary.name ?? activeModalPluginId} dialog`,
+                filePath: null,
+                viewType: "threadleaf-plugin-modal",
               }
-            : null,
+            : activePluginLeaf?.view && activePluginLeaf !== this.nativeMarkdownLeaf
+              ? {
+                  displayText: activePluginLeaf.view.getDisplayText(),
+                  filePath: activePluginFilePath,
+                  viewType: activePluginLeaf.view.getViewType(),
+                }
+              : null,
     };
   }
 

@@ -33,18 +33,15 @@ export function pluginViewTypeForPath(
 }
 
 /**
- * Resolve the deliberately narrow custom-file contract admitted to workspace tabs.
+ * Resolve the custom-file contract admitted to workspace tabs.
  *
- * A plugin may register other extensions for previews or future integrations, but that does not
- * make every opaque file a durable workspace document. Expanding this boundary requires its own
- * persistence, history, byte-limit, and renderer proof rather than inheriting Excalidraw's proof.
+ * Only a currently loaded view registration grants this path. The workspace then applies the
+ * same bounded binary read, revision, persistence, history, and renderer-isolation contract used
+ * by the measured Excalidraw path, rather than treating an arbitrary opaque file as a document.
  */
 export function workspacePluginViewTypeForPath(
   filePath: string,
   integrations: PluginIntegrationSnapshot | null | undefined,
 ): string | null {
-  const lowerPath = filePath.toLocaleLowerCase("en-US");
-  return isNativeExcalidrawPath(filePath) || lowerPath.endsWith(".excalidraw.md")
-    ? pluginViewTypeForPath(filePath, integrations)
-    : null;
+  return pluginViewTypeForPath(filePath, integrations);
 }

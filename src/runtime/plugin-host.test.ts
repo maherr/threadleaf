@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { JSDOM } from "jsdom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   inspectSealedPluginPackage,
   PluginConstructionPolicyResolver,
@@ -669,7 +669,18 @@ class FixtureModal extends Modal {
   onOpen() { this.containerEl.addClass(this.plugin.manifest.id); }
 }
 module.exports = class ModalFixture extends Plugin {
-  async onload() { new FixtureModal(this.app, this).open(); }
+  async onload() {
+    new FixtureModal(this.app, this).open();
+    this.addCommand({
+      id: "open-anonymous-modal",
+      name: "Open anonymous modal",
+      callback: () => {
+        const modal = new Modal(this.app);
+        modal.containerEl.addClass("anonymous-command-modal");
+        modal.open();
+      },
+    });
+  }
 };
 `;
       for (const [directoryPath, manifest] of [
@@ -688,19 +699,35 @@ module.exports = class ModalFixture extends Plugin {
         await fs.writeFile(path.join(directoryPath, "main.js"), pluginSource, "utf8");
       }
 
-      const host = new PluginHost(vaultPath);
+      const surfaceChanges = vi.fn();
+      const host = new PluginHost(vaultPath, undefined, undefined, undefined, undefined, {
+        onSurfaceChange: surfaceChanges,
+      });
       await loadPlugin(host, pluginPath);
       await loadPlugin(host, otherPluginPath);
       expect(dom.window.document.querySelectorAll(".modal-fixture")).toHaveLength(1);
       expect(dom.window.document.querySelectorAll(".other-modal-fixture")).toHaveLength(1);
+      expect((await host.getSnapshot()).pluginSurface).toEqual({
+        displayText: "Other modal fixture dialog",
+        filePath: null,
+        viewType: "threadleaf-plugin-modal",
+      });
+      expect(surfaceChanges).toHaveBeenCalledTimes(2);
+
+      await host.runCommand("modal-fixture:open-anonymous-modal");
+      expect(dom.window.document.querySelectorAll(".anonymous-command-modal")).toHaveLength(1);
 
       await host.unloadPlugin("modal-fixture");
       expect(dom.window.document.querySelectorAll(".modal-fixture")).toHaveLength(0);
+      expect(dom.window.document.querySelectorAll(".anonymous-command-modal")).toHaveLength(0);
       expect(dom.window.document.querySelectorAll(".other-modal-fixture")).toHaveLength(1);
 
       await reloadPlugin(host, pluginPath);
       expect(dom.window.document.querySelectorAll(".modal-fixture")).toHaveLength(1);
       expect(dom.window.document.querySelectorAll(".other-modal-fixture")).toHaveLength(1);
+      await host.unloadPlugin("other-modal-fixture");
+      await host.unloadPlugin("modal-fixture");
+      expect((await host.getSnapshot()).pluginSurface).toBeNull();
     } finally {
       if (previousWindow === undefined) {
         Reflect.deleteProperty(globalThis, "window");
@@ -1284,6 +1311,9 @@ module.exports = class EditorFixture extends Plugin {
       checkCallback: (checking) => {
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!view) return false;
+        if (view.editor.editorComponent?.file?.path !== view.file?.path) {
+          throw new Error("editorComponent did not expose the active file");
+        }
         if (checking) return true;
         view.editor.replaceSelection("![[Drawing.excalidraw.md]]");
         view.editor.focus();

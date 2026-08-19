@@ -1,5 +1,6 @@
 import { JSDOM } from "jsdom";
 import { describe, expect, it, vi } from "vitest";
+import type { TFile } from "./obsidian-compat";
 import {
   AbstractInputSuggest,
   type ButtonComponent,
@@ -7,6 +8,7 @@ import {
   ConfirmationModal,
   type DropdownComponent,
   Editor,
+  FuzzySuggestModal,
   SecretComponent,
   Setting,
   SettingGroup,
@@ -14,10 +16,54 @@ import {
   SettingTab,
   type SliderComponent,
   type TextComponent,
+  TextFileView,
   type ToggleComponent,
+  type WorkspaceLeaf,
 } from "./obsidian-ui-compat";
 
 describe("Obsidian editor compatibility", () => {
+  it("debounces TextFileView requestSave and flushes the pending bytes on unload", async () => {
+    vi.useFakeTimers();
+    const dom = new JSDOM("<!doctype html><body></body>");
+    try {
+      let content = "initial";
+      const modify = vi.fn(async () => undefined);
+      const leaf = {
+        app: { vault: { modify } },
+        containerEl: dom.window.document.createElement("div"),
+        view: null,
+      } as unknown as WorkspaceLeaf;
+      class FixtureTextFileView extends TextFileView {
+        override getViewData(): string {
+          return content;
+        }
+      }
+      const view = new FixtureTextFileView(leaf);
+      const file = { path: "Data/record.json" } as TFile;
+      view.file = file;
+
+      content = "first";
+      view.requestSave();
+      content = "latest";
+      view.requestSave();
+      await vi.advanceTimersByTimeAsync(249);
+      expect(modify).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(modify).toHaveBeenCalledTimes(1);
+      expect(modify).toHaveBeenLastCalledWith(file, "latest");
+
+      content = "flush-on-unload";
+      view.requestSave();
+      await view.onUnloadFile(file);
+      expect(modify).toHaveBeenCalledTimes(2);
+      expect(modify).toHaveBeenLastCalledWith(file, "flush-on-unload");
+      expect(view.file).toBeNull();
+    } finally {
+      vi.useRealTimers();
+      dom.window.close();
+    }
+  });
+
   it("tracks selections, positions, replacement text, and focus", () => {
     const changes: string[] = [];
     const editor = new Editor((value) => changes.push(value));
@@ -485,6 +531,63 @@ describe("Obsidian confirmation modal compatibility", () => {
         modal.close();
       }
       vi.unstubAllGlobals();
+      dom.window.close();
+    }
+  });
+});
+
+describe("Obsidian modal suggestion compatibility", () => {
+  it("navigates and chooses fuzzy suggestions with the keyboard", async () => {
+    const dom = new JSDOM("<!doctype html><body></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    const previousDocument = globalThis.document;
+    const previousWindow = globalThis.window;
+    try {
+      Object.assign(globalThis, {
+        document: dom.window.document,
+        window: dom.window,
+      });
+      const selected = vi.fn();
+      class FixtureModal extends FuzzySuggestModal<string> {
+        override getItems(): string[] {
+          return ["Alpha", "Alpine", "Beta"];
+        }
+
+        override onChooseItem(item: string): void {
+          selected(item);
+        }
+      }
+      const modal = new FixtureModal({ registerPluginModal: () => () => undefined } as never);
+      expect(modal.bgEl.style.zIndex).toBe("0");
+      expect(modal.modalEl.style.position).toBe("relative");
+      expect(modal.modalEl.style.zIndex).toBe("1");
+      modal.open();
+      modal.inputEl.value = "Al";
+      modal.inputEl.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(
+        [...modal.resultContainerEl.querySelectorAll(".suggestion-item")].map(
+          (element) => element.textContent,
+        ),
+      ).toEqual(["Alpha", "Alpine"]);
+      expect(modal.resultContainerEl.querySelector(".is-selected")?.textContent).toBe("Alpha");
+      modal.inputEl.dispatchEvent(
+        new dom.window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+      );
+      expect(modal.resultContainerEl.querySelector(".is-selected")?.textContent).toBe("Alpine");
+      modal.inputEl.dispatchEvent(
+        new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+      expect(selected).toHaveBeenCalledWith("Alpine");
+      expect(modal.containerEl.isConnected).toBe(false);
+    } finally {
+      if (previousDocument === undefined) Reflect.deleteProperty(globalThis, "document");
+      else globalThis.document = previousDocument;
+      if (previousWindow === undefined) Reflect.deleteProperty(globalThis, "window");
+      else globalThis.window = previousWindow;
       dom.window.close();
     }
   });

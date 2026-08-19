@@ -3694,8 +3694,34 @@ module.exports = class ActionCollisionFixture extends Plugin {
       fs.readFile(path.join(vaultPath, "Excalidraw", "Drawing.excalidraw.md"), "utf8"),
     ).resolves.toContain("excalidraw-plugin: parsed");
     await expect(
-      workspace.createPluginFolder(".obsidian/Generated", workspace.vaultId),
-    ).rejects.toThrow("private application paths");
+      workspace.createPluginFolder(".obsidian/icons", workspace.vaultId),
+    ).resolves.toEqual({ path: ".obsidian/icons", created: true });
+    const privateConfig = await workspace.createPluginFile(
+      ".obsidian/icons/threadleaf.svg",
+      Buffer.from("<svg/>", "utf8"),
+      workspace.vaultId,
+    );
+    expect(privateConfig).toMatchObject({
+      status: "committed",
+      path: ".obsidian/icons/threadleaf.svg",
+    });
+    if (privateConfig.status !== "committed") {
+      throw new Error("Expected plugin config file creation to commit.");
+    }
+    await expect(
+      workspace.writePluginFile(
+        privateConfig.path,
+        Buffer.from("<svg data-threadleaf='updated'/>", "utf8"),
+        privateConfig.revision,
+        workspace.vaultId,
+      ),
+    ).resolves.toMatchObject({ status: "committed", path: privateConfig.path });
+    await expect(workspace.createPluginFolder(".git/generated", workspace.vaultId)).rejects.toThrow(
+      "private application paths",
+    );
+    expect((await workspace.getSnapshot()).workspace?.files).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: ".obsidian/icons/threadleaf.svg" })]),
+    );
     await expect(
       workspace.createPluginNote("Excalidraw/Wrong.md", "", "stale-vault"),
     ).rejects.toThrow("active vault changed");
@@ -3807,7 +3833,7 @@ module.exports = class ActionCollisionFixture extends Plugin {
       workspace.createPluginFile("Exports/Wrong.png", firstPng, "stale-vault"),
     ).rejects.toThrow("active vault changed");
     await expect(
-      workspace.createPluginFile(".obsidian/Generated.png", firstPng, workspace.vaultId),
+      workspace.createPluginFile(".git/Generated.png", firstPng, workspace.vaultId),
     ).rejects.toThrow("private application paths");
   });
 

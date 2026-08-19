@@ -5,9 +5,11 @@ import {
   optionalPluginMutationWaitOptions,
   parsePluginEditorContext,
   parsePluginMutationWaitOptions,
+  parsePluginOpenFileRequest,
   parsePluginRendererEnvironment,
   parsePluginRendererRequest,
   parsePluginRendererResponse,
+  parsePluginSurfaceChangedRequest,
   parsePluginVaultCreateBinaryRequest,
   parsePluginVaultCreateFolderRequest,
   parsePluginVaultCreateRequest,
@@ -291,6 +293,22 @@ describe("plugin renderer protocol", () => {
     expect(() =>
       parsePluginVaultCreateFolderRequest({ vaultPath: "/vault", folderPath: "" }),
     ).toThrow("vault and folder");
+  });
+
+  it("validates plugin-driven file navigation requests", () => {
+    expect(
+      parsePluginOpenFileRequest({ vaultPath: "/vault", filePath: "Notes/Result.md" }),
+    ).toEqual({ vaultPath: "/vault", filePath: "Notes/Result.md" });
+    expect(() => parsePluginOpenFileRequest({ vaultPath: "/vault", filePath: "" })).toThrow(
+      "vault and file paths",
+    );
+  });
+
+  it("validates plugin surface invalidation requests", () => {
+    expect(parsePluginSurfaceChangedRequest({ vaultPath: "/vault" })).toEqual({
+      vaultPath: "/vault",
+    });
+    expect(() => parsePluginSurfaceChangedRequest({ vaultPath: "" })).toThrow("vault path");
   });
 
   it("validates bounded native editor contexts", () => {
