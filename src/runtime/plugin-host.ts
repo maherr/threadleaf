@@ -956,11 +956,11 @@ export class PluginHost implements PluginRuntimePort {
       this.app.workspace.activeLeaf instanceof WorkspaceLeaf ? this.app.workspace.activeLeaf : null;
     const workspaceActiveViewType = workspaceActiveLeaf?.view?.getViewType() ?? "empty";
     const activePluginLeaf =
-      workspaceActiveLeaf &&
-      workspaceActiveLeaf !== this.nativeMarkdownLeaf &&
-      workspaceActiveViewType !== "empty"
-        ? workspaceActiveLeaf
-        : this.activePluginLeaf;
+      workspaceActiveLeaf === this.nativeMarkdownLeaf
+        ? null
+        : workspaceActiveLeaf && workspaceActiveViewType !== "empty"
+          ? workspaceActiveLeaf
+          : this.activePluginLeaf;
     const activePluginViewState = activePluginLeaf?.getViewState().state;
     const activePluginFilePath =
       activePluginLeaf?.view instanceof FileView && activePluginLeaf.view.file

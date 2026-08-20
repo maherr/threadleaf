@@ -1445,9 +1445,13 @@ module.exports = class EditorFixture extends Plugin {
       );
       await fs.writeFile(
         path.join(pluginPath, "main.js"),
-        `const { Plugin } = require("obsidian");
+        `const { ItemView, Plugin } = require("obsidian");
 module.exports = class PasteFixture extends Plugin {
   async onload() {
+    this.registerView("paste-fixture-view", (leaf) => new class extends ItemView {
+      getViewType() { return "paste-fixture-view"; }
+      getDisplayText() { return "Paste fixture view"; }
+    }(leaf));
     this.registerEvent(this.app.workspace.on("editor-paste", async (event, editor) => {
       await Promise.resolve();
       const text = event.clipboardData?.getData("text") ?? "";
@@ -1463,6 +1467,8 @@ module.exports = class PasteFixture extends Plugin {
 
       const host = new PluginHost(vaultPath);
       await loadPlugin(host, pluginPath);
+      const visible = await host.openPluginView("paste-fixture-view");
+      expect(visible.pluginSurface?.viewType).toBe("paste-fixture-view");
       const revision = "f".repeat(64);
       const handled = await host.runPluginEditorPaste(
         {
@@ -1475,6 +1481,7 @@ module.exports = class PasteFixture extends Plugin {
       );
       expect(handled.integrations?.workspaceEvents).toContain("editor-paste");
       expect(handled.editorEvent).toEqual({ handled: true, type: "paste" });
+      expect(handled.pluginSurface).toBeNull();
       expect(handled.editorUpdate).toMatchObject({
         baseContent: "alpha beta",
         content: "[alpha](https://example.test) beta",
@@ -1493,6 +1500,7 @@ module.exports = class PasteFixture extends Plugin {
       );
       expect(ordinary.editorEvent).toEqual({ handled: false, type: "paste" });
       expect(ordinary.editorUpdate).toMatchObject({ content: "alpha beta" });
+      await host.close();
     } finally {
       if (previousWindow === undefined) Reflect.deleteProperty(globalThis, "window");
       else globalThis.window = previousWindow;
