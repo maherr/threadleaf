@@ -4,7 +4,7 @@ This document is generated from the versioned receipt-aware source [`compatibili
 Discovery in the external community package directory is separate from Threadleaf compatibility evidence.
 A row applies only to the exact plugin and Threadleaf versions shown.
 
-Registry schema: 2. Threadleaf version: 0.1.0. Generation: 1cbc033b6ff48ab52638c68fac04dcb50af5032228e1deee49656813a52fea0a.
+Registry schema: 2. Threadleaf version: 0.1.0. Generation: 433f32d10601e4d8ea38108b62ef7fef5c32588cb3f2fad79a93ad8e1db6a968.
 
 | Plugin | Plugin version | Threadleaf | Level | Evidence | Last tested |
 | --- | --- | --- | ---: | --- | --- |
@@ -25,7 +25,7 @@ Registry schema: 2. Threadleaf version: 0.1.0. Generation: 1cbc033b6ff48ab52638c
 
 ## Calendar (Beta) 2.0.0
 
-The exact official Calendar 2.0.0-beta.2 release passed reviewed authority, mounted its unchanged month grid in Threadleaf's physical right dock beside an active note, consumed Threadleaf's daily-note folder, format, and template settings, created and opened a templated daily note through its ordinary confirmation flow, updated the day marker, rendered in light and dark, and reconstructed the dock and marker after a full application restart while four other plugins remained loaded.
+The exact official Calendar 2.0.0-beta.2 release passed reviewed authority, mounted its unchanged month grid in Threadleaf's physical right dock beside an active note and a simultaneous plugin-owned main document, consumed Threadleaf's daily-note folder, format, and template settings, created and opened a templated daily note through its ordinary confirmation flow, updated the day marker, rendered in light and dark, and reconstructed the dock and marker after a full application restart while four other plugins remained loaded.
 
 Bundle SHA-256: `64d1c6c620803246724bc922c5c2e0a17c406ffc23f6bbcfbfb14c643958fbb7`. License: MIT.
 
@@ -33,7 +33,7 @@ Required static authority review: `vault-read`, `network`, `filesystem`, `subpro
 
 ### Supported workflows
 
-- **Mount the calendar in the right dock, create a templated daily note, update its marker, and reconstruct after restart** (passed)
+- **Mount the calendar beside a plugin-owned main document, create a templated daily note, update its marker, and reconstruct after restart** (passed)
   - `THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT=$PLUGIN_ROOT THREADLEAF_INSTALLED_THEME_MATRIX_ROOT=$MINIMAL_THEME pnpm test:excalidraw-roundtrip` via [scripts/check-excalidraw-roundtrip.mjs](../../scripts/check-excalidraw-roundtrip.mjs)
   - `pnpm exec vitest run src/runtime/obsidian-workspace-filemanager-compat.test.ts src/runtime/obsidian-internal-plugins.test.ts` via [src/runtime/obsidian-workspace-filemanager-compat.test.ts](../../src/runtime/obsidian-workspace-filemanager-compat.test.ts)
 

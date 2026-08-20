@@ -1069,7 +1069,13 @@ async function connectPluginSurfaceBySelector(
 
 async function verifyCalendarWorkflow(vaultId, port) {
   const commandId = "calendar-beta:show-calendar-view";
-  await runPaletteCommand(commandId, "show calendar view", `plugin.command.${commandId}`);
+  const calendarAlreadyOpen = await evaluate(
+    cdp,
+    `(async () => (await window.threadleaf.getSnapshot()).pluginSurfaces?.some((surface) => surface.viewType === 'calendar' && surface.region === 'right-dock') === true)()`,
+  );
+  if (!calendarAlreadyOpen) {
+    await runPaletteCommand(commandId, "show calendar view", `plugin.command.${commandId}`);
+  }
   const surface = await connectPluginSurfaceBySelector(
     port,
     "#calendar-container .calendar",
@@ -1227,7 +1233,68 @@ async function verifyDataFilesEditorWorkflow(vaultId, port) {
     port,
     ".datafile-source-view .cm-editor",
     "Data Files Editor JSON view",
+  ).catch(async (error) => {
+    const snapshot = await evaluate(cdp, "window.threadleaf.getSnapshot()").catch(() => null);
+    const hosts = await evaluate(
+      cdp,
+      `(() => Object.fromEntries(['plugin-surface-host','plugin-dock-surface-host'].map((id) => { const element = document.getElementById(id); const bounds = element?.getBoundingClientRect(); return [id, element && bounds ? { hidden: element.hidden, width: bounds.width, height: bounds.height } : null]; })))()`,
+    ).catch(() => null);
+    const targets = [];
+    for (const target of (await cdpTargets(port).catch(() => [])).filter(
+      (candidate) => candidate.type === "page" && candidate.url.includes("plugin-host.html"),
+    )) {
+      const connection = connectCdp(target.webSocketDebuggerUrl);
+      try {
+        targets.push(
+          await evaluate(
+            connection,
+            `(() => { const data = document.querySelector('.datafile-source-view .cm-editor'); const calendar = document.querySelector('#calendar-container .calendar'); const describe = (element) => { const bounds = element?.getBoundingClientRect(); return bounds ? { width: bounds.width, height: bounds.height } : null; }; return { data: describe(data), calendar: describe(calendar) }; })()`,
+          ),
+        );
+      } finally {
+        connection.close();
+      }
+    }
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}: ${JSON.stringify({ pluginSurface: snapshot?.pluginSurface, pluginSurfaces: snapshot?.pluginSurfaces, hosts, targets })}`,
+    );
+  });
+  const concurrentCalendar = await connectPluginSurfaceBySelector(
+    port,
+    "#calendar-container .calendar",
+    "Calendar beside Data Files Editor",
+    30_000,
   );
+  let concurrentSurfaces;
+  try {
+    concurrentSurfaces = await waitFor(
+      cdp,
+      `(async () => {
+        const snapshot = await window.threadleaf.getSnapshot();
+        const regions = new Set((snapshot.pluginSurfaces ?? []).map((surface) => surface.region));
+        const main = document.querySelector('#plugin-surface-host');
+        const dock = document.querySelector('#plugin-dock-surface-host');
+        if (!(main instanceof HTMLElement) || !(dock instanceof HTMLElement)) return null;
+        const mainBounds = main.getBoundingClientRect();
+        const dockBounds = dock.getBoundingClientRect();
+        return regions.has('main-document') && regions.has('right-dock') &&
+          !main.hidden && !dock.hidden && mainBounds.width > 0 && dockBounds.width > 0
+          ? { regions: [...regions], mainWidth: mainBounds.width, dockWidth: dockBounds.width }
+          : null;
+      })()`,
+      "simultaneous main-document and right-dock plugin surfaces",
+      30_000,
+    );
+    assert(
+      await evaluate(
+        concurrentCalendar.connection,
+        `document.querySelector('#calendar-container .calendar')?.getBoundingClientRect().width > 0`,
+      ),
+      "Calendar became hidden while Data Files Editor owned the main document.",
+    );
+  } finally {
+    concurrentCalendar.connection.close();
+  }
   try {
     await clickSelector(surface.connection, ".datafile-source-view .cm-content");
     const focus = await evaluate(
@@ -1251,7 +1318,12 @@ async function verifyDataFilesEditorWorkflow(vaultId, port) {
   } finally {
     surface.connection.close();
   }
-  return { pluginId: "data-files-editor", workflow: "open-edit-autosave-json", filePath };
+  return {
+    pluginId: "data-files-editor",
+    workflow: "open-edit-autosave-json",
+    filePath,
+    concurrentSurfaces,
+  };
 }
 
 async function verifyIconizeWorkflow(vaultId, port) {

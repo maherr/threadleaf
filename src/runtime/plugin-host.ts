@@ -1158,7 +1158,9 @@ export class PluginHost implements PluginRuntimePort {
     const activeDocumentPluginLeaf =
       workspaceActiveLeaf === this.nativeMarkdownLeaf
         ? null
-        : workspaceActiveLeaf && workspaceActiveViewType !== "empty"
+        : workspaceActiveLeaf &&
+            workspaceActiveViewType !== "empty" &&
+            workspaceActiveViewType !== "markdown"
           ? workspaceActiveLeaf
           : this.activePluginLeaf;
     const activeRightPluginLeaf = this.app.workspace
@@ -1203,12 +1205,14 @@ export class PluginHost implements PluginRuntimePort {
           ? {
               displayText: `${this.plugins.get(this.activeSettingTabPluginId)?.summary.name ?? this.activeSettingTabPluginId} settings`,
               filePath: null,
+              region: "main-document",
               viewType: "threadleaf-plugin-settings",
             }
           : activeModalPluginId
             ? {
                 displayText: `${this.plugins.get(activeModalPluginId)?.summary.name ?? activeModalPluginId} dialog`,
                 filePath: null,
+                region: "main-document",
                 viewType: "threadleaf-plugin-modal",
               }
             : activePluginLeaf?.view && activePluginLeaf !== this.nativeMarkdownLeaf

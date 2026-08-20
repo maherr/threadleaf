@@ -4,6 +4,7 @@ import type {
   PluginMutationWaitOptions,
   PluginResourceDiagnostic,
   PluginSummary,
+  PluginSurfaceSnapshot,
   RuntimeEvent,
   RuntimeSnapshot,
 } from "../shared/contracts";
@@ -33,6 +34,13 @@ function pluginList(snapshot: RuntimeSnapshot): PluginSummary[] {
 
 function pluginFromSnapshot(snapshot: RuntimeSnapshot, pluginId: string): PluginSummary | null {
   return pluginList(snapshot).find(({ id }) => id === pluginId) ?? null;
+}
+
+function pluginSurfaceRegion(
+  surface: PluginSurfaceSnapshot | null | undefined,
+): "main-document" | "right-dock" | null {
+  if (!surface) return null;
+  return surface.region === "right-dock" ? "right-dock" : "main-document";
 }
 
 function compareByNameThenId(
@@ -209,9 +217,10 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
         throw new Error(`Plugin command is not available: ${commandId}`);
       }
       const [ownerId, slot] = match;
-      await this.closeOtherViews(ownerId);
       const snapshot = await slot.runtime.runCommand(commandId, editorContext);
       this.rememberSlotSnapshot(ownerId, snapshot);
+      const region = pluginSurfaceRegion(snapshot.pluginSurface);
+      if (region) await this.closeOtherViews(ownerId, region);
       this.lastPluginId = ownerId;
       return this.mergeSnapshot(ownerId, snapshot);
     });
@@ -356,7 +365,7 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
   openPluginSettings(pluginId: string): Promise<RuntimeSnapshot> {
     return this.enqueue(async () => {
       const slot = this.requireSlot(pluginId);
-      await this.closeOtherViews(pluginId);
+      await this.closeOtherViews(pluginId, "main-document");
       const snapshot = await slot.runtime.openPluginSettings(pluginId);
       this.rememberSlotSnapshot(pluginId, snapshot);
       this.lastPluginId = pluginId;
@@ -384,7 +393,7 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
         throw new Error(`No isolated plugin runtime registered view: ${viewType}`);
       }
       const [ownerId, slot] = match;
-      await this.closeOtherViews(ownerId);
+      await this.closeOtherViews(ownerId, "main-document");
       const snapshot = await slot.runtime.openPluginView(viewType, filePath);
       this.rememberSlotSnapshot(ownerId, snapshot);
       this.lastPluginId = ownerId;
@@ -394,7 +403,19 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
 
   closePluginView(): Promise<RuntimeSnapshot> {
     return this.enqueue(async () => {
-      await this.updateEverySlot((slot) => slot.runtime.closePluginView());
+      const entries = [...this.slots.entries()].filter(
+        ([, slot]) => pluginSurfaceRegion(slot.snapshot.pluginSurface) !== "right-dock",
+      );
+      const results = await Promise.allSettled(
+        entries.map(async ([pluginId, slot]) => {
+          const snapshot = await slot.runtime.closePluginView();
+          this.rememberSlotSnapshot(pluginId, snapshot);
+        }),
+      );
+      const failure = results.find(
+        (result): result is PromiseRejectedResult => result.status === "rejected",
+      );
+      if (failure) throw failure.reason;
       return this.mergeSnapshot();
     });
   }
@@ -564,8 +585,14 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
     }
   }
 
-  private async closeOtherViews(ownerId: string): Promise<void> {
-    const entries = [...this.slots.entries()].filter(([pluginId]) => pluginId !== ownerId);
+  private async closeOtherViews(
+    ownerId: string,
+    region: "main-document" | "right-dock",
+  ): Promise<void> {
+    const entries = [...this.slots.entries()].filter(
+      ([pluginId, slot]) =>
+        pluginId !== ownerId && pluginSurfaceRegion(slot.snapshot.pluginSurface) === region,
+    );
     const results = await Promise.allSettled(
       entries.map(async ([pluginId, slot]) => {
         const snapshot = await slot.runtime.closePluginView();
@@ -651,9 +678,19 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
       })
       .map(([, slot]) => slot.snapshot);
     const integrations = this.mergeIntegrations(orderedSnapshots);
+    const visibleSurfacesByRegion = new Map<
+      "main-document" | "right-dock",
+      PluginSurfaceSnapshot
+    >();
+    for (const snapshot of orderedSnapshots) {
+      const surface = snapshot.pluginSurface;
+      const region = pluginSurfaceRegion(surface);
+      if (surface && region) visibleSurfacesByRegion.set(region, { ...surface, region });
+    }
+    const visibleSurfaces = [...visibleSurfacesByRegion.values()];
     const visibleSurface =
-      operationSnapshot?.pluginSurface ??
-      orderedSnapshots.find((snapshot) => snapshot.pluginSurface)?.pluginSurface ??
+      visibleSurfacesByRegion.get("main-document") ??
+      visibleSurfacesByRegion.get("right-dock") ??
       null;
     const resourcePolicy =
       operationSnapshot?.resourcePolicy ?? orderedSnapshots.at(-1)?.resourcePolicy;
@@ -693,6 +730,7 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
       pluginAppearance,
       markdownProjection: operationSnapshot?.markdownProjection ?? null,
       pluginSurface: visibleSurface,
+      pluginSurfaces: visibleSurfaces,
       ...(resourceDiagnostics.length > 0 ? { resourceDiagnostics } : {}),
       ...(resourcePolicy ? { resourcePolicy } : {}),
       ...(this.environmentSnapshot ? { pluginEnvironment: { ...this.environmentSnapshot } } : {}),

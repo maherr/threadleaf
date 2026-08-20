@@ -86,6 +86,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Kept one visible compatibility leaf per workspace region so a right-sidebar plugin no longer
   disappears when the Markdown editor has focus, and reasserted visible Electron surfaces after
   their host bounds become available.
+- Carried main-document and right-dock plugin surfaces independently through isolated-runtime
+  aggregation and Electron attachment, so Calendar stays visible beside Excalidraw and other
+  plugin-owned documents instead of either surface replacing the other.
 
 - Preserved a plugin view's requested file path when an unchanged plugin implements it as an
   `ItemView` rather than a `FileView`, preventing successful automatic view opens from entering a

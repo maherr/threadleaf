@@ -410,6 +410,27 @@ describe("IsolatedPluginRuntime", () => {
       viewType: "beta-view",
     });
 
+    if (created[0]) {
+      created[0].surface = {
+        displayText: "Alpha sidebar",
+        filePath: null,
+        region: "right-dock",
+        viewType: "alpha-sidebar",
+      };
+    }
+    const twoRegions = await runtime.runCommand("alpha:command");
+    expect(twoRegions.pluginSurface).toMatchObject({
+      region: "main-document",
+      viewType: "beta-view",
+    });
+    expect(twoRegions.pluginSurfaces).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ region: "main-document", viewType: "beta-view" }),
+        expect.objectContaining({ region: "right-dock", viewType: "alpha-sidebar" }),
+      ]),
+    );
+    expect(created[1]?.surface).toMatchObject({ viewType: "beta-view" });
+
     await runtime.markLayoutReady();
     expect(created[0]?.markLayoutReady).toHaveBeenCalledOnce();
     expect(created[1]?.markLayoutReady).toHaveBeenCalledOnce();

@@ -121,7 +121,10 @@ describe("ElectronPluginRuntime", () => {
     expect(webContents?.close).toHaveBeenCalledOnce();
     expect(webContents?.listenerCount("ipc-message")).toBe(0);
     expect(webContents?.listenerCount("render-process-gone")).toBe(0);
-    expect(visibility.mock.calls.map((call) => call[1])).toEqual([true, false]);
+    expect(visibility.mock.calls.map((call) => call[1])).toEqual([
+      { displayText: "Drawing", filePath: "Drawing.md", viewType: "drawing" },
+      null,
+    ]);
     await expect(runtime.getSnapshot()).rejects.toBeInstanceOf(FatalPluginRuntimeError);
   });
 

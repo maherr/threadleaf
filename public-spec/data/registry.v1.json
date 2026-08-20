@@ -15,7 +15,7 @@
       "threadleafVersion": "0.1.0",
       "lastTested": "2026-08-20",
       "compatibilityLevel": 3,
-      "summary": "The exact official Calendar 2.0.0-beta.2 release passed reviewed authority, mounted its unchanged month grid in Threadleaf's physical right dock beside an active note, consumed Threadleaf's daily-note folder, format, and template settings, created and opened a templated daily note through its ordinary confirmation flow, updated the day marker, rendered in light and dark, and reconstructed the dock and marker after a full application restart while four other plugins remained loaded.",
+      "summary": "The exact official Calendar 2.0.0-beta.2 release passed reviewed authority, mounted its unchanged month grid in Threadleaf's physical right dock beside an active note and a simultaneous plugin-owned main document, consumed Threadleaf's daily-note folder, format, and template settings, created and opened a templated daily note through its ordinary confirmation flow, updated the day marker, rendered in light and dark, and reconstructed the dock and marker after a full application restart while four other plugins remained loaded.",
       "evidenceMode": "direct",
       "requiredCapabilities": [
         "vault-read",
@@ -49,7 +49,7 @@
       "workflows": [
         {
           "id": "calendar.right-dock-daily-note-restart.v1",
-          "name": "Mount the calendar in the right dock, create a templated daily note, update its marker, and reconstruct after restart",
+          "name": "Mount the calendar beside a plugin-owned main document, create a templated daily note, update its marker, and reconstruct after restart",
           "status": "passed",
           "gates": [
             {
@@ -961,5 +961,5 @@
       ]
     }
   ],
-  "generationId": "1cbc033b6ff48ab52638c68fac04dcb50af5032228e1deee49656813a52fea0a"
+  "generationId": "433f32d10601e4d8ea38108b62ef7fef5c32588cb3f2fad79a93ad8e1db6a968"
 }

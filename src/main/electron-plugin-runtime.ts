@@ -15,6 +15,7 @@ import type {
   PluginEditorContext,
   PluginMutationWaitOptions,
   PluginResourceDiagnostic,
+  PluginSurfaceSnapshot,
   RuntimeSnapshot,
 } from "../shared/contracts";
 import {
@@ -44,7 +45,7 @@ import {
 export interface ElectronPluginRuntimeOptions {
   constructionPolicyResolver?: PluginConstructionPolicyResolverPort;
   hostHtmlPath: string;
-  onSurfaceVisibilityChange?(view: WebContentsView, visible: boolean): void;
+  onSurfaceVisibilityChange?(view: WebContentsView, surface: PluginSurfaceSnapshot | null): void;
   operationTimeoutMs?: number;
   resourcePolicy?: PluginResourcePolicy | PluginResourcePolicyOverrides;
   metricsProvider?: PluginResourceMetricsProvider;
@@ -144,7 +145,7 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
   private readyResolve: (() => void) | null = null;
   private readyReject: ((error: Error) => void) | null = null;
   private readonly onSurfaceVisibilityChange:
-    | ((view: WebContentsView, visible: boolean) => void)
+    | ((view: WebContentsView, surface: PluginSurfaceSnapshot | null) => void)
     | undefined;
   private surfaceVisible = false;
   private readonly policy: PluginResourcePolicy;
@@ -157,7 +158,10 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
 
   private constructor(
     view: WebContentsView,
-    onSurfaceVisibilityChange?: (view: WebContentsView, visible: boolean) => void,
+    onSurfaceVisibilityChange?: (
+      view: WebContentsView,
+      surface: PluginSurfaceSnapshot | null,
+    ) => void,
     policy = createPluginResourcePolicy(),
     metricsProvider = defaultMetricsProvider(),
     clock?: PluginResourceClock,
@@ -349,12 +353,13 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
     });
   }
 
-  private setSurfaceVisible(visible: boolean): void {
+  private setSurface(surface: PluginSurfaceSnapshot | null): void {
+    const visible = surface !== null;
     if (this.surfaceVisible === visible && !visible) {
       return;
     }
     this.surfaceVisible = visible;
-    this.onSurfaceVisibilityChange?.(this.view, visible);
+    this.onSurfaceVisibilityChange?.(this.view, surface ? { ...surface } : null);
   }
 
   private startResourceMonitoring(): void {
@@ -470,7 +475,7 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
         snapshot.plugin?.id ??
         snapshot.plugins?.find(({ state }) => state === "loaded")?.id ??
         this.activePluginId;
-      this.setSurfaceVisible(snapshot.pluginSurface !== null);
+      this.setSurface(snapshot.pluginSurface ?? null);
       return this.decorateResourceSnapshot(snapshot);
     });
   }
@@ -594,7 +599,7 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
   private markUnavailable(error: Error): void {
     this.closed = true;
     this.ready = false;
-    this.setSurfaceVisible(false);
+    this.setSurface(null);
     this.readyReject?.(error);
     this.readyResolve = null;
     this.readyReject = null;
@@ -634,7 +639,7 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
     }
     this.closed = true;
     this.resourceMonitor.stop();
-    this.setSurfaceVisible(false);
+    this.setSurface(null);
     this.ready = false;
     this.readyReject?.(new Error(reason));
     this.readyResolve = null;

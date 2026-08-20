@@ -526,6 +526,7 @@ module.exports = class RendererFixture extends Plugin {
       expect(settings?.pluginSurface).toEqual({
         displayText: "Renderer fixture settings",
         filePath: null,
+        region: "main-document",
         viewType: "threadleaf-plugin-settings",
       });
       expect(dom.window.document.querySelector(".vertical-tab-content h2")?.textContent).toBe(

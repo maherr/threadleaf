@@ -748,6 +748,7 @@ module.exports = class ModalFixture extends Plugin {
       expect((await host.getSnapshot()).pluginSurface).toEqual({
         displayText: "Other modal fixture dialog",
         filePath: null,
+        region: "main-document",
         viewType: "threadleaf-plugin-modal",
       });
       expect(surfaceChanges).toHaveBeenCalledTimes(2);
@@ -1083,6 +1084,7 @@ module.exports = class UiApiPlugin extends Plugin {
       expect(settingsSnapshot.pluginSurface).toEqual({
         displayText: "UI API fixture settings",
         filePath: null,
+        region: "main-document",
         viewType: "threadleaf-plugin-settings",
       });
       expect(dom.window.document.querySelector(".vertical-tab-content")?.textContent).toBe(

@@ -240,7 +240,9 @@ below Level 4 until that workflow has a controller-finalized, verifier-accepted 
 The Level 3 set also includes the exact Calendar 2.0.0-beta.2 release: its unchanged month grid
 occupies the physical right dock beside an active note, consumes Threadleaf's real Daily Notes
 preferences, creates a templated note through its ordinary confirmation flow, and reconstructs
-the marker and dock after restart.
+the marker and dock after restart. A main-document plugin view and the Calendar dock can remain
+visible at the same time; opening Excalidraw or another plugin-owned document no longer displaces
+the sidebar renderer.
 Each valid package also gets a conservative static authority report over the exact package.
 Construction additionally requires a checked-in reviewed profile for the complete package identity.
 Granting captures the executable package closure once through no-follow file handles, hashes and

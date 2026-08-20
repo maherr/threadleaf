@@ -3039,6 +3039,17 @@ function renderReadingView(): void {
   }
 }
 
+function pluginSurfaceForRegion(
+  snapshot: RuntimeSnapshot | null,
+  region: "main-document" | "right-dock",
+) {
+  const surfaces =
+    snapshot?.pluginSurfaces ?? (snapshot?.pluginSurface ? [snapshot.pluginSurface] : []);
+  return surfaces.find(
+    (surface) => (surface.region === "right-dock" ? "right-dock" : "main-document") === region,
+  );
+}
+
 function renderDocumentView(): void {
   const hasNote = loadedNote !== null;
   const activePane = workspacePaneSnapshot();
@@ -3112,10 +3123,10 @@ function renderDocumentView(): void {
   const popoutOpen = popoutState === "open";
   const pluginPopoutSupported =
     currentPluginPreference().compatibilityTopology !== "trusted-workspace";
-  const hasPluginSurface =
-    currentSnapshot?.pluginSurface !== null && currentSnapshot?.pluginSurface !== undefined;
-  const rightDockPlugin =
-    hasPluginSurface && currentSnapshot?.pluginSurface?.region === "right-dock";
+  const mainPluginSurface = pluginSurfaceForRegion(currentSnapshot, "main-document");
+  const rightDockSurface = pluginSurfaceForRegion(currentSnapshot, "right-dock");
+  const hasPluginSurface = mainPluginSurface !== undefined;
+  const rightDockPlugin = rightDockSurface !== undefined;
   const pluginViewType = preferredPluginViewType();
   const visiblePluginViewType = pluginSettings
     ? "threadleaf-plugin-settings"
@@ -3127,7 +3138,7 @@ function renderDocumentView(): void {
   elements.noteView.hidden = !hasNote || plugin;
   elements.baseView.hidden = !hasBase;
   elements.canvasView.hidden = !hasCanvas;
-  elements.pluginSurfaceHost.hidden = !plugin || rightDockPlugin;
+  elements.pluginSurfaceHost.hidden = !plugin;
   elements.pluginDockSurfaceHost.hidden = !rightDockPlugin;
   elements.workspaceRoot.dataset.rightPluginSurface = String(rightDockPlugin);
   elements.pluginSurfaceHost.dataset.popoutState = popoutState;
@@ -3139,10 +3150,10 @@ function renderDocumentView(): void {
         ? "Plugin pop-out unavailable; plugin view is open in the main window."
         : "Plugin view is open in the main window.";
   elements.pluginSurfaceStatus.hidden = hasPluginSurface && !popoutOpen;
-  elements.pluginDockSurfaceStatus.textContent = hasPluginSurface
+  elements.pluginDockSurfaceStatus.textContent = rightDockPlugin
     ? "Plugin sidebar view is open."
     : "Opening sidebar view…";
-  elements.pluginDockSurfaceStatus.hidden = hasPluginSurface;
+  elements.pluginDockSurfaceStatus.hidden = rightDockPlugin;
   elements.noteView.dataset.view = reading ? "reading" : documentViewMode;
   elements.noteEditorShell.dataset.editorMode = editingViewMode;
   elements.noteEditorShell.classList.toggle("is-live-preview", editingViewMode === "live");
@@ -3248,20 +3259,24 @@ function waitForVisualFrameOrTimeout(timeoutMs = 100): Promise<void> {
 }
 
 async function updatePluginSurfaceBounds(): Promise<void> {
-  const host =
-    currentSnapshot?.pluginSurface?.region === "right-dock"
-      ? elements.pluginDockSurfaceHost
-      : elements.pluginSurfaceHost;
-  if (host.hidden) {
-    return;
+  const updates: Promise<void>[] = [];
+  for (const [region, host] of [
+    ["main-document", elements.pluginSurfaceHost],
+    ["right-dock", elements.pluginDockSurfaceHost],
+  ] as const) {
+    if (host.hidden || !pluginSurfaceForRegion(currentSnapshot, region)) continue;
+    const bounds = host.getBoundingClientRect();
+    updates.push(
+      window.threadleaf.setPluginSurfaceBounds({
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+        region,
+      }),
+    );
   }
-  const bounds = host.getBoundingClientRect();
-  await window.threadleaf.setPluginSurfaceBounds({
-    x: bounds.x,
-    y: bounds.y,
-    width: bounds.width,
-    height: bounds.height,
-  });
+  await Promise.all(updates);
 }
 
 async function activatePluginView(): Promise<void> {
@@ -10800,6 +10815,9 @@ function openSettings(): void {
     documentViewMode === "plugin" && pluginSettingsTargetId === null
       ? currentDocumentPluginViewIdentity()
       : null;
+  if ((currentSnapshot?.pluginSurfaces?.length ?? (currentSnapshot?.pluginSurface ? 1 : 0)) > 0) {
+    setPluginSurfacePresentationVisible(false);
+  }
   if (documentViewMode === "plugin") {
     setDocumentView(editingViewMode, false);
   }
@@ -10853,6 +10871,10 @@ function closeSettings(restoreFocus = true, restorePluginView = true): void {
   noteWorkflowDraft = null;
   workspaceSettingsDraft = null;
   elements.settingsDialog.close();
+  if ((currentSnapshot?.pluginSurfaces?.length ?? (currentSnapshot?.pluginSurface ? 1 : 0)) > 0) {
+    setPluginSurfacePresentationVisible(true);
+    void waitForVisualFrameOrTimeout().then(() => updatePluginSurfaceBounds());
+  }
   const restoreTarget = settingsRestoreFocus;
   settingsRestoreFocus = null;
   if (restoreFocus && restoreTarget?.isConnected) {
@@ -15079,6 +15101,7 @@ async function openNote(
     activate &&
     currentPluginSurface !== undefined &&
     currentPluginSurface !== null &&
+    currentPluginSurface.region !== "right-dock" &&
     currentPluginSurface.filePath !== filePath;
   if (closesCurrentPluginSurface) {
     pluginSurfaceRequest += 1;
@@ -16582,7 +16605,10 @@ const unsubscribeMenuCommand = window.threadleaf.onMenuCommand((commandId) => {
   void executeRendererCommand(commandId);
 });
 const pluginSurfaceResizeObserver = new ResizeObserver(() => {
-  if (documentViewMode === "plugin" || currentSnapshot?.pluginSurface?.region === "right-dock") {
+  if (
+    documentViewMode === "plugin" ||
+    pluginSurfaceForRegion(currentSnapshot, "right-dock") !== undefined
+  ) {
     void updatePluginSurfaceBounds();
   }
 });

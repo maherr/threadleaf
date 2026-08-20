@@ -63,6 +63,7 @@ import {
   notePropertyTypes,
   type PluginPackageApplyResponse,
   type PluginSurfaceBounds,
+  type PluginSurfaceSnapshot,
   type PluginUpdateResponse,
   type RuntimeSnapshot,
   type VaultAttachmentNativeActionRequest,
@@ -323,7 +324,10 @@ const workspaceOpenTransferTracker = workspaceOpenDiagnostics
   : undefined;
 const compatibilityPluginViews = new Set<WebContentsView>();
 const visiblePluginViews = new Set<WebContentsView>();
+const pluginSurfaceByView = new Map<WebContentsView, PluginSurfaceSnapshot>();
 let pluginSurfaceBounds: PluginSurfaceBounds = { x: 0, y: 0, width: 0, height: 0 };
+let pluginRightSurfaceBounds: PluginSurfaceBounds = { x: 0, y: 0, width: 0, height: 0 };
+let attachedRightPluginView: WebContentsView | null = null;
 let pluginSurfaceCss = "";
 let pluginSurfaceAppearanceCss = "";
 
@@ -517,6 +521,37 @@ function detachPluginView(): void {
   attachedPluginHost = null;
 }
 
+function detachRightPluginView(): void {
+  if (attachedRightPluginView && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.contentView.removeChildView(attachedRightPluginView);
+  }
+  attachedRightPluginView = null;
+}
+
+function updateRightPluginViewBounds(): void {
+  if (
+    !attachedRightPluginView ||
+    pluginRightSurfaceBounds.width <= 0 ||
+    pluginRightSurfaceBounds.height <= 0
+  ) {
+    return;
+  }
+  attachedRightPluginView.setBounds(pluginRightSurfaceBounds);
+}
+
+function attachRightPluginView(view: WebContentsView): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (attachedRightPluginView === view) {
+    updateRightPluginViewBounds();
+    return;
+  }
+  if (attachedPluginView === view) detachPluginView();
+  detachRightPluginView();
+  mainWindow.contentView.addChildView(view);
+  attachedRightPluginView = view;
+  updateRightPluginViewBounds();
+}
+
 function updatePluginViewBounds(): void {
   if (!attachedPluginView && pluginSurfacePresentationVisible) {
     const visibleView = [...visiblePluginViews].findLast(
@@ -578,10 +613,34 @@ function setPluginViewVisibility(view: WebContentsView, visible: boolean): void 
   attachPluginViewToWindow(view, targetWindow);
 }
 
+function setPluginViewSurface(view: WebContentsView, surface: PluginSurfaceSnapshot | null): void {
+  if (!surface) {
+    pluginSurfaceByView.delete(view);
+    setPluginViewVisibility(view, false);
+    if (attachedRightPluginView === view) detachRightPluginView();
+    return;
+  }
+  const normalized = {
+    ...surface,
+    region: surface.region === "right-dock" ? "right-dock" : "main-document",
+  } satisfies PluginSurfaceSnapshot;
+  pluginSurfaceByView.set(view, normalized);
+  if (normalized.region === "right-dock") {
+    setPluginViewVisibility(view, false);
+    if (pluginSurfacePresentationVisible && compatibilityPluginViews.has(view)) {
+      attachRightPluginView(view);
+    }
+    return;
+  }
+  if (attachedRightPluginView === view) detachRightPluginView();
+  setPluginViewVisibility(view, true);
+}
+
 function setPluginSurfacePresentationVisible(visible: boolean): void {
   pluginSurfacePresentationVisible = visible;
   if (!visible) {
     detachPluginView();
+    detachRightPluginView();
     return;
   }
   const view = [...visiblePluginViews].findLast(
@@ -590,6 +649,13 @@ function setPluginSurfacePresentationVisible(visible: boolean): void {
   if (view) {
     setPluginViewVisibility(view, true);
   }
+  const rightView = [...pluginSurfaceByView.entries()].findLast(
+    ([candidate, surface]) =>
+      surface.region === "right-dock" &&
+      compatibilityPluginViews.has(candidate) &&
+      !candidate.webContents.isDestroyed(),
+  )?.[0];
+  if (rightView) attachRightPluginView(rightView);
 }
 
 async function registerCompatibilityPluginView(runtime: ElectronPluginRuntime): Promise<void> {
@@ -610,8 +676,12 @@ async function registerCompatibilityPluginView(runtime: ElectronPluginRuntime): 
   webContents.once("destroyed", () => {
     compatibilityPluginViews.delete(view);
     visiblePluginViews.delete(view);
+    pluginSurfaceByView.delete(view);
     if (attachedPluginView === view) {
       detachPluginView();
+    }
+    if (attachedRightPluginView === view) {
+      detachRightPluginView();
     }
     const popout = pluginPopoutWindow;
     if (popout && !popout.isDestroyed()) {
@@ -1985,7 +2055,7 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
               ElectronPluginRuntime.open({
                 hostHtmlPath: join(__dirname, "..", "renderer", "plugin-host.html"),
                 constructionPolicyResolver,
-                onSurfaceVisibilityChange: setPluginViewVisibility,
+                onSurfaceVisibilityChange: setPluginViewSurface,
                 packageJsonPath: join(app.getAppPath(), "package.json"),
                 vaultPath,
                 ...(pluginOperationTimeout ? { operationTimeoutMs: pluginOperationTimeout } : {}),
@@ -4429,6 +4499,10 @@ function registerIpcHandlers(): void {
       throw new Error("Plugin surface bounds must be an object.");
     }
     const candidate = value as Record<string, unknown>;
+    const region = candidate.region ?? "main-document";
+    if (region !== "main-document" && region !== "right-dock") {
+      throw new Error("Plugin surface bounds contain an unsupported region.");
+    }
     const fields = [candidate.x, candidate.y, candidate.width, candidate.height];
     if (
       fields.some((field) => typeof field !== "number" || !Number.isFinite(field)) ||
@@ -4437,13 +4511,20 @@ function registerIpcHandlers(): void {
     ) {
       throw new Error("Plugin surface bounds must contain finite non-negative dimensions.");
     }
-    pluginSurfaceBounds = {
+    const bounds: PluginSurfaceBounds = {
       x: Math.max(0, Math.round(candidate.x as number)),
       y: Math.max(0, Math.round(candidate.y as number)),
       width: Math.max(0, Math.round(candidate.width as number)),
       height: Math.max(0, Math.round(candidate.height as number)),
+      region,
     };
-    updatePluginViewBounds();
+    if (region === "right-dock") {
+      pluginRightSurfaceBounds = bounds;
+      updateRightPluginViewBounds();
+    } else {
+      pluginSurfaceBounds = bounds;
+      updatePluginViewBounds();
+    }
   });
   handleMainRendererIpc(ipcChannels.setPluginSurfaceVisible, (event, visible: unknown) => {
     assertMainRendererPluginIpcSender(
@@ -4546,6 +4627,7 @@ function registerIpcHandlers(): void {
 
 async function createWindow(trustedWorkspace = false): Promise<void> {
   detachPluginView();
+  detachRightPluginView();
   const restoredBounds = restoreWorkspaceWindowBounds(
     workspaceLayoutController.snapshot().mainWindowBounds,
     workspaceDisplayAreas(),
@@ -4760,6 +4842,7 @@ const gracefulShutdownHandler = createGracefulShutdownHandler({
   preflight: () => requestWindowAutosaveFlush(mainWindow, "app-quit"),
   prepare: () => {
     detachPluginView();
+    detachRightPluginView();
     appearanceWatcherLifecycle?.reconcile(null);
   },
   close: async () => {
@@ -4768,9 +4851,11 @@ const gracefulShutdownHandler = createGracefulShutdownHandler({
   },
   finalize: () => {
     compatibilityPluginViews.clear();
+    pluginSurfaceByView.clear();
     for (const bridge of pluginSurfaceEnvironmentBridges.values()) bridge.clear();
     pluginSurfaceEnvironmentBridges.clear();
     visiblePluginViews.clear();
+    attachedRightPluginView = null;
   },
   quit: () => {
     applicationQuitAuthorized = true;

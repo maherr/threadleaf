@@ -239,6 +239,7 @@ export interface PluginSurfaceSnapshot {
 
 export interface PluginSurfaceBounds {
   height: number;
+  region?: "main-document" | "right-dock";
   width: number;
   x: number;
   y: number;
@@ -333,6 +334,7 @@ export interface RuntimeSnapshot {
   pluginAppearance?: PluginAppearanceSnapshot;
   markdownProjection?: PluginMarkdownProjectionSnapshot | null;
   pluginSurface?: PluginSurfaceSnapshot | null;
+  pluginSurfaces?: PluginSurfaceSnapshot[];
   resourcePolicy?: PluginResourcePolicySnapshot;
   resourceDiagnostics?: PluginResourceDiagnostic[];
   workspace?: WorkspaceSnapshot;

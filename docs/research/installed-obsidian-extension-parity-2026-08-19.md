@@ -59,7 +59,9 @@ application restart. Result on 2026-08-20: the exact release rendered a 42-day m
 299 by 715 pixel right dock beside the active note, created `Journal/2026-08-20.md` from the
 configured template with tokens expanded, added one marker, and reconstructed the same dock and
 marker after restart while Data Files Editor, Iconize, Minimal Theme Settings, and Omnisearch also
-remained loaded and repeated their accepted workflows.
+remained loaded and repeated their accepted workflows. The two-region gate also kept Calendar
+visible and hit-testable while Data Files Editor owned the main document surface, covering the same
+layout seam used by an open Excalidraw canvas.
 
 ### Data Files Editor 1.3.0
 
