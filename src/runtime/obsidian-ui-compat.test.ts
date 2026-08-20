@@ -1,6 +1,6 @@
 import { JSDOM } from "jsdom";
 import { describe, expect, it, vi } from "vitest";
-import type { TFile } from "./obsidian-compat";
+import type { Plugin, TFile } from "./obsidian-compat";
 import {
   AbstractInputSuggest,
   type ButtonComponent,
@@ -10,6 +10,7 @@ import {
   Editor,
   FuzzySuggestModal,
   Modal,
+  PluginSettingTab,
   type Scope,
   SecretComponent,
   Setting,
@@ -463,6 +464,45 @@ describe("Obsidian declarative settings compatibility", () => {
       expect(tab.containerEl.querySelector('[data-setting-name="Native renderer"]')).not.toBeNull();
       tab.containerEl.querySelector<HTMLButtonElement>(".setting-page-back")?.click();
       expect(tab.containerEl.querySelector('[data-setting-name="Enable helpers"]')).not.toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+      dom.window.close();
+    }
+  });
+
+  it("marks Templater syntax controls as registered but unavailable", () => {
+    const dom = new JSDOM("<!doctype html><body></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    vi.stubGlobal("document", dom.window.document);
+    try {
+      const plugin = {
+        app: {},
+        manifest: { id: "templater-obsidian" },
+        settings: { syntax_highlighting: true },
+        saveData: vi.fn(),
+      } as unknown as Plugin;
+      class TemplaterTab extends PluginSettingTab {
+        override getSettingDefinitions(): unknown[] {
+          return [
+            {
+              name: "Syntax highlighting on desktop",
+              desc: "Adds syntax highlighting for Templater commands in edit mode.",
+              control: { type: "toggle", key: "syntax_highlighting" },
+            },
+          ];
+        }
+      }
+      const tab = new TemplaterTab({} as never, plugin);
+      tab.update();
+      tab.renderSettingDefinitions();
+      const row = tab.containerEl.querySelector<HTMLElement>(
+        '[data-setting-name="Syntax highlighting on desktop"]',
+      );
+
+      expect(row?.dataset.delivery).toBe("registered-but-unavailable-in-native-editor");
+      expect(row?.querySelector("input")?.disabled).toBe(true);
+      expect(row?.textContent).toContain("Not delivered to the Threadleaf editor.");
     } finally {
       vi.unstubAllGlobals();
       dom.window.close();

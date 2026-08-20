@@ -107,7 +107,10 @@ import {
   bindingFromKeyboardEvent,
   createDefaultAppSettings,
   displayKeyBinding,
+  type KeyBindingTargetId,
   noteWorkflowsForVault,
+  pluginCommandIdForShortcutTargetId,
+  pluginCommandShortcutTargetId,
   pluginsForVault,
   type ShortcutTargetId,
   shortcutTargetForEvent,
@@ -884,7 +887,7 @@ interface RendererCommand extends PaletteCommandDescriptor {
 }
 
 interface ShortcutTargetDefinition {
-  id: ShortcutTargetId;
+  id: KeyBindingTargetId;
   label: string;
   description: string;
 }
@@ -1152,7 +1155,7 @@ let settingsRestoreFocus: HTMLElement | null = null;
 let settingsPluginRestoreIdentity: DocumentPluginViewIdentity | null = null;
 let settingsPage: SettingsPage = "appearance";
 let settingsSearchQuery = "";
-let recordingShortcut: ShortcutTargetId | null = null;
+let recordingShortcut: KeyBindingTargetId | null = null;
 let settingsBusy = false;
 let settingsMessage = "Select a command, then press its new shortcut.";
 let settingsMessageKind: "info" | "saved" | "error" = "info";
@@ -2044,7 +2047,7 @@ function navigatorEntryIcon(
   return interfaceIcon(icon, "navigator-tree-entry-icon");
 }
 
-function bindingFor(targetId: ShortcutTargetId): string | null {
+function bindingFor(targetId: KeyBindingTargetId): string | null {
   return settingsSnapshot.settings.keyBindings[targetId] ?? null;
 }
 
@@ -10887,7 +10890,7 @@ function closeSettings(restoreFocus = true, restorePluginView = true): void {
   }
 }
 
-function focusBindingButton(targetId: ShortcutTargetId): void {
+function focusBindingButton(targetId: KeyBindingTargetId): void {
   elements.settingsList
     .querySelector<HTMLButtonElement>(
       `.binding-capture[data-shortcut-target="${CSS.escape(targetId)}"]`,
@@ -10895,7 +10898,7 @@ function focusBindingButton(targetId: ShortcutTargetId): void {
     ?.focus();
 }
 
-function beginShortcutRecording(targetId: ShortcutTargetId): void {
+function beginShortcutRecording(targetId: KeyBindingTargetId): void {
   if (settingsOperationBusy()) {
     return;
   }
@@ -10907,7 +10910,7 @@ function beginShortcutRecording(targetId: ShortcutTargetId): void {
   focusBindingButton(targetId);
 }
 
-function cancelShortcutRecording(targetId: ShortcutTargetId): void {
+function cancelShortcutRecording(targetId: KeyBindingTargetId): void {
   recordingShortcut = null;
   settingsMessage = "Shortcut capture cancelled.";
   settingsMessageKind = "info";
@@ -10916,7 +10919,7 @@ function cancelShortcutRecording(targetId: ShortcutTargetId): void {
 }
 
 async function persistKeyBinding(
-  targetId: ShortcutTargetId,
+  targetId: KeyBindingTargetId,
   binding: string | null,
 ): Promise<void> {
   if (settingsOperationBusy()) {
@@ -10965,7 +10968,7 @@ async function resetKeyBindings(): Promise<void> {
   }
 }
 
-function captureShortcut(event: KeyboardEvent, targetId: ShortcutTargetId): void {
+function captureShortcut(event: KeyboardEvent, targetId: KeyBindingTargetId): void {
   if (recordingShortcut !== targetId) {
     return;
   }
@@ -11244,6 +11247,39 @@ function renderSettingsNavigation(): void {
   elements.settingsReset.hidden = settingsPage !== "hotkeys";
 }
 
+function visibleShortcutTargets(): ShortcutTargetDefinition[] {
+  const targets = [...shortcutTargets];
+  const seen = new Set<KeyBindingTargetId>(targets.map(({ id }) => id));
+  for (const command of currentSnapshot?.commands ?? []) {
+    let id: KeyBindingTargetId;
+    try {
+      id = pluginCommandShortcutTargetId(command.id);
+    } catch {
+      continue;
+    }
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const owner = (currentSnapshot?.plugins ?? []).find(({ id }) => id === command.ownerId);
+    targets.push({
+      id,
+      label: command.name,
+      description: `${owner?.name ?? "Community plugin"} command. The binding follows this exact command identity across reloads.`,
+    });
+  }
+  for (const [id, binding] of Object.entries(settingsSnapshot.settings.keyBindings)) {
+    if (binding === null || seen.has(id)) continue;
+    const commandId = pluginCommandIdForShortcutTargetId(id);
+    if (!commandId) continue;
+    seen.add(id);
+    targets.push({
+      id,
+      label: "Unavailable plugin command",
+      description: `Saved binding for ${commandId}. Re-enable the owning plugin to restore this command, or clear the binding here.`,
+    });
+  }
+  return targets;
+}
+
 function renderSettings(): void {
   elements.settingsWarning.hidden = settingsSnapshot.warning === null;
   elements.settingsWarning.textContent = settingsSnapshot.warning ?? "";
@@ -11292,7 +11328,7 @@ function renderSettings(): void {
   }
 
   elements.settingsList.replaceChildren();
-  for (const target of shortcutTargets) {
+  for (const target of visibleShortcutTargets()) {
     const binding = bindingFor(target.id);
     const row = document.createElement("div");
     row.className = "binding-row";
@@ -12068,7 +12104,7 @@ function render(snapshot: RuntimeSnapshot): void {
   }
   if (
     documentViewMode === "plugin" &&
-    !snapshot.pluginSurface &&
+    !pluginSurfaceForRegion(snapshot, "main-document") &&
     !preferredPluginViewType(snapshot) &&
     pluginSettingsTargetId === null
   ) {
@@ -16493,7 +16529,12 @@ document.addEventListener("keydown", (event) => {
   }
   if (targetId) {
     event.preventDefault();
-    void executeRendererCommand(targetId);
+    const pluginCommandId = pluginCommandIdForShortcutTargetId(targetId);
+    if (pluginCommandId) {
+      void runCompatibilityCommand(pluginCommandId);
+    } else {
+      void executeRendererCommand(targetId);
+    }
   } else if (event.key === "Escape" && document.activeElement === elements.fileSearch) {
     elements.fileSearch.value = "";
     elements.fileSearch.dispatchEvent(new Event("input"));

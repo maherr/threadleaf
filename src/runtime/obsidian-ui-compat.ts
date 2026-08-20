@@ -1889,6 +1889,18 @@ export class SettingTab {
   ): Setting {
     const setting = new Setting(group.listEl).setName(definition.name);
     if (definition.desc) setting.setDesc(definition.desc);
+    const plugin = (this as unknown as { plugin?: Plugin }).plugin;
+    const editorExtensionUnavailable =
+      plugin?.manifest.id === "templater-obsidian" &&
+      (definition.control?.key === "syntax_highlighting" ||
+        definition.control?.key === "syntax_highlighting_mobile");
+    if (editorExtensionUnavailable) {
+      const delivery = setting.settingEl.ownerDocument.createElement("span");
+      delivery.className = "setting-delivery-unavailable";
+      delivery.textContent = " Not delivered to the Threadleaf editor.";
+      setting.descEl.append(delivery);
+      setting.settingEl.dataset.delivery = "registered-but-unavailable-in-native-editor";
+    }
     const searchText = settingSearchText(definition);
     setting.settingEl.dataset.settingSearch = searchText;
     setting.settingEl.dataset.settingName = definition.name;
@@ -1914,7 +1926,9 @@ export class SettingTab {
       });
     }
     this.domStateBindings.push({
-      disabled: definition.control?.disabled ?? definition.disabled,
+      disabled: editorExtensionUnavailable
+        ? true
+        : (definition.control?.disabled ?? definition.disabled),
       element: setting.settingEl,
       setting,
       visible: definition.visible,
@@ -3276,6 +3290,7 @@ export class Editor {
 
 export class MarkdownView extends TextFileView {
   readonly editor: Editor;
+  readonly inlineTitleEl: HTMLElement;
   readonly previewMode: MarkdownPreviewView;
   currentMode: MarkdownEditView | MarkdownPreviewView;
   hoverPopover: null = null;
@@ -3283,6 +3298,9 @@ export class MarkdownView extends TextFileView {
 
   constructor(leaf: WorkspaceLeaf) {
     super(leaf);
+    this.inlineTitleEl = this.contentEl.ownerDocument.createElement("div");
+    this.inlineTitleEl.className = "inline-title";
+    this.contentEl.prepend(this.inlineTitleEl);
     this.editor = new Editor((value) => {
       this.data = value;
     });

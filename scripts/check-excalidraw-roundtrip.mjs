@@ -15,6 +15,7 @@ const sourceVaultOverride = process.env.THREADLEAF_EXCALIDRAW_SOURCE_VAULT?.trim
 const sourceVault = sourceVaultOverride ? path.resolve(sourceVaultOverride) : fixtureVault;
 const installedPluginMatrixRoot = process.env.THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT?.trim();
 const installedThemeMatrixRoot = process.env.THREADLEAF_INSTALLED_THEME_MATRIX_ROOT?.trim();
+const templaterPluginPath = process.env.THREADLEAF_TEMPLATER_PLUGIN_PATH?.trim();
 const installedPluginMatrixClean = process.env.THREADLEAF_INSTALLED_PLUGIN_MATRIX_CLEAN === "1";
 const pluginId = "obsidian-excalidraw-plugin";
 const pluginVersion = process.env.THREADLEAF_EXCALIDRAW_VERSION?.trim() || "2.26.4";
@@ -68,6 +69,7 @@ const installedMatrixPlugins = [
   { id: "obsidian-icon-folder", version: "2.14.7" },
   { id: "obsidian-minimal-settings", version: "8.2.3" },
   { id: "omnisearch", version: "1.30.1" },
+  ...(templaterPluginPath ? [{ id: "templater-obsidian", version: "2.25.0" }] : []),
 ];
 const screenshotDirectory = screenshotDirectoryOverride ?? path.join(testRoot, "screenshots");
 const output = [];
@@ -386,15 +388,16 @@ async function clickRowAction(connection, containerSelector, label) {
 }
 
 async function pressKey(connection, key, code, modifiers = 0) {
+  const eventKey = key.length === 1 && modifiers !== 0 ? key.toUpperCase() : key;
   const windowsVirtualKeyCode =
-    key.length === 1
-      ? key.toUpperCase().charCodeAt(0)
-      : { Enter: 13, Escape: 27, ArrowLeft: 37, ArrowRight: 39 }[key];
+    eventKey.length === 1
+      ? eventKey.charCodeAt(0)
+      : { Enter: 13, Escape: 27, End: 35, ArrowLeft: 37, ArrowRight: 39 }[key];
   assert(windowsVirtualKeyCode, `Unsupported CDP key: ${key}`);
   await connection.send("Input.dispatchKeyEvent", {
-    type: key.length === 1 ? "keyDown" : "rawKeyDown",
+    type: key.length === 1 && modifiers === 0 ? "keyDown" : "rawKeyDown",
     code,
-    key,
+    key: eventKey,
     modifiers,
     windowsVirtualKeyCode,
     nativeVirtualKeyCode: windowsVirtualKeyCode,
@@ -403,7 +406,7 @@ async function pressKey(connection, key, code, modifiers = 0) {
   await connection.send("Input.dispatchKeyEvent", {
     type: "keyUp",
     code,
-    key,
+    key: eventKey,
     modifiers,
     windowsVirtualKeyCode,
     nativeVirtualKeyCode: windowsVirtualKeyCode,
@@ -686,7 +689,10 @@ async function writePluginFixture() {
 async function prepareInstalledPluginMatrix() {
   if (!installedPluginMatrixRoot) return;
   for (const plugin of installedMatrixPlugins) {
-    const source = path.join(path.resolve(installedPluginMatrixRoot), plugin.id);
+    const source =
+      plugin.id === "templater-obsidian" && templaterPluginPath
+        ? path.resolve(templaterPluginPath)
+        : path.join(path.resolve(installedPluginMatrixRoot), plugin.id);
     const target = path.join(vaultPath, ".obsidian", "plugins", plugin.id);
     assert(await exists(source), `Installed matrix source is missing: ${plugin.id}`);
     await fs.cp(source, target, { recursive: true });
@@ -721,6 +727,14 @@ async function prepareInstalledPluginMatrix() {
     path.join(vaultPath, "Templates", "Daily.md"),
     "# {{date:dddd, MMMM D, YYYY}}\n\nCalendar fixture.\n",
   );
+  if (templaterPluginPath) {
+    await fs.writeFile(
+      path.join(vaultPath, "Templates", "Hotkey.md"),
+      "Templater hotkey works in <% tp.file.title %>.\n",
+    );
+    await fs.writeFile(path.join(vaultPath, "Notes", "Templater Target.md"), "Before\n");
+    await fs.writeFile(path.join(vaultPath, "Notes", "Templater Restart.md"), "Restart\n");
+  }
 }
 
 async function grantAndEnableInstalledPlugin(candidate) {
@@ -929,6 +943,7 @@ async function verifyInstalledPluginMatrixRestart(vaultId, port) {
     );
   }
   const omnisearch = await verifyOmnisearchWorkflow(vaultId, port);
+  const templater = templaterPluginPath ? await verifyTemplaterRestartWorkflow(vaultId) : undefined;
   return {
     pluginStates: installedMatrixPlugins.map(({ id }) => ({
       id,
@@ -939,6 +954,7 @@ async function verifyInstalledPluginMatrixRestart(vaultId, port) {
     icon: "🌟",
     minimal,
     omnisearch,
+    ...(templater ? { templater } : {}),
   };
 }
 
@@ -1010,6 +1026,7 @@ async function runInstalledPluginMatrix(vaultId, port, pluginState) {
     await verifyIconizeWorkflow(vaultId, port),
     await verifyMinimalSettingsWorkflow(vaultId, port),
     await verifyOmnisearchWorkflow(vaultId, port),
+    ...(templaterPluginPath ? [await verifyTemplaterWorkflow(vaultId)] : []),
   ];
   await closeApp();
   const restartPort = await availablePort();
@@ -1078,6 +1095,203 @@ async function connectPluginSurfaceBySelector(
     await delay(80);
   }
   throw new Error(`${label} did not expose ${selector} in an isolated plugin renderer.`);
+}
+
+async function replaceFocusedText(selector, text) {
+  const focused = await evaluate(
+    cdp,
+    `(() => { const input = document.querySelector(${JSON.stringify(selector)}); if (!(input instanceof HTMLInputElement)) return false; input.focus(); input.select(); return true; })()`,
+  );
+  assert(focused, `Could not focus the text control: ${selector}`);
+  await pressKey(cdp, "a", "KeyA", 2);
+  await cdp.send("Input.insertText", { text });
+}
+
+async function markTemplaterSettingControl(name, controlSelector = "input") {
+  return evaluate(
+    cdp,
+    `(() => {
+      document.querySelector('#threadleaf-e2e-templater-control')?.removeAttribute('id');
+      const item = [...document.querySelectorAll('.setting-item')].find((candidate) =>
+        candidate.querySelector('.setting-item-name')?.textContent?.trim() === ${JSON.stringify(name)}
+      );
+      const control = item?.querySelector(${JSON.stringify(controlSelector)}) ?? item;
+      if (!(control instanceof HTMLElement)) return null;
+      control.id = 'threadleaf-e2e-templater-control';
+      return '#threadleaf-e2e-templater-control';
+    })()`,
+  );
+}
+
+async function waitForTemplaterData(predicate, label, timeout = 20_000) {
+  const filePath = path.join(vaultPath, ".obsidian", "plugins", "templater-obsidian", "data.json");
+  const deadline = Date.now() + timeout;
+  let observed = null;
+  while (Date.now() < deadline) {
+    observed = await fs
+      .readFile(filePath, "utf8")
+      .then((source) => JSON.parse(source))
+      .catch(() => null);
+    if (observed && predicate(observed)) return observed;
+    await delay(80);
+  }
+  throw new Error(`${label} did not settle: ${JSON.stringify(observed)}`);
+}
+
+async function runTemplaterHotkeyOnNote(vaultId, notePath, initialText) {
+  await evaluate(
+    cdp,
+    `(async () => { await window.threadleaf.closePluginView(); return window.threadleaf.openNote(${JSON.stringify(notePath)}); })()`,
+  );
+  await waitFor(
+    cdp,
+    `(async () => { const snapshot = await window.threadleaf.getSnapshot(); return snapshot.vault.id === ${JSON.stringify(vaultId)} && snapshot.workspace?.activeNote?.path === ${JSON.stringify(notePath)}; })()`,
+    `Templater target note ${notePath}`,
+  );
+  const noteTab = `.note-tab-activate[data-note-path=${JSON.stringify(notePath)}]`;
+  await waitFor(
+    cdp,
+    `Boolean(document.querySelector(${JSON.stringify(noteTab)}))`,
+    `Templater note tab ${notePath}`,
+  );
+  const alternateTab = await evaluate(
+    cdp,
+    `(() => { const tab = [...document.querySelectorAll('.note-tab-activate')].find((candidate) => candidate.dataset.notePath !== ${JSON.stringify(notePath)} && candidate.dataset.notePath?.endsWith('.md') && !candidate.dataset.notePath.endsWith('.excalidraw.md')); if (!(tab instanceof HTMLButtonElement)) return null; tab.id = 'threadleaf-e2e-templater-alternate-tab'; return '#threadleaf-e2e-templater-alternate-tab'; })()`,
+  );
+  if (alternateTab) {
+    await clickSelector(cdp, alternateTab);
+    await waitFor(
+      cdp,
+      `(() => { const tab = document.querySelector(${JSON.stringify(noteTab)}); return tab instanceof HTMLButtonElement && !tab.disabled; })()`,
+      `Templater target tab readiness ${notePath}`,
+    );
+  }
+  await clickSelector(cdp, noteTab);
+  await waitFor(
+    cdp,
+    "(() => { const editor = document.querySelector('.cm-content'); if (!(editor instanceof HTMLElement)) return false; const bounds = editor.getBoundingClientRect(); return bounds.width > 100 && bounds.height > 20; })()",
+    `Templater native editor surface ${notePath}`,
+  );
+  await clickSelector(cdp, ".cm-content");
+  await waitFor(
+    cdp,
+    "document.activeElement?.classList.contains('cm-content') === true",
+    `Templater target editor focus ${notePath}`,
+  );
+  await delay(120);
+  await pressKey(cdp, "End", "End", 2);
+  await pressKey(cdp, "t", "KeyT", 1);
+  const expected = `${initialText}Templater hotkey works in ${path.basename(notePath, ".md")}.\n`;
+  await waitForExactFileText(path.join(vaultPath, notePath), expected, 30_000);
+  return {
+    notePath,
+    content: expected,
+    revision: sha256(Buffer.from(expected)),
+  };
+}
+
+async function verifyTemplaterWorkflow(vaultId) {
+  await clickSelector(cdp, "#settings-trigger");
+  await waitFor(
+    cdp,
+    "document.querySelector('#shortcut-settings')?.open === true",
+    "Templater settings",
+  );
+  await clickSelector(cdp, "#settings-nav-plugins");
+  await clickRowAction(cdp, '.plugin-row[data-plugin-id="templater-obsidian"]', "Options");
+  await waitFor(
+    cdp,
+    `([...document.querySelectorAll('.setting-item-name')].some((item) => item.textContent?.trim() === 'Template folder location'))`,
+    "Templater declarative options",
+  );
+  const folderControl = await markTemplaterSettingControl("Template folder location");
+  assert(folderControl, "Templater template-folder control was unavailable.");
+  await replaceFocusedText(folderControl, "Templates");
+  await waitForTemplaterData(
+    (data) => data.templates_folder === "Templates",
+    "Templater template folder",
+  );
+
+  const hotkeyPageOpened = await evaluate(
+    cdp,
+    `(() => { const item = [...document.querySelectorAll('.setting-item')].find((candidate) => candidate.querySelector('.setting-item-name')?.textContent?.trim() === 'Template hotkeys'); if (!(item instanceof HTMLElement)) return false; item.click(); return true; })()`,
+  );
+  assert(hotkeyPageOpened, "Templater hotkey page was unavailable.");
+  await waitFor(
+    cdp,
+    "document.querySelector('.setting-page-titlebar')?.textContent?.includes('Template hotkeys') === true",
+    "Templater hotkey page",
+  );
+  const addButton = await evaluate(
+    cdp,
+    `(() => { const button = document.querySelector('button[title="Add template hotkey"]'); if (!(button instanceof HTMLButtonElement)) return null; button.id = 'threadleaf-e2e-templater-add'; return '#threadleaf-e2e-templater-add'; })()`,
+  );
+  assert(addButton, "Templater add-hotkey control was unavailable.");
+  await clickSelector(cdp, addButton);
+  await waitFor(
+    cdp,
+    "Boolean(document.querySelector('.modal-container input'))",
+    "Templater template picker",
+  );
+  const pickerInput = await evaluate(
+    cdp,
+    `(() => { const input = document.querySelector('.modal-container input'); if (!(input instanceof HTMLInputElement)) return null; input.id = 'threadleaf-e2e-templater-picker'; return '#threadleaf-e2e-templater-picker'; })()`,
+  );
+  assert(pickerInput, "Templater template picker input was unavailable.");
+  await replaceFocusedText(pickerInput, "Templates/Hotkey.md");
+  const doneButton = await evaluate(
+    cdp,
+    `(() => { const button = [...document.querySelectorAll('.modal-container button')].find((candidate) => candidate.textContent?.trim() === 'Done'); if (!(button instanceof HTMLButtonElement) || button.disabled) return null; button.id = 'threadleaf-e2e-templater-done'; return '#threadleaf-e2e-templater-done'; })()`,
+  );
+  assert(doneButton, "Templater template picker did not expose Done.");
+  await clickSelector(cdp, doneButton);
+  await waitForTemplaterData(
+    (data) => data.enabled_templates_hotkeys?.includes("Templates/Hotkey.md"),
+    "Templater dynamic command persistence",
+  );
+  const commandId = "templater-obsidian:Templates/Hotkey.md";
+  await waitFor(
+    cdp,
+    `(async () => (await window.threadleaf.getSnapshot()).commands.some((command) => command.id === ${JSON.stringify(commandId)} && command.name === 'Insert Hotkey'))()`,
+    "Templater dynamic Insert Hotkey command",
+  );
+
+  await clickSelector(cdp, "#settings-trigger");
+  await waitFor(
+    cdp,
+    "document.querySelector('#shortcut-settings')?.open === true",
+    "Threadleaf Hotkeys settings",
+  );
+  await clickSelector(cdp, "#settings-nav-hotkeys");
+  const targetId = `plugin.command:${encodeURIComponent(commandId)}`;
+  const bindingButton = await waitFor(
+    cdp,
+    `(() => { const button = document.querySelector('.binding-capture[data-shortcut-target=${JSON.stringify(targetId)}]'); if (!(button instanceof HTMLButtonElement) || button.disabled) return null; button.id = 'threadleaf-e2e-templater-binding'; return '#threadleaf-e2e-templater-binding'; })()`,
+    "Templater Hotkeys binding row",
+  );
+  await clickSelector(cdp, bindingButton);
+  await pressKey(cdp, "t", "KeyT", 1);
+  await waitFor(
+    cdp,
+    `(async () => (await window.threadleaf.getSettings()).settings.keyBindings[${JSON.stringify(targetId)}] === 'Alt+T')()`,
+    "Templater persisted Alt+T binding",
+  );
+  await clickSelector(cdp, "#settings-close");
+  const note = await runTemplaterHotkeyOnNote(vaultId, "Notes/Templater Target.md", "Before\n");
+  return { pluginId: "templater-obsidian", commandId, binding: "Alt+T", note };
+}
+
+async function verifyTemplaterRestartWorkflow(vaultId) {
+  const commandId = "templater-obsidian:Templates/Hotkey.md";
+  const targetId = `plugin.command:${encodeURIComponent(commandId)}`;
+  await waitFor(
+    cdp,
+    `(async () => { const [snapshot, settings] = await Promise.all([window.threadleaf.getSnapshot(), window.threadleaf.getSettings()]); return snapshot.commands.some((command) => command.id === ${JSON.stringify(commandId)}) && settings.settings.keyBindings[${JSON.stringify(targetId)}] === 'Alt+T'; })()`,
+    "restarted Templater command and binding",
+    30_000,
+  );
+  const note = await runTemplaterHotkeyOnNote(vaultId, "Notes/Templater Restart.md", "Restart\n");
+  return { commandId, binding: "Alt+T", note };
 }
 
 async function verifyCalendarWorkflow(vaultId, port) {

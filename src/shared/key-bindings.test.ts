@@ -6,6 +6,8 @@ import {
   eventMatchesKeyBinding,
   normalizeKeyBinding,
   parseAppSettings,
+  pluginCommandIdForShortcutTargetId,
+  pluginCommandShortcutTargetId,
   pluginsForVault,
   shortcutTargetForEvent,
   updateKeyBinding,
@@ -79,6 +81,26 @@ describe("key bindings", () => {
     expect(() => updateKeyBinding(original, "editor.insert-template", "Mod+O")).toThrow(
       "workspace.open-vault",
     );
+  });
+
+  it("persists and dispatches encoded plugin command hotkeys with path identities", () => {
+    const commandId = "templater-obsidian:Templates/Hotkey.md";
+    const targetId = pluginCommandShortcutTargetId(commandId);
+    const original = createDefaultAppSettings();
+    const updated = updateKeyBinding(original, targetId, "Alt+T");
+
+    expect(targetId).toBe("plugin.command:templater-obsidian%3ATemplates%2FHotkey.md");
+    expect(pluginCommandIdForShortcutTargetId(targetId)).toBe(commandId);
+    expect(parseAppSettings(updated).keyBindings[targetId]).toBe("Alt+T");
+    expect(
+      shortcutTargetForEvent(
+        updated.keyBindings,
+        { ...ctrl, key: "t", ctrlKey: false, altKey: true },
+        false,
+      ),
+    ).toBe(targetId);
+    expect(() => pluginCommandShortcutTargetId("bad\ncommand")).toThrow("invalid");
+    expect(pluginCommandIdForShortcutTargetId("plugin.command:%E0%A4%A")).toBeNull();
   });
 
   it("allows tab pinning to be remapped like every shared application action", () => {

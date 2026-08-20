@@ -5,9 +5,9 @@ import {
   appearanceForVault,
   createDefaultAppSettings,
   defaultKeyBindings,
+  type KeyBindingTargetId,
   noteWorkflowsForVault,
   pluginsForVault,
-  type ShortcutTargetId,
   updateKeyBinding,
   updateVaultAppearance,
   updateVaultNoteWorkflows,
@@ -59,7 +59,7 @@ export class AppSettingsController {
   }
 
   async setKeyBinding(
-    targetId: ShortcutTargetId,
+    targetId: KeyBindingTargetId,
     binding: string | null,
   ): Promise<AppSettingsSnapshot> {
     return this.enqueueSave((settings) => updateKeyBinding(settings, targetId, binding));

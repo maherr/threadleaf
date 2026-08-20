@@ -7,7 +7,7 @@ import type { AppUpdateSnapshot } from "./app-updates";
 import type { AppearanceResponse, AppearanceSnapshot, VaultAppearanceSettings } from "./appearance";
 import type { AutosaveFlushRequest, AutosaveFlushResult } from "./autosave";
 import type { CanvasDiagnostic, JsonCanvasDocument } from "./json-canvas";
-import type { AppSettingsSnapshot, ShortcutTargetId } from "./key-bindings";
+import type { AppSettingsSnapshot, KeyBindingTargetId } from "./key-bindings";
 import type {
   MigrationApplyOutcome,
   MigrationApplyRequest,
@@ -1922,7 +1922,7 @@ export interface ThreadleafBridge {
     target: string,
     expectedVaultId: string,
   ): Promise<CanvasAttachmentResponse>;
-  setKeyBinding(targetId: ShortcutTargetId, binding: string | null): Promise<AppSettingsSnapshot>;
+  setKeyBinding(targetId: KeyBindingTargetId, binding: string | null): Promise<AppSettingsSnapshot>;
   resetKeyBindings(): Promise<AppSettingsSnapshot>;
   getNoteWorkflows(expectedVaultId: string): Promise<NoteWorkflowCatalogResponse>;
   setNoteWorkflows(

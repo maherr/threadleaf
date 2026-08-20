@@ -54,6 +54,49 @@ export const shortcutTargetIds = [
 
 export type ShortcutTargetId = (typeof shortcutTargetIds)[number];
 
+export type KeyBindingTargetId = string;
+
+const pluginCommandShortcutPrefix = "plugin.command:";
+
+function validPluginCommandId(value: string): boolean {
+  return (
+    value.length > 0 &&
+    value.length <= 512 &&
+    [...value].every((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint >= 32 && codePoint !== 127;
+    })
+  );
+}
+
+export function pluginCommandShortcutTargetId(commandId: string): KeyBindingTargetId {
+  if (!validPluginCommandId(commandId)) {
+    throw new Error("Plugin command shortcut identity is invalid.");
+  }
+  return `${pluginCommandShortcutPrefix}${encodeURIComponent(commandId)}`;
+}
+
+export function pluginCommandIdForShortcutTargetId(targetId: string): string | null {
+  if (!targetId.startsWith(pluginCommandShortcutPrefix)) {
+    return null;
+  }
+  try {
+    const commandId = decodeURIComponent(targetId.slice(pluginCommandShortcutPrefix.length));
+    return validPluginCommandId(commandId) && pluginCommandShortcutTargetId(commandId) === targetId
+      ? commandId
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isKeyBindingTargetId(value: string): boolean {
+  return (
+    /^[a-z0-9][a-z0-9._:-]{0,199}$/iu.test(value) ||
+    pluginCommandIdForShortcutTargetId(value) !== null
+  );
+}
+
 export interface AppSettings {
   version: 5;
   keyBindings: Record<string, string | null>;
@@ -309,7 +352,7 @@ export function parseAppSettings(value: unknown): AppSettings {
     if (targetId === "editor.save-note" || targetId === "editor.revert-note") {
       continue;
     }
-    if (!/^[a-z0-9][a-z0-9._:-]{0,199}$/i.test(targetId)) {
+    if (!isKeyBindingTargetId(targetId)) {
       throw new Error(`Invalid shortcut target: ${targetId}`);
     }
     if (binding !== null && typeof binding !== "string") {
@@ -346,9 +389,12 @@ export function isShortcutTargetId(value: string): value is ShortcutTargetId {
 
 export function updateKeyBinding(
   settings: AppSettings,
-  targetId: ShortcutTargetId,
+  targetId: KeyBindingTargetId,
   binding: string | null,
 ): AppSettings {
+  if (!isKeyBindingTargetId(targetId)) {
+    throw new Error(`Invalid shortcut target: ${targetId}`);
+  }
   const keyBindings = {
     ...settings.keyBindings,
     [targetId]: binding === null ? null : normalizeKeyBinding(binding),
@@ -603,11 +649,13 @@ export function shortcutTargetForEvent(
   keyBindings: Readonly<Record<string, string | null>>,
   event: KeyboardBindingEvent,
   isMac: boolean,
-): ShortcutTargetId | null {
+): KeyBindingTargetId | null {
   return (
-    shortcutTargetIds.find((targetId) =>
-      eventMatchesKeyBinding(event, keyBindings[targetId] ?? null, isMac),
-    ) ?? null
+    Object.entries(keyBindings).find(
+      ([targetId, binding]) =>
+        (isShortcutTargetId(targetId) || pluginCommandIdForShortcutTargetId(targetId) !== null) &&
+        eventMatchesKeyBinding(event, binding, isMac),
+    )?.[0] ?? null
   );
 }
 

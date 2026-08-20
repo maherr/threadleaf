@@ -1378,6 +1378,7 @@ export class CompatibilityIntegrationRegistry {
       this.editorExtensionOwnerOrder.map((ownerId, index) => [ownerId, index]),
     );
     return [...this.editorExtensions]
+      .filter(({ ownerId }) => this.editorExtensionDeliveryAvailable(ownerId))
       .sort(
         (left, right) =>
           (ownerOrder.get(left.ownerId) ?? Number.MAX_SAFE_INTEGER) -
@@ -1385,6 +1386,17 @@ export class CompatibilityIntegrationRegistry {
           left.sequence - right.sequence,
       )
       .map(({ extension }) => extension);
+  }
+
+  editorExtensionDeliveryAvailable(ownerId: string): boolean {
+    return ownerId !== "templater-obsidian" && ownerId !== "obsidian-icon-folder";
+  }
+
+  hasUnavailableEditorExtensions(ownerId: string): boolean {
+    return this.editorExtensions.some(
+      (registration) =>
+        registration.ownerId === ownerId && !this.editorExtensionDeliveryAvailable(ownerId),
+    );
   }
 
   registerEditorExtension(ownerId: string, editorExtension: unknown): () => void;

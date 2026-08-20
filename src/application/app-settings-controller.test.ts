@@ -121,6 +121,17 @@ describe("AppSettingsController", () => {
     expect(observed).toEqual(["Alt+R"]);
   });
 
+  it("persists a dynamic plugin command binding by exact encoded identity", async () => {
+    const store = new MemorySettingsStore();
+    const controller = await AppSettingsController.open(store);
+    const targetId = "plugin.command:templater-obsidian%3ATemplates%2FHotkey.md";
+
+    const snapshot = await controller.setKeyBinding(targetId, "Alt+T");
+
+    expect(snapshot.settings.keyBindings[targetId]).toBe("Alt+T");
+    expect(store.saved).toHaveLength(1);
+  });
+
   it("keeps the active settings when persistence fails", async () => {
     const store = new MemorySettingsStore();
     const controller = await AppSettingsController.open(store);

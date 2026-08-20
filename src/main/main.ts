@@ -70,7 +70,7 @@ import {
 } from "../shared/contracts";
 import { ipcChannels } from "../shared/ipc-channels";
 import type { AppSettings } from "../shared/key-bindings";
-import { isShortcutTargetId } from "../shared/key-bindings";
+import { isKeyBindingTargetId } from "../shared/key-bindings";
 import type { MigrationApplyRequest } from "../shared/migration";
 import type { NativeMenuCommandId } from "../shared/native-menu";
 import { parseVaultNoteWorkflowSettings } from "../shared/note-workflows";
@@ -3366,7 +3366,7 @@ function registerIpcHandlers(): void {
     (_event, targetId: unknown, binding: unknown) => {
       if (
         typeof targetId !== "string" ||
-        !isShortcutTargetId(targetId) ||
+        !isKeyBindingTargetId(targetId) ||
         (binding !== null && typeof binding !== "string")
       ) {
         throw new Error("Set key binding requires a known target and a string or null binding.");

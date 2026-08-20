@@ -457,6 +457,12 @@ export class PluginHost implements PluginRuntimePort {
       await this.app.workspace.waitForLayoutReadyCallbacks();
       record.summary = { ...record.summary, compatibilityLevel: 2 };
       this.record("plugin", "Plugin onload completed without an uncaught error.");
+      if (this.app.compatibility.hasUnavailableEditorExtensions(manifest.id)) {
+        this.record(
+          "runtime",
+          `${manifest.name} editor extensions are registered but unavailable in the Threadleaf editor.`,
+        );
+      }
 
       const commands = this.app.commands
         .list()

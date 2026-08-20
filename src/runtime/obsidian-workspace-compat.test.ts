@@ -24,6 +24,22 @@ describe("Obsidian compatibility workspace lifecycle", () => {
     expect(compatibility.getEditorExtensions()).toEqual([second, firstA, firstB]);
   });
 
+  it("tracks Templater editor extensions while withholding incompatible native delivery", () => {
+    const compatibility = new CompatibilityIntegrationRegistry();
+    const templater = { id: "templater" };
+    const iconize = { id: "iconize" };
+    const ordinary = { id: "ordinary" };
+
+    compatibility.registerEditorExtension("templater-obsidian", templater);
+    compatibility.registerEditorExtension("obsidian-icon-folder", iconize);
+    compatibility.registerEditorExtension("ordinary-plugin", ordinary);
+
+    expect(compatibility.getEditorExtensions()).toEqual([ordinary]);
+    expect(compatibility.hasUnavailableEditorExtensions("templater-obsidian")).toBe(true);
+    expect(compatibility.hasUnavailableEditorExtensions("obsidian-icon-folder")).toBe(true);
+    expect(compatibility.hasUnavailableEditorExtensions("ordinary-plugin")).toBe(false);
+  });
+
   it("dispatches startup callbacks and immediately runs callbacks registered after readiness", async () => {
     const workspace = new Workspace();
     const events: string[] = [];
