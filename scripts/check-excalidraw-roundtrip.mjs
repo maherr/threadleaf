@@ -1326,10 +1326,22 @@ async function runAdvancedTablesFormat(vaultId, notePath) {
     (await fs.readFile(filePath, "utf8")) === advancedTablesInitial,
     `Advanced Tables fixture was not pristine before formatting: ${notePath}`,
   );
-  await evaluate(
-    cdp,
-    `(async () => { await window.threadleaf.closePluginView(); return window.threadleaf.openNote(${JSON.stringify(notePath)}); })()`,
-  );
+  // Closing the plugin view once is not enough: another plugin can re-claim the surface right
+  // afterwards (measured: the calendar view, with the note editor left mounted at zero size while
+  // the active note was already correct). Re-close and re-open until the editor is really laid out.
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await evaluate(
+      cdp,
+      `(async () => { await window.threadleaf.closePluginView(); return window.threadleaf.openNote(${JSON.stringify(notePath)}); })()`,
+    );
+    const laidOut = await waitFor(
+      cdp,
+      `(async () => { const snapshot = await window.threadleaf.getSnapshot(); const editor = document.querySelector('.workspace-pane[data-active="true"] .cm-content'); if (!(editor instanceof HTMLElement)) return null; const bounds = editor.getBoundingClientRect(); return snapshot.workspace?.activeNote?.path === ${JSON.stringify(notePath)} && bounds.width > 100 && bounds.height > 20; })()`,
+      `Advanced Tables editor layout ${notePath}`,
+      8_000,
+    ).catch(() => null);
+    if (laidOut) break;
+  }
   await waitFor(
     cdp,
     `(async () => { const snapshot = await window.threadleaf.getSnapshot(); return snapshot.vault.id === ${JSON.stringify(vaultId)} && snapshot.workspace?.activeNote?.path === ${JSON.stringify(notePath)}; })()`,
@@ -1339,7 +1351,30 @@ async function runAdvancedTablesFormat(vaultId, notePath) {
     cdp,
     "(() => { const editor = document.querySelector('.workspace-pane[data-active=\"true\"] .cm-content'); if (!(editor instanceof HTMLElement)) return false; const bounds = editor.getBoundingClientRect(); return bounds.width > 100 && bounds.height > 20; })()",
     `Advanced Tables native editor ${notePath}`,
-  );
+  ).catch(async (error) => {
+    const diagnostic = await evaluate(
+      cdp,
+      `(async () => {
+        const snapshot = await window.threadleaf.getSnapshot();
+        const pane = document.querySelector('.workspace-pane[data-active="true"]');
+        const editor = pane?.querySelector('.cm-content');
+        const bounds = editor instanceof HTMLElement ? editor.getBoundingClientRect() : null;
+        return {
+          activePanePresent: Boolean(pane),
+          paneCount: document.querySelectorAll('.workspace-pane').length,
+          editorPresent: Boolean(editor),
+          editorBounds: bounds ? { width: bounds.width, height: bounds.height } : null,
+          anyEditors: document.querySelectorAll('.cm-content').length,
+          pluginSurfaceHidden: document.querySelector('#plugin-surface-host')?.hidden ?? null,
+          pluginSurfaceView: snapshot.pluginSurface?.viewType ?? null,
+          activeNote: snapshot.workspace?.activeNote?.path ?? null,
+        };
+      })()`,
+    ).catch(() => null);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}: ${JSON.stringify(diagnostic)}`,
+    );
+  });
   await clickSelector(cdp, '.workspace-pane[data-active="true"] .cm-content');
   await pressKey(cdp, "Home", "Home", 2);
   const commandId = "table-editor-obsidian:format-table";
@@ -2361,9 +2396,14 @@ async function verifyQuickSwitcherPlusWorkflow(vaultId, port) {
       appearanceShots[0].digest !== appearanceShots[1].digest,
       "Quick Switcher++ dark and light modal screenshots are identical.",
     );
-    await evaluate(
+    // The theme captures above re-render the suggestion list, so the item located earlier may be
+    // gone by now. A bare evaluate would return false and drop the click silently, surfacing 30s
+    // later as an unexplained navigation timeout; poll for the item and assert the click happened.
+    await waitFor(
       surface.connection,
-      `(() => { const item = [...document.querySelectorAll(${JSON.stringify(itemSelector)})].find((candidate) => candidate.textContent?.includes('Source')); if (!(item instanceof HTMLElement)) return false; item.click(); return true; })()`,
+      `(() => { const item = [...document.querySelectorAll(${JSON.stringify(itemSelector)})].find((candidate) => candidate.textContent?.includes('Source')); if (!(item instanceof HTMLElement)) return null; item.click(); return true; })()`,
+      "Quick Switcher++ Source activation",
+      10_000,
     );
   } finally {
     surface.connection.close();
