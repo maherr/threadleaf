@@ -42,6 +42,14 @@ describe("startup shell liveness contract", () => {
       "await waitForVisualFrameOrTimeout()",
       pluginSettings,
     );
+    const automaticActivation = renderer.indexOf(
+      "const activateWhenIdle = async (): Promise<void>",
+      pluginSettingsWait,
+    );
+    const automaticWait = renderer.indexOf(
+      "void waitForVisualFrameOrTimeout().then(activateWhenIdle)",
+      automaticActivation,
+    );
 
     expect(helper).toBeGreaterThanOrEqual(0);
     expect(timer).toBeGreaterThan(helper);
@@ -49,5 +57,7 @@ describe("startup shell liveness contract", () => {
     expect(pluginViewWait).toBeGreaterThan(pluginView);
     expect(pluginSettings).toBeGreaterThan(pluginViewWait);
     expect(pluginSettingsWait).toBeGreaterThan(pluginSettings);
+    expect(automaticActivation).toBeGreaterThan(pluginSettingsWait);
+    expect(automaticWait).toBeGreaterThan(automaticActivation);
   });
 });

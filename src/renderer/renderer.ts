@@ -3076,7 +3076,7 @@ function renderDocumentView(): void {
     renderReadingView();
   }
   if (plugin) {
-    window.requestAnimationFrame(() => void updatePluginSurfaceBounds());
+    void waitForVisualFrameOrTimeout().then(() => updatePluginSurfaceBounds());
   }
 }
 
@@ -4618,7 +4618,7 @@ async function runCompatibilityCommand(commandId: string): Promise<void> {
     if (snapshot.pluginSurface) {
       documentViewMode = "plugin";
       renderDocumentView();
-      window.requestAnimationFrame(() => void updatePluginSurfaceBounds());
+      void waitForVisualFrameOrTimeout().then(() => updatePluginSurfaceBounds());
     }
     showToast(snapshot.notices.at(-1) ?? "Command completed.");
     return snapshot;
@@ -11643,11 +11643,11 @@ function render(snapshot: RuntimeSnapshot): void {
     pluginSettingsTargetId === null
   ) {
     const request = ++pluginDocumentActivationRequest;
-    const activateWhenIdle = (): void => {
+    const activateWhenIdle = async (): Promise<void> => {
       if (request !== pluginDocumentActivationRequest) return;
       if (busy) {
-        window.requestAnimationFrame(activateWhenIdle);
-        return;
+        await waitForVisualFrameOrTimeout();
+        return activateWhenIdle();
       }
       const currentPluginFile = workspacePaneSnapshot(activePaneContextId)?.activePluginFile;
       const currentViewType = currentPluginFile
@@ -11663,7 +11663,7 @@ function render(snapshot: RuntimeSnapshot): void {
         void activatePluginView();
       }
     };
-    window.requestAnimationFrame(activateWhenIdle);
+    void waitForVisualFrameOrTimeout().then(activateWhenIdle);
   } else {
     pluginDocumentActivationRequest += 1;
   }
