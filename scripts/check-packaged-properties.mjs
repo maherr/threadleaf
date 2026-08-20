@@ -145,12 +145,14 @@ async function evaluate(expression) {
 }
 
 async function waitForWorkspace(deadline) {
+  let lastState = null;
   while (Date.now() < deadline) {
     const state = await evaluate(`(async () => ({
       runtimeState: document.querySelector('#runtime-state')?.textContent ?? '',
       addDisabled: document.querySelector('#property-add')?.disabled ?? true,
       snapshot: await window.threadleaf.getSnapshot(),
     }))()`);
+    lastState = state;
     if (
       state.runtimeState === "Ready" &&
       state.snapshot?.workspace?.state === "ready" &&
@@ -162,7 +164,9 @@ async function waitForWorkspace(deadline) {
     }
     await delay(50);
   }
-  throw new Error("The packaged application did not restore the writable property fixture.");
+  throw new Error(
+    `The packaged application did not restore the writable property fixture: ${JSON.stringify(lastState)}`,
+  );
 }
 
 async function waitForDialog(open, deadline) {

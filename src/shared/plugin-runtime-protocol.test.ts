@@ -55,6 +55,12 @@ describe("plugin renderer protocol", () => {
       accessibilityCss: ":root { --accessibility: 1; }",
       accessibility,
     });
+    expect(
+      parsePluginRendererEnvironment({
+        ...environment,
+        accessibility: { ...accessibility, accent: "violet" },
+      }).accessibility.accent,
+    ).toBe("violet");
     expect(() =>
       parsePluginRendererEnvironment({
         vaultId: "a".repeat(64),

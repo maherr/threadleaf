@@ -1,4 +1,7 @@
-import type { EffectiveAccessibilityPreferences } from "./accessibility-preferences";
+import {
+  accessibilityAccentChoices,
+  type EffectiveAccessibilityPreferences,
+} from "./accessibility-preferences";
 import type { PluginEditorContext, RuntimeSnapshot } from "./contracts";
 import type { PluginConstructionDispatch } from "./plugins";
 
@@ -79,7 +82,9 @@ function parseEffectiveAccessibility(value: unknown): EffectiveAccessibilityPref
     typeof value.highContrast !== "boolean" ||
     typeof value.reducedMotion !== "boolean" ||
     typeof value.reducedTransparency !== "boolean" ||
-    !["blue", "teal", "orange"].includes(value.accent as string)
+    !accessibilityAccentChoices.includes(
+      value.accent as EffectiveAccessibilityPreferences["accent"],
+    )
   ) {
     throw new Error("Plugin renderer environment accessibility flags are malformed.");
   }
