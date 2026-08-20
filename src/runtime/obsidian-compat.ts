@@ -693,6 +693,7 @@ export class Vault extends Events {
   private readonly configOverrides = new Map<string, unknown>();
   private configWriteTail: Promise<void> = Promise.resolve();
   private readerFiles: TFile[] | null = null;
+  private readerFolders: Set<string> | null = null;
   private readerInitialization: Promise<void> | null = null;
 
   constructor(rootPath: string, reader?: VaultReadPort, writer?: CompatibilityVaultWritePort) {
@@ -716,10 +717,7 @@ export class Vault extends Events {
     }
     this.readerInitialization = (async () => {
       const paths = await this.#reader?.listMarkdownPaths();
-      const now = Date.now();
-      this.readerFiles = (paths ?? []).map(
-        (filePath) => new TFile(filePath, this, { ctime: now, mtime: now, size: 0 }),
-      );
+      this.replaceReaderFiles(paths ?? []);
     })();
     try {
       await this.readerInitialization;
@@ -730,10 +728,17 @@ export class Vault extends Events {
 
   async seedMarkdownPaths(paths: readonly string[]): Promise<void> {
     await this.readerInitialization;
-    const now = Date.now();
-    this.readerFiles = paths.map(
-      (filePath) => new TFile(filePath, this, { ctime: now, mtime: now, size: 0 }),
-    );
+    this.replaceReaderFiles(paths);
+  }
+
+  rememberFolderPath(folderPath: string): void {
+    if (!this.readerFolders) return;
+    let current = normalizePath(folderPath);
+    this.readerFolders.add("");
+    while (current && current !== ".") {
+      this.readerFolders.add(current);
+      current = path.posix.dirname(current);
+    }
   }
 
   on(name: string, callback: VaultEventCallback, context?: unknown): VaultEventRef {
@@ -885,6 +890,7 @@ export class Vault extends Events {
       }
       if (
         normalized === "" ||
+        this.readerFolders?.has(normalized) === true ||
         this.readerFiles.some((candidate) => candidate.path.startsWith(`${normalized}/`))
       ) {
         return this.folderForPath(normalized);
@@ -1190,6 +1196,7 @@ export class Vault extends Events {
         mtime: now,
         size: Buffer.byteLength(content, "utf8"),
       });
+    this.rememberReaderFile(file);
     this.revisions.set(file.path, outcome.revision);
     this.trigger("create", file);
     return file;
@@ -1226,6 +1233,7 @@ export class Vault extends Events {
         mtime: now,
         size: content.byteLength,
       });
+    this.rememberReaderFile(file);
     this.revisions.set(file.path, outcome.revision);
     this.trigger("create", file);
     return file;
@@ -1246,6 +1254,7 @@ export class Vault extends Events {
       );
     }
     const folder = this.folderForPath(outcome.path);
+    this.rememberFolderPath(outcome.path);
     if (outcome.created) {
       this.trigger("create", folder);
     }
@@ -1302,6 +1311,7 @@ export class Vault extends Events {
       mutableFile.extension.length > 0
         ? mutableFile.name.slice(0, -(mutableFile.extension.length + 1))
         : mutableFile.name;
+    this.rememberReaderParentFolders(targetPath);
     this.trigger("rename", file, sourcePath);
   }
 
@@ -1345,7 +1355,32 @@ export class Vault extends Events {
       throw new Error(`Plugin trash conflict for ${sourcePath}: ${outcome.reason}.`);
     }
     this.revisions.delete(sourcePath);
+    if (this.readerFiles) {
+      this.readerFiles = this.readerFiles.filter((candidate) => candidate !== file);
+    }
     this.trigger("delete", file);
+  }
+
+  private replaceReaderFiles(paths: readonly string[]): void {
+    const now = Date.now();
+    this.readerFiles = paths.map(
+      (filePath) => new TFile(filePath, this, { ctime: now, mtime: now, size: 0 }),
+    );
+    this.readerFolders = new Set([""]);
+    for (const filePath of paths) this.rememberReaderParentFolders(filePath);
+  }
+
+  private rememberReaderFile(file: TFile): void {
+    if (!this.readerFiles) return;
+    if (!this.readerFiles.some((candidate) => candidate.path === file.path)) {
+      this.readerFiles.push(file);
+      this.readerFiles.sort((left, right) => left.path.localeCompare(right.path));
+    }
+    this.rememberReaderParentFolders(file.path);
+  }
+
+  private rememberReaderParentFolders(filePath: string): void {
+    this.rememberFolderPath(path.posix.dirname(normalizePath(filePath)));
   }
 
   async waitForSettledMutations(quietMs = 75, timeoutMs = 5_000): Promise<void> {
@@ -3319,6 +3354,7 @@ export class App {
   }
 
   setDailyNoteOptions(options: { folder: string; format: string; template: string | null }): void {
+    this.vault.rememberFolderPath(options.folder);
     const dailyNotes = this.internalPlugins.plugins["daily-notes"];
     dailyNotes.enabled = true;
     dailyNotes.instance = {

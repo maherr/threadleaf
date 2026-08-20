@@ -3296,7 +3296,10 @@ async function activatePluginView(): Promise<void> {
     await updatePluginSurfaceBounds();
     await ensurePluginLayoutReady();
     const snapshot = await window.threadleaf.openPluginView(viewType, filePath);
-    if (request !== pluginSurfaceRequest || documentViewMode !== "plugin") {
+    if (request !== pluginSurfaceRequest) {
+      return;
+    }
+    if (documentViewMode !== "plugin") {
       await window.threadleaf.closePluginView();
       return;
     }
@@ -3347,11 +3350,10 @@ async function activatePluginSettings(pluginId: string): Promise<void> {
     await updatePluginSurfaceBounds();
     await ensurePluginLayoutReady();
     const snapshot = await window.threadleaf.openPluginSettings(pluginId);
-    if (
-      request !== pluginSurfaceRequest ||
-      documentViewMode !== "plugin" ||
-      pluginSettingsTargetId !== pluginId
-    ) {
+    if (request !== pluginSurfaceRequest) {
+      return;
+    }
+    if (documentViewMode !== "plugin" || pluginSettingsTargetId !== pluginId) {
       await window.threadleaf.closePluginView();
       return;
     }

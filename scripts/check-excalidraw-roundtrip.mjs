@@ -1042,6 +1042,19 @@ async function connectPluginSurfaceBySelector(
   timeout = 30_000,
   requirePointerHit = true,
 ) {
+  if (compatibilityTopology === "trusted-workspace") {
+    const bounds = await waitFor(
+      cdp,
+      `(() => { const element = document.querySelector(${JSON.stringify(selector)}); if (!(element instanceof HTMLElement)) return null; const bounds = element.getBoundingClientRect(); if (!${JSON.stringify(requirePointerHit)}) return { width: bounds.width, height: bounds.height }; const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2); return bounds.width > 0 && bounds.height > 0 && hit ? { width: bounds.width, height: bounds.height } : null; })()`,
+      label,
+      timeout,
+    );
+    return {
+      connection: { close: () => undefined, send: (...args) => cdp.send(...args) },
+      target: { id: mainTargetId, url: "trusted-workspace" },
+      bounds,
+    };
+  }
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     const targets = (await cdpTargets(port).catch(() => [])).filter(

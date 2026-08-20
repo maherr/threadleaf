@@ -11,6 +11,7 @@ import {
   optionalPayloadString,
   optionalPluginEditorContext,
   optionalPluginMutationWaitOptions,
+  type PluginRendererEnvironment,
   type PluginRendererRequest,
   type PluginRendererResponse,
   type PluginVaultCreateBinaryResponse,
@@ -30,6 +31,7 @@ import {
   requirePluginEditorSuggestItemIndex,
   requirePluginEditorSuggestSessionId,
   requirePluginEditorSuggestShiftKey,
+  requirePluginRendererEnvironment,
 } from "../shared/plugin-runtime-protocol";
 import { type TrustedHostModuleTable, trustedHostModules } from "./trusted-host-modules";
 
@@ -62,10 +64,13 @@ interface TrustedPluginHostFactory {
 }
 
 interface PluginHostLike {
-  app: unknown;
+  app: {
+    setDailyNoteOptions(options: { folder: string; format: string; template: string | null }): void;
+    workspace: { trigger(name: string): void };
+  };
   close(): Promise<void>;
   closePluginView(): Promise<unknown>;
-  getSnapshot(): Promise<unknown>;
+  getSnapshot(): Promise<RuntimeSnapshot>;
   loadAuthorizedPlugin(dispatch: unknown): Promise<unknown>;
   markLayoutReady(): Promise<unknown>;
   openPluginSettings(pluginId: string): Promise<unknown>;
@@ -239,6 +244,7 @@ function createModuleResolver(
 }
 
 class TrustedPluginRendererService {
+  private environment: PluginRendererEnvironment | null = null;
   private host: PluginHostLike | null = null;
   private restoreCompatibilityGlobals: (() => void) | null = null;
   private restoreTrustedWorkspaceProbe: (() => void) | null = null;
@@ -277,6 +283,58 @@ class TrustedPluginRendererService {
         this.restoreCompatibilityGlobals = this.installCompatibilityGlobals(this.host);
         this.restoreTrustedWorkspaceProbe = installTrustedWorkspaceProbe();
         return this.host.getSnapshot();
+      }
+      case "apply-environment": {
+        const host = this.requireHost();
+        const environment = requirePluginRendererEnvironment(request);
+        if (
+          this.environment &&
+          (this.environment.vaultId !== environment.vaultId ||
+            this.environment.vaultGeneration !== environment.vaultGeneration)
+        ) {
+          throw new Error(
+            "Trusted plugin environment identity changed while the renderer was bound.",
+          );
+        }
+        if (this.environment && environment.sequence <= this.environment.sequence) {
+          return {
+            ...(await host.getSnapshot()),
+            pluginEnvironment: {
+              status: "stale",
+              vaultId: environment.vaultId,
+              vaultGeneration: environment.vaultGeneration,
+              sequence: environment.sequence,
+              cssChangeTriggered: false,
+            },
+          };
+        }
+        const initial = this.environment === null;
+        const noteWorkflowsChanged =
+          this.environment !== null &&
+          JSON.stringify(this.environment.noteWorkflows) !==
+            JSON.stringify(environment.noteWorkflows);
+        host.app.setDailyNoteOptions({
+          folder: environment.noteWorkflows.dailyNoteFolder,
+          format: environment.noteWorkflows.dailyNoteDateFormat,
+          template: environment.noteWorkflows.dailyNoteTemplate,
+        });
+        this.environment = structuredClone(environment);
+        if (!initial) {
+          host.app.workspace.trigger("css-change");
+        }
+        if (noteWorkflowsChanged) {
+          host.app.workspace.trigger("periodic-notes:settings-updated");
+        }
+        return {
+          ...(await host.getSnapshot()),
+          pluginEnvironment: {
+            status: "applied",
+            vaultId: environment.vaultId,
+            vaultGeneration: environment.vaultGeneration,
+            sequence: environment.sequence,
+            cssChangeTriggered: !initial,
+          },
+        };
       }
       case "get-snapshot":
         return this.requireHost().getSnapshot();
@@ -360,6 +418,7 @@ class TrustedPluginRendererService {
   async close(): Promise<void> {
     const host = this.host;
     this.host = null;
+    this.environment = null;
     try {
       await host?.close();
     } finally {

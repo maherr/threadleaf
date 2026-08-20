@@ -403,6 +403,7 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
 
   closePluginView(): Promise<RuntimeSnapshot> {
     return this.enqueue(async () => {
+      await this.refreshSlotSnapshots();
       const entries = [...this.slots.entries()].filter(
         ([, slot]) => pluginSurfaceRegion(slot.snapshot.pluginSurface) !== "right-dock",
       );
@@ -589,6 +590,7 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
     ownerId: string,
     region: "main-document" | "right-dock",
   ): Promise<void> {
+    await this.refreshSlotSnapshots();
     const entries = [...this.slots.entries()].filter(
       ([pluginId, slot]) =>
         pluginId !== ownerId && pluginSurfaceRegion(slot.snapshot.pluginSurface) === region,
@@ -605,6 +607,10 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
     if (failure) {
       throw failure.reason;
     }
+  }
+
+  private async refreshSlotSnapshots(): Promise<void> {
+    await this.updateEverySlot((slot) => slot.runtime.getSnapshot());
   }
 
   private async updateEverySlot(

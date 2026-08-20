@@ -1988,37 +1988,6 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
       });
       const trustedWorkspace = trustedWorkspaceEnabledForVault(vaultId);
       await ensureMainWindowTopology(trustedWorkspace, trustedWorkspace);
-      if (trustedWorkspace) {
-        if (!vault) {
-          throw new Error("Trusted workspace compatibility requires the kernel read port.");
-        }
-        activeTrustedWorkspaceReadPort = {
-          vaultPath,
-          getName: () => vault.getName(),
-          listMarkdownPaths: (relativeDirectory) => vault.listMarkdownPaths(relativeDirectory),
-          readText: (relativePath) => vault.readText(relativePath),
-        };
-        if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
-          throw new Error("Trusted workspace compatibility requires a live main renderer.");
-        }
-        try {
-          const runtime = await TrustedWorkspacePluginRuntime.open(mainWindow.webContents, {
-            attachTrustedPackageFiles,
-            constructionPolicyResolver,
-            hostFactoryPath: join(__dirname, "trusted-plugin-host.cjs"),
-            packageJsonPath: join(app.getAppPath(), "package.json"),
-            vaultPath,
-            ...(pluginOperationTimeout ? { operationTimeoutMs: pluginOperationTimeout } : {}),
-          });
-          activeTrustedWorkspaceRuntime = runtime;
-          return runtime;
-        } catch (error) {
-          activeTrustedWorkspaceReadPort = null;
-          throw error;
-        }
-      }
-      activeTrustedWorkspaceRuntime = null;
-      activeTrustedWorkspaceReadPort = null;
       const managedPackages = await pluginPackageManager.getManagedPackages(vaultPath, vaultId);
       const blockedPluginIds = new Set(
         managedPackages
@@ -2048,6 +2017,50 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
         pluginCss: surfaceCatalog.css,
       });
       pluginSurfaceEnvironmentBridges.set(vaultId, pluginSurfaceEnvironmentBridge);
+      if (trustedWorkspace) {
+        if (!vault) {
+          throw new Error("Trusted workspace compatibility requires the kernel read port.");
+        }
+        activeTrustedWorkspaceReadPort = {
+          vaultPath,
+          getName: () => vault.getName(),
+          listMarkdownPaths: (relativeDirectory) => vault.listMarkdownPaths(relativeDirectory),
+          readText: (relativePath) => vault.readText(relativePath),
+        };
+        if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+          throw new Error("Trusted workspace compatibility requires a live main renderer.");
+        }
+        try {
+          const runtime = await TrustedWorkspacePluginRuntime.open(mainWindow.webContents, {
+            attachTrustedPackageFiles,
+            constructionPolicyResolver,
+            hostFactoryPath: join(__dirname, "trusted-plugin-host.cjs"),
+            packageJsonPath: join(app.getAppPath(), "package.json"),
+            vaultPath,
+            ...(pluginOperationTimeout ? { operationTimeoutMs: pluginOperationTimeout } : {}),
+          });
+          try {
+            await pluginSurfaceEnvironmentBridge.register(
+              {
+                id: `runtime:${vaultId}`,
+                isDestroyed: () => runtime.isClosed(),
+                applyEnvironment: (environment) => runtime.applyEnvironment(environment),
+              },
+              { vaultId, vaultGeneration: authoritySession.vaultGeneration },
+            );
+          } catch (error) {
+            await runtime.close().catch(() => undefined);
+            throw error;
+          }
+          activeTrustedWorkspaceRuntime = runtime;
+          return runtime;
+        } catch (error) {
+          activeTrustedWorkspaceReadPort = null;
+          throw error;
+        }
+      }
+      activeTrustedWorkspaceRuntime = null;
+      activeTrustedWorkspaceReadPort = null;
       const isolatedRuntime = await IsolatedPluginRuntime.open({
         create: () =>
           RecoveringPluginRuntime.open({

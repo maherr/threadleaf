@@ -471,13 +471,13 @@ export class Workspace extends Events {
 
   iterateAllLeaves(callback: (leaf: WorkspaceLeaf) => unknown): void {
     for (const leaf of this.leaves) {
-      callback(leaf);
+      if (leaf.view !== null) callback(leaf);
     }
   }
 
   iterateRootLeaves(callback: (leaf: WorkspaceLeaf) => unknown): void {
     for (const leaf of this.leaves) {
-      if (!this.leftLeaves.has(leaf) && !this.rightLeaves.has(leaf)) {
+      if (leaf.view !== null && !this.leftLeaves.has(leaf) && !this.rightLeaves.has(leaf)) {
         callback(leaf);
       }
     }
@@ -1608,6 +1608,12 @@ export class CompatibilityIntegrationRegistry {
       throw new Error(`View type is not registered: ${type}`);
     }
     return registration.creator(leaf);
+  }
+
+  getViewTypesForOwner(ownerId: string): string[] {
+    return [...this.views.values()]
+      .filter((registration) => registration.ownerId === ownerId)
+      .map((registration) => registration.type);
   }
 
   getViewTypeForExtension(extension: string): string | null {

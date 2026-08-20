@@ -11,6 +11,7 @@ import type {
   RuntimeSnapshot,
 } from "../shared/contracts";
 import {
+  type PluginRendererEnvironment,
   type PluginRendererOperation,
   type PluginRendererRequest,
   type PluginRendererResponse,
@@ -93,6 +94,14 @@ export class TrustedWorkspacePluginRuntime implements PluginRuntimePort {
 
   getSnapshot(): Promise<RuntimeSnapshot> {
     return this.requestSnapshot("get-snapshot");
+  }
+
+  isClosed(): boolean {
+    return this.closed;
+  }
+
+  applyEnvironment(environment: PluginRendererEnvironment): Promise<RuntimeSnapshot> {
+    return this.requestSnapshot("apply-environment", { environment });
   }
 
   closePluginView(): Promise<RuntimeSnapshot> {

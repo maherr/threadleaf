@@ -2179,6 +2179,7 @@ export class WorkspaceLeaf extends WorkspaceItem {
     this.tabHeaderInnerTitleEl = currentDocument().createElement("div");
     this.tabHeaderInnerTitleEl.className = "workspace-tab-header-inner-title";
     this.releaseWorkspaceRegistration = app.workspace.registerLeaf(this);
+    this.view = new EmptyView(this);
   }
 
   getViewState(): WorkspaceViewState & { type: string; state: Record<string, unknown> } {
@@ -2203,6 +2204,7 @@ export class WorkspaceLeaf extends WorkspaceItem {
     };
     this.ephemeralState = {};
     if (viewState.type === "empty") {
+      this.view = new EmptyView(this);
       return;
     }
     const candidate =
@@ -2244,10 +2246,10 @@ export class WorkspaceLeaf extends WorkspaceItem {
     const compatibilityExtension = file.path.toLocaleLowerCase("en-US").endsWith(".excalidraw.md")
       ? "excalidraw"
       : file.extension;
+    const currentViewType = this.view?.getViewType();
     const viewType =
       this.app.compatibility.getViewTypeForExtension(compatibilityExtension) ??
-      this.view?.getViewType() ??
-      "markdown";
+      (currentViewType && currentViewType !== "empty" ? currentViewType : "markdown");
     await this.setViewState({
       type: viewType,
       state: {
@@ -2485,6 +2487,16 @@ export class View extends Component {
   onResize(): void {}
 
   onPaneMenu(..._args: unknown[]): void {}
+}
+
+export class EmptyView extends View {
+  override getViewType(): string {
+    return "empty";
+  }
+
+  override getDisplayText(): string {
+    return "Empty";
+  }
 }
 
 export class ItemView extends View {

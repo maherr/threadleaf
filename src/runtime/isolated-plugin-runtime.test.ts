@@ -431,6 +431,23 @@ describe("IsolatedPluginRuntime", () => {
     );
     expect(created[1]?.surface).toMatchObject({ viewType: "beta-view" });
 
+    if (created[0]) {
+      created[0].surface = {
+        displayText: "Late alpha sidebar",
+        filePath: null,
+        region: "right-dock",
+        viewType: "alpha-sidebar",
+      };
+    }
+    const alphaCloseView = vi.spyOn(created[0] as FakeIsolatedRuntime, "closePluginView");
+    const betaCloseView = vi.spyOn(created[1] as FakeIsolatedRuntime, "closePluginView");
+    const afterDocumentClose = await runtime.closePluginView();
+    expect(alphaCloseView).not.toHaveBeenCalled();
+    expect(betaCloseView).toHaveBeenCalledOnce();
+    expect(afterDocumentClose.pluginSurfaces).toEqual([
+      expect.objectContaining({ region: "right-dock", viewType: "alpha-sidebar" }),
+    ]);
+
     await runtime.markLayoutReady();
     expect(created[0]?.markLayoutReady).toHaveBeenCalledOnce();
     expect(created[1]?.markLayoutReady).toHaveBeenCalledOnce();

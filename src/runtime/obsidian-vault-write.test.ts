@@ -232,6 +232,43 @@ describe("Obsidian compatibility vault writes", () => {
     expect(await fs.readFile(path.join(rootPath, file.path), "utf8")).toBe("drawing bytes");
   });
 
+  it("keeps trusted reader inventory current after plugin-created files", async () => {
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-trusted-vault-create-"));
+    temporaryDirectories.push(rootPath);
+    const template = "# Daily\n";
+    const templateRevision = revisionOf(Buffer.from(template, "utf8"));
+    const reader = {
+      getName: () => "trusted-vault",
+      listMarkdownPaths: vi.fn(async () => ["Templates/Daily.md"]),
+      readText: vi.fn(async (filePath: string) => ({
+        path: filePath,
+        content: template,
+        revision: templateRevision,
+        size: Buffer.byteLength(template, "utf8"),
+      })),
+    };
+    const writer = {
+      createText: vi.fn(async (filePath: string, content: string) => ({
+        status: "committed" as const,
+        path: filePath,
+        revision: revisionOf(Buffer.from(content, "utf8")),
+        transactionId: "trusted-created-file",
+      })),
+      writeText: vi.fn(),
+    };
+    const vault = new Vault(rootPath, reader, writer);
+    await vault.initialize();
+    vault.rememberFolderPath("Journal");
+
+    expect(vault.getFolderByPath("Journal")?.path).toBe("Journal");
+    const created = await vault.create("Journal/2026-08-20.md", "created");
+    expect(vault.getFileByPath(created.path)).toBe(created);
+    expect(vault.getFiles().map(({ path: filePath }) => filePath)).toEqual([
+      "Journal/2026-08-20.md",
+      "Templates/Daily.md",
+    ]);
+  });
+
   it("refuses plugin create overwrites and reports retained create conflicts", async () => {
     const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-vault-create-"));
     temporaryDirectories.push(rootPath);

@@ -23,6 +23,7 @@ import type {
   PluginEditorUpdate,
   PluginMutationWaitOptions,
   PluginSummary,
+  PluginSurfaceSnapshot,
   RuntimeEvent,
   RuntimeEventKind,
   RuntimeSnapshot,
@@ -321,7 +322,7 @@ export class PluginHost implements PluginRuntimePort {
       if (process.env.THREADLEAF_PLUGIN_E2E_DIAGNOSTICS === "1") {
         console.error(
           `Compatibility plugin layout-ready callback failed: ${this.lastPluginId}`,
-          error,
+          error instanceof Error ? (error.stack ?? error.message) : error,
         );
       }
       this.record("error", createPluginDiagnostic("runtime-load-failed").message);
@@ -1018,17 +1019,17 @@ export class PluginHost implements PluginRuntimePort {
         : "Plugin";
       this.record("runtime", `Closed ${pluginName} settings.`);
     }
-    const leaves: WorkspaceLeaf[] = [];
-    this.app.workspace.iterateAllLeaves((leaf) => {
-      if (leaf instanceof WorkspaceLeaf) {
-        leaves.push(leaf);
-      }
-    });
+    const leaves = this.pluginLeaves().filter(
+      (leaf) => this.app.workspace.getLeafRegion(leaf) !== "right-dock",
+    );
     const viewType =
-      (this.app.workspace.activeLeaf instanceof WorkspaceLeaf
-        ? this.app.workspace.activeLeaf.view?.getViewType()
-        : this.activePluginLeaf?.view?.getViewType()) ?? "unknown";
-    this.activePluginLeaf = null;
+      leaves.findLast((leaf) => leaf.view !== null)?.view?.getViewType() ?? "unknown";
+    if (
+      this.activePluginLeaf &&
+      this.app.workspace.getLeafRegion(this.activePluginLeaf) !== "right-dock"
+    ) {
+      this.activePluginLeaf = null;
+    }
     if (leaves.length > 0) {
       for (const leaf of leaves.reverse()) {
         await leaf.detach();
@@ -1043,9 +1044,30 @@ export class PluginHost implements PluginRuntimePort {
     return this.getSnapshot();
   }
 
-  private mountPluginSurfaceContainer(container: HTMLElement): void {
+  private pluginLeaves(): WorkspaceLeaf[] {
+    const leaves: WorkspaceLeaf[] = [];
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      if (leaf instanceof WorkspaceLeaf) leaves.push(leaf);
+    });
+    return leaves;
+  }
+
+  private async closePluginLeavesByViewType(viewTypes: ReadonlySet<string>): Promise<void> {
+    const leaves = this.pluginLeaves().filter((leaf) => {
+      const viewType = leaf.view?.getViewType();
+      return viewType ? viewTypes.has(viewType) : false;
+    });
+    for (const leaf of leaves.reverse()) await leaf.detach();
+  }
+
+  private mountPluginSurfaceContainer(
+    container: HTMLElement,
+    region: "main-document" | "right-dock" = "main-document",
+  ): void {
     container.classList.add("threadleaf-plugin-surface");
-    const visibleHost = document.getElementById("plugin-surface-host");
+    const visibleHost = document.getElementById(
+      region === "right-dock" ? "plugin-dock-surface-host" : "plugin-surface-host",
+    );
     if (!visibleHost) {
       document.body.append(container);
       return;
@@ -1067,6 +1089,9 @@ export class PluginHost implements PluginRuntimePort {
     if (!record || record.summary.state === "unloaded") {
       return this.getSnapshot();
     }
+    await this.closePluginLeavesByViewType(
+      new Set(this.app.compatibility.getViewTypesForOwner(record.summary.id)),
+    );
     if (this.activeEditorSuggestSession?.ownerId === targetId) {
       this.clearEditorSuggestSession();
     }
@@ -1155,26 +1180,73 @@ export class PluginHost implements PluginRuntimePort {
     const workspaceActiveLeaf =
       this.app.workspace.activeLeaf instanceof WorkspaceLeaf ? this.app.workspace.activeLeaf : null;
     const workspaceActiveViewType = workspaceActiveLeaf?.view?.getViewType() ?? "empty";
+    const workspaceActiveRegion = workspaceActiveLeaf
+      ? this.app.workspace.getLeafRegion(workspaceActiveLeaf)
+      : null;
     const activeDocumentPluginLeaf =
       workspaceActiveLeaf === this.nativeMarkdownLeaf
         ? null
         : workspaceActiveLeaf &&
+            workspaceActiveRegion === "main-document" &&
             workspaceActiveViewType !== "empty" &&
             workspaceActiveViewType !== "markdown"
           ? workspaceActiveLeaf
-          : this.activePluginLeaf;
+          : this.activePluginLeaf &&
+              this.app.workspace.getLeafRegion(this.activePluginLeaf) === "main-document"
+            ? this.activePluginLeaf
+            : null;
     const activeRightPluginLeaf = this.app.workspace
       .getLeavesInRegion("right-dock")
       .findLast((leaf) => leaf.view !== null);
-    const activePluginLeaf = activeDocumentPluginLeaf ?? activeRightPluginLeaf ?? null;
-    const activePluginViewState = activePluginLeaf?.getViewState().state;
-    const activePluginFilePath =
-      activePluginLeaf?.view instanceof FileView && activePluginLeaf.view.file
-        ? activePluginLeaf.view.file.path
-        : typeof activePluginViewState?.file === "string" && activePluginViewState.file.length > 0
-          ? activePluginViewState.file
-          : null;
+    if (activeDocumentPluginLeaf) {
+      this.mountPluginSurfaceContainer(activeDocumentPluginLeaf.containerEl, "main-document");
+    }
+    if (activeRightPluginLeaf) {
+      this.mountPluginSurfaceContainer(activeRightPluginLeaf.containerEl, "right-dock");
+    }
+    const surfaceForLeaf = (
+      leaf: WorkspaceLeaf | null | undefined,
+      region: "main-document" | "right-dock",
+    ): PluginSurfaceSnapshot | null => {
+      if (!leaf?.view) return null;
+      const viewState = leaf.getViewState().state;
+      const filePath =
+        leaf.view instanceof FileView && leaf.view.file
+          ? leaf.view.file.path
+          : typeof viewState?.file === "string" && viewState.file.length > 0
+            ? viewState.file
+            : null;
+      return {
+        displayText: leaf.view.getDisplayText(),
+        filePath,
+        region,
+        viewType: leaf.view.getViewType(),
+      };
+    };
     const activeModalPluginId = this.app.activePluginModalOwnerId();
+    const mainPluginSurface: PluginSurfaceSnapshot | null =
+      this.activeSettingTab && this.activeSettingTabPluginId
+        ? {
+            displayText: `${this.plugins.get(this.activeSettingTabPluginId)?.summary.name ?? this.activeSettingTabPluginId} settings`,
+            filePath: null,
+            region: "main-document",
+            viewType: "threadleaf-plugin-settings",
+          }
+        : activeModalPluginId
+          ? {
+              displayText: `${this.plugins.get(activeModalPluginId)?.summary.name ?? activeModalPluginId} dialog`,
+              filePath: null,
+              region: "main-document",
+              viewType: "threadleaf-plugin-modal",
+            }
+          : surfaceForLeaf(activeDocumentPluginLeaf, "main-document");
+    const rightPluginSurface =
+      activeRightPluginLeaf === activeDocumentPluginLeaf
+        ? null
+        : surfaceForLeaf(activeRightPluginLeaf, "right-dock");
+    const pluginSurfaces = [mainPluginSurface, rightPluginSurface].filter(
+      (surface): surface is PluginSurfaceSnapshot => surface !== null,
+    );
     return {
       vault: {
         id: null,
@@ -1200,32 +1272,8 @@ export class PluginHost implements PluginRuntimePort {
       editorUpdate: this.editorUpdate ? structuredClone(this.editorUpdate) : null,
       editorEvent: this.editorEvent ? { ...this.editorEvent } : null,
       editorSuggest: this.editorSuggest ? structuredClone(this.editorSuggest) : null,
-      pluginSurface:
-        this.activeSettingTab && this.activeSettingTabPluginId
-          ? {
-              displayText: `${this.plugins.get(this.activeSettingTabPluginId)?.summary.name ?? this.activeSettingTabPluginId} settings`,
-              filePath: null,
-              region: "main-document",
-              viewType: "threadleaf-plugin-settings",
-            }
-          : activeModalPluginId
-            ? {
-                displayText: `${this.plugins.get(activeModalPluginId)?.summary.name ?? activeModalPluginId} dialog`,
-                filePath: null,
-                region: "main-document",
-                viewType: "threadleaf-plugin-modal",
-              }
-            : activePluginLeaf?.view && activePluginLeaf !== this.nativeMarkdownLeaf
-              ? {
-                  displayText: activePluginLeaf.view.getDisplayText(),
-                  filePath: activePluginFilePath,
-                  region:
-                    this.app.workspace.getLeafRegion(activePluginLeaf) === "right-dock"
-                      ? "right-dock"
-                      : "main-document",
-                  viewType: activePluginLeaf.view.getViewType(),
-                }
-              : null,
+      pluginSurface: mainPluginSurface ?? rightPluginSurface,
+      pluginSurfaces,
     };
   }
 

@@ -199,6 +199,7 @@ describe("Obsidian workspace compatibility wedge", () => {
         state: { seed: true },
         type: "empty",
       });
+      expect(duplicate.view?.getViewType()).toBe("empty");
       expect(splitDuplicate.getViewState()).toMatchObject({
         state: { seed: true },
         type: "empty",

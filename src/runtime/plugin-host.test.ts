@@ -992,9 +992,10 @@ module.exports = class HostModulePlugin extends Plugin {
   it("provides UI base classes and releases registered integrations on unload", async () => {
     const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-ui-api-"));
     const vaultPath = path.join(sandboxPath, "vault");
-    const dom = new JSDOM("<!doctype html><body><div id='plugin-surface-host'></div></body>", {
-      url: "https://threadleaf.invalid/",
-    });
+    const dom = new JSDOM(
+      "<!doctype html><body><div id='plugin-surface-host'></div><div id='plugin-dock-surface-host'></div></body>",
+      { url: "https://threadleaf.invalid/" },
+    );
     const previousWindow = globalThis.window;
     const previousDocument = globalThis.document;
     const previousElement = globalThis.Element;
@@ -1098,11 +1099,26 @@ module.exports = class UiApiPlugin extends Plugin {
       expect(dom.window.eval("window.__threadleafSettingsHides")).toBe(1);
       expect(dom.window.document.querySelector("#threadleaf-plugin-surface")).toBeNull();
 
+      const rightLeaf = host.app.workspace.getRightLeaf(false);
+      if (!rightLeaf) throw new Error("Right plugin leaf was not created.");
+      await rightLeaf.setViewState({ type: "ui-api-view" });
+      expect((await host.getSnapshot()).pluginSurfaces).toEqual([
+        expect.objectContaining({ region: "right-dock", viewType: "ui-api-view" }),
+      ]);
+      expect(rightLeaf.containerEl.parentElement?.id).toBe("plugin-dock-surface-host");
+
       const viewSnapshot = await host.openPluginView("ui-api-view", "Drawing.drawing");
       expect(viewSnapshot.pluginSurface).toMatchObject({
         filePath: "Drawing.drawing",
         viewType: "ui-api-view",
       });
+      expect(viewSnapshot.pluginSurfaces).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ region: "main-document", viewType: "ui-api-view" }),
+          expect.objectContaining({ region: "right-dock", viewType: "ui-api-view" }),
+        ]),
+      );
+      expect(host.app.workspace.getLeavesInRegion("right-dock")).toContain(rightLeaf);
       expect(
         dom.window.document.querySelector("#threadleaf-plugin-surface")?.parentElement?.id,
       ).toBe("plugin-surface-host");
@@ -1123,7 +1139,17 @@ module.exports = class UiApiPlugin extends Plugin {
           direction: "vertical",
           type: "split",
         },
-        right: { children: [], direction: "vertical", type: "split" },
+        right: {
+          children: [
+            {
+              id: expect.stringMatching(/^threadleaf-leaf-/),
+              state: { state: {}, type: "ui-api-view" },
+              type: "leaf",
+            },
+          ],
+          direction: "vertical",
+          type: "split",
+        },
       });
 
       const originalLeaf = host.app.workspace.activeLeaf;
@@ -1160,7 +1186,13 @@ module.exports = class UiApiPlugin extends Plugin {
         ).view?.getViewType(),
       ).toBe("markdown");
 
+      const closedDocument = await host.closePluginView();
+      expect(closedDocument.pluginSurfaces).toEqual([
+        expect.objectContaining({ region: "right-dock", viewType: "ui-api-view" }),
+      ]);
+
       await host.unloadPlugin();
+      expect((await host.getSnapshot()).pluginSurfaces).toEqual([]);
       expect(host.app.compatibility.snapshot()).toEqual({
         editorSuggests: 0,
         extensions: [],

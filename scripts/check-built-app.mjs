@@ -12,6 +12,7 @@ const projectRoot = path.resolve(import.meta.dirname, "..");
 const rendererDirectory = path.join(projectRoot, "dist", "renderer");
 const indexPath = path.join(rendererDirectory, "index.html");
 const html = await readFile(indexPath, "utf8");
+const trustedHtml = await readFile(path.join(rendererDirectory, "index-trusted.html"), "utf8");
 const pluginHostHtml = await readFile(path.join(rendererDirectory, "plugin-host.html"), "utf8");
 
 if (html.includes('="/assets/')) {
@@ -24,6 +25,17 @@ const assetPaths = [...html.matchAll(/(?:href|src)="(\.\/assets\/[^"]+)"/g)].map
 
 if (assetPaths.length < 2) {
   throw new Error("Built renderer must reference its JavaScript and CSS assets.");
+}
+
+if (
+  html.includes("style-src 'self' 'unsafe-inline'") ||
+  !html.includes("style-src 'self' 'nonce-threadleaf-codemirror'") ||
+  !trustedHtml.includes("style-src 'self' 'unsafe-inline'") ||
+  trustedHtml.includes("style-src 'self' 'nonce-threadleaf-codemirror'")
+) {
+  throw new Error(
+    "Trusted plugin styles must be admitted without weakening the standard renderer.",
+  );
 }
 
 if (

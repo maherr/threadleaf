@@ -42,6 +42,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Kept trusted and isolated plugin surfaces alive by workspace region, so an Excalidraw document
+  and Calendar sidebar can initialize, render, interact, and restore together. Trusted exact-bundle
+  plugins now receive the inline style capability their real interfaces require without weakening
+  the standard renderer policy.
 - Applied workspace controls directly to both editor panes and the visible workbench, including
   attachment insertion defaults, without requiring an application restart or rewriting vault
   metadata.
