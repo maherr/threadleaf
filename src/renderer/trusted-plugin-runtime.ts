@@ -1,5 +1,6 @@
 import moment from "moment";
 import type { VaultReadPort, VaultTextSnapshot } from "../kernel/ports";
+import { installLegacyCodeMirror5Global } from "../runtime/legacy-codemirror5";
 import type { CompatibilityVaultWritePort } from "../runtime/obsidian-compat";
 import { installObsidianDomCompatibility } from "../runtime/obsidian-dom";
 import type { EditorCompatibilityFields } from "../runtime/obsidian-editor-compat";
@@ -489,6 +490,7 @@ function pathIsAbsolute(value: string): boolean {
 
 if (ipcRenderer) {
   installObsidianDomCompatibility(window, globalThis);
+  installLegacyCodeMirror5Global(window);
   const service = new TrustedPluginRendererService();
   ipcRenderer.on(pluginRendererChannels.request, async (_event, value) => {
     let response: PluginRendererResponse;

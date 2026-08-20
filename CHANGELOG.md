@@ -23,6 +23,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   two bounded image fixtures and direct lightbox state tests.
 - Added a current primary-source research record for the Obsidian 1.13 settings and image seams,
   including explicit rights, reuse, and executable-proof boundaries.
+- Added an exact-package workflow for the official Dataview 0.5.68 release, including reviewed Blob
+  workers, the real CodeMirror 5 mode registry, frontmatter indexing, an in-place Reading-view
+  table with contained native file links, both themes, and an explicit disabled-plugin fallback.
 
 ### Changed
 
@@ -62,6 +65,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Extended the Excalidraw workflow to the trusted shared renderer, compound `.excalidraw.md`
   documents, native plugin-created leaves, visible hit-tested controls, settings in both themes,
   and scene-semantic persistence across vault switches and restarts.
+- Scoped settled Markdown processing to the requested plugin, waited through live render-child
+  loading before capture, and kept the captured projection behind the native Reading sanitizer.
 
 ### Fixed
 
@@ -85,6 +90,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   community plugin loads later CSS that forces every workspace leaf to display.
 - Kept plugin-owned views and settings mounted in the visible workspace instead of leaving their
   real DOM surfaces detached behind a status placeholder.
+- Preserved Dataview's strict vault-local file destinations as native Threadleaf links after generic
+  projection sanitization, without restoring arbitrary plugin-authored click authority.
 
 ## [0.1.0]
 

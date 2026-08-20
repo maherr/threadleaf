@@ -54,7 +54,7 @@ pose as a trusted native control. It is a point-in-time record of what the plugi
 live callback: no render child, timer, or DOM reference from the compatibility renderer survives
 the call.
 
-The exact evidenced instance is the established `cite` fixture identity (name `CITE`, version
+The first exact evidenced instance is the established `cite` fixture identity (name `CITE`, version
 `0.1.2`, `minAppVersion` `1.12.7`; see `src/main/plugin-package-inspection.test.ts` and
 `scripts/check-plugin-package-inspection-e2e.mjs`), reified as an independently written Markdown
 post-processor bundle at `fixtures/vaults/cite-settled-reading/.obsidian/plugins/cite/`. Native
@@ -71,6 +71,20 @@ plugin's genuine complete output rather than a selectively merged excerpt, not a
 asserted directly in `scripts/check-cite-settled-reading.mjs`, which confirms the panel's body
 contains the full note's text, not only its citation-bearing lines.
 
+The second exact evidenced instance is the official MIT-licensed Dataview `0.5.68` release. Its
+manifest, bundle, and stylesheet are fetched from the release and checked against pinned SHA-256
+identities before the disposable-vault workflow begins. The reviewed trusted-workspace profile
+admits that exact package's measured vault-read, network, editor-extension, workspace-UI, and
+dynamic-code references. The renderer provides the real MIT CodeMirror 5 `5.65.21` mode registry
+used by legacy plugins and explicitly permits reviewed same-origin and Blob workers. Dataview then
+indexes fixture frontmatter and replaces its own fenced query in native Reading view with the
+settled table instead of duplicating the whole note. The generic Reading allowlist sanitizes the
+result first; a second strict pass restores only contained vault-local Markdown destinations as
+native Threadleaf links. `pnpm test:dataview-reading` proves the indexed value, in-place table,
+resolved file link and navigation, dark and light rendering, and the explicit raw-query fallback
+when the plugin is disabled. This is evidence for that named table-query workflow, not a claim of
+full Dataview compatibility.
+
 Both `content` sent to the compatibility renderer and the settled `html` returned from it are
 bounded: inbound `content` at 2 MiB (matching the note-embed service's own per-source-note cap),
 outbound `html` at 8 MiB (matching the note-embed service's aggregate returned-Markdown budget,
@@ -81,13 +95,13 @@ crossed reports the explicit `too-large` reason rather than truncating or hangin
 `src/application/plugin-markdown-projection-service.test.ts` cover the settled render, its explicit
 failure states (including both size caps and the plugin ID/source path/content hash identity check
 that actually enforces the bound-result guarantee), and the vault/content staleness guard;
-`pnpm test:cite-settled-reading` is the packaged Electron/Xvfb proof that it renders visibly in both
-themes.
+`pnpm test:cite-settled-reading` and `pnpm test:dataview-reading` are the Electron/Xvfb proofs for
+the two named workflows and their visible theme and failure-state behavior.
 
 This slice does not claim general dynamic render-child or Live Preview/CM6 delivery for arbitrary
 community plugins, and it does not claim Tasks compatibility. Live Preview and CodeMirror 6 remain
-outside this bridge entirely (see [Live Preview compatibility](live-preview.md)); the architecture
-for a general, multi-plugin dynamic delivery surface remains a separate, undecided future question.
+outside this bridge entirely (see [Live Preview compatibility](live-preview.md)); broader dynamic
+delivery still requires a named executable workflow for each plugin and surface.
 
 ## Public signatures
 

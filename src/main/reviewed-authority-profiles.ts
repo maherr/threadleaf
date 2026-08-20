@@ -1,7 +1,13 @@
 import calendarProfileJson from "../../scripts/compatibility/trust/calendar-beta-2.0.0-beta.2.authority-profile.json" with {
   type: "json",
 };
+import citeFixtureProfileJson from "../../scripts/compatibility/trust/cite-0.1.2-fixture.authority-profile.json" with {
+  type: "json",
+};
 import dataFilesEditor130ObsidianInstalledProfileJson from "../../scripts/compatibility/trust/data-files-editor-1.3.0-obsidian-installed.authority-profile.json" with {
+  type: "json",
+};
+import dataviewProfileJson from "../../scripts/compatibility/trust/dataview-0.5.68.authority-profile.json" with {
   type: "json",
 };
 import inspectionRunawayProfileJson from "../../scripts/compatibility/trust/inspection-runaway-0.1.0.authority-profile.json" with {
@@ -275,6 +281,8 @@ function cloneProfile(profile: ReviewedAuthorityProfile): ReviewedAuthorityProfi
 const parsedProfiles = [
   parseReviewedAuthorityProfile(styleSettingsProfileJson),
   parseReviewedAuthorityProfile(calendarProfileJson),
+  parseReviewedAuthorityProfile(citeFixtureProfileJson),
+  parseReviewedAuthorityProfile(dataviewProfileJson),
   parseReviewedAuthorityProfile(dataFilesEditor130ObsidianInstalledProfileJson),
   parseReviewedAuthorityProfile(templaterProfileJson),
   parseReviewedAuthorityProfile(inspectionSafeProfileJson),

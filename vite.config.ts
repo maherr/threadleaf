@@ -23,7 +23,10 @@ const trustedIndexPlugin: Plugin = {
     this.emitFile({
       type: "asset",
       fileName: "index-trusted.html",
-      source: index.source.replace("script-src 'self';", "script-src 'self' 'unsafe-eval';"),
+      source: index.source.replace(
+        "script-src 'self';",
+        "script-src 'self' 'unsafe-eval'; worker-src 'self' blob:;",
+      ),
     });
   },
 };

@@ -1,0 +1,36 @@
+{
+  "$schema": "./reviewed-authority-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profileId": "dataview-0.5.68",
+  "profileRevision": 1,
+  "packageIdentity": {
+    "pluginId": "dataview",
+    "manifestVersion": "0.5.68",
+    "distributionTag": "0.5.68",
+    "manifestSha256": "9235db47112da81b85591c79ecb9ae2574e5e72207056e976472f90616286185",
+    "mainSha256": "794e9eaede73920bb8d54b0eda4f5de2182d698cc638774500f24f14bcd4da0b",
+    "stylesSha256": "3306dd9032e00f989ba7233a37fd255bc4d3f4340cee661762e952f3f6aa1de9",
+    "packageTreeSha256": "ec702f4933c75eb674953d437e59ed8c2c2a610c2f3a199bf64d972588ca77f6"
+  },
+  "packageIdentityDigest": "fb77330c95607d4a20bddf5a952f5ebc1513b110b62406d7d6e9744e87a8a087",
+  "expectedStaticCapabilities": [
+    "vault-read",
+    "network",
+    "editor-extension",
+    "workspace-ui",
+    "dynamic-code"
+  ],
+  "requiredAuthorities": [
+    "vault-read",
+    "network",
+    "filesystem",
+    "subprocess",
+    "host-environment",
+    "editor-extension",
+    "workspace-ui",
+    "dynamic-code"
+  ],
+  "executionProfile": "trusted-node-renderer",
+  "allowedPlatforms": ["linux", "darwin", "win32"],
+  "authorityDigest": "5a7f25581c156bd8fc2d198aad59c7ec6b55f4f00c74c9239d620e15a15855a1"
+}

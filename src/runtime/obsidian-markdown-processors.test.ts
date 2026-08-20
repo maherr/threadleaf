@@ -102,6 +102,30 @@ describe("measured Markdown processor compatibility", () => {
     expect(codeProcessor).toHaveBeenCalledOnce();
   });
 
+  it("can run only the processors owned by one plugin", async () => {
+    const dom = new JSDOM("<!doctype html><body></body>");
+    exposeDom(dom);
+    const registry = new CompatibilityIntegrationRegistry();
+    const root = dom.window.document.createElement("article");
+    root.innerHTML = '<pre><code class="language-dataview">TABLE score</code></pre><p>Body</p>';
+    const dataviewCode = vi.fn((_source: string, element: HTMLElement) => {
+      element.textContent = "Dataview result";
+    });
+    const dataviewPost = vi.fn();
+    const unrelatedPost = vi.fn();
+
+    registry.registerMarkdownCodeBlockProcessor("dataview", "dataview", dataviewCode);
+    registry.registerMarkdownPostProcessor("dataview", dataviewPost);
+    registry.registerMarkdownPostProcessor("unrelated", unrelatedPost);
+
+    await registry.runMarkdownPostProcessors(root, createContext(), "dataview");
+
+    expect(dataviewCode).toHaveBeenCalledOnce();
+    expect(dataviewPost).toHaveBeenCalledOnce();
+    expect(unrelatedPost).not.toHaveBeenCalled();
+    expect(root.querySelector(".markdown-code-block")?.textContent).toBe("Dataview result");
+  });
+
   it("preserves unmatched fenced blocks and rejects invalid or failing registrations", async () => {
     const dom = new JSDOM("<!doctype html><body></body>");
     exposeDom(dom);
@@ -176,7 +200,7 @@ describe("measured Markdown processor compatibility", () => {
     const component = new Component();
     component.load();
     const element = dom.window.document.createElement("article");
-    const markdown = "---\ntitle: Hello\n---\nBody\n";
+    const markdown = "---\ntitle: Hello\n---\nBody [[Notes/Other.md|Other note]]\n";
 
     await MarkdownRenderer.render(app, markdown, element, "./Notes\\Doc.md", component);
 
@@ -197,6 +221,9 @@ describe("measured Markdown processor compatibility", () => {
     });
     expect(context.getSectionInfo(dom.window.document.createElement("div"))).toBeNull();
     expect(element.dataset.childState).toBe("loaded");
+    expect(element.querySelector("a.internal-link")?.outerHTML).toBe(
+      '<a class="internal-link" href="#" data-href="Notes/Other.md">Other note</a>',
+    );
 
     component.unload();
     expect(element.dataset.childState).toBe("unloaded");

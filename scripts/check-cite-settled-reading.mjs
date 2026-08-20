@@ -36,6 +36,19 @@ function assert(condition, message) {
   }
 }
 
+async function makeDisposableTreeRemovable(candidatePath) {
+  const stat = await fs.lstat(candidatePath).catch(() => null);
+  if (!stat || stat.isSymbolicLink()) return;
+  if (!stat.isDirectory()) {
+    if (stat.isFile()) await fs.chmod(candidatePath, 0o600).catch(() => undefined);
+    return;
+  }
+  await fs.chmod(candidatePath, 0o700).catch(() => undefined);
+  for (const entry of await fs.readdir(candidatePath).catch(() => [])) {
+    await makeDisposableTreeRemovable(path.join(candidatePath, entry));
+  }
+}
+
 async function availablePort() {
   const server = net.createServer();
   await new Promise((resolve, reject) => {
@@ -242,13 +255,8 @@ try {
         pluginsByVault: {
           [vaultId]: {
             compatibilityMode: "enabled",
-            enabledPluginIds: ["cite"],
-            capabilityGrantsByPlugin: {
-              cite: {
-                bundleSha256: createHash("sha256").update(citeBundle).digest("hex"),
-                capabilities: ["workspace-ui"],
-              },
-            },
+            enabledPluginIds: [],
+            capabilityGrantsByPlugin: {},
           },
         },
       },
@@ -307,6 +315,41 @@ try {
     deviceScaleFactor: 1,
     mobile: false,
   });
+
+  const citeBundleSha256 = createHash("sha256").update(citeBundle).digest("hex");
+  const initialCatalog = await waitFor(
+    async () => {
+      const state = await evaluate(`window.threadleaf.getSnapshot().then(async (snapshot) => ({
+        snapshot,
+        catalog: await window.threadleaf.getPlugins(snapshot.vault?.id),
+      }))`);
+      const plugin = state?.catalog?.catalog?.plugins?.find(({ id }) => id === "cite");
+      return !state?.snapshot?.startup &&
+        state?.snapshot?.vault?.path === canonicalVaultPath &&
+        state?.snapshot?.workspace?.state === "ready" &&
+        plugin?.packageState === "ready"
+        ? plugin
+        : null;
+    },
+    "CITE did not appear in the ready vault catalog",
+    15_000,
+  );
+  assert(
+    initialCatalog.capabilityReport?.bundleSha256 === citeBundleSha256,
+    "The discovered CITE fixture did not retain its exact bundle identity.",
+  );
+  await withTimeout(
+    evaluate(
+      `window.threadleaf.setPluginCapabilityGrant(${JSON.stringify(vaultId)}, "cite", ${JSON.stringify(citeBundleSha256)}, true)`,
+    ),
+    10_000,
+    "The CITE authority grant did not resolve within 10 seconds.",
+  );
+  await withTimeout(
+    evaluate(`window.threadleaf.setPluginEnabled(${JSON.stringify(vaultId)}, "cite", true)`),
+    10_000,
+    "Enabling CITE did not resolve within 10 seconds.",
+  );
 
   await waitFor(
     async () => {
@@ -471,5 +514,6 @@ try {
   // names this run's unique --user-data-dir, so an orphaned Electron (or one of its own
   // subprocesses) can never survive this script or block the fs.rm below.
   await execFileAsync("pkill", ["-9", "-f", userDataPath]).catch(() => undefined);
+  await makeDisposableTreeRemovable(testRoot);
   await fs.rm(testRoot, { recursive: true, force: true });
 }

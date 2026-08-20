@@ -8,11 +8,13 @@ import {
 } from "./reviewed-authority-profiles";
 
 describe("reviewed authority profiles", () => {
-  it("loads the sixteen exact identity-bound records", () => {
+  it("loads the eighteen exact identity-bound records", () => {
     const profiles = reviewedAuthorityProfiles();
     expect(profiles.map(({ packageIdentity }) => packageIdentity.pluginId).sort()).toEqual([
       "calendar-beta",
+      "cite",
       "data-files-editor",
+      "dataview",
       "inspection-runaway",
       "inspection-safe",
       "inspection-teardown",
@@ -41,6 +43,25 @@ describe("reviewed authority profiles", () => {
     expect(templater?.expectedStaticCapabilities).toContain("subprocess");
     expect(templater?.requiredAuthorities).toContain("subprocess");
     expect(templater?.executionProfile).toBe("trusted-desktop-escape");
+    const dataview = profiles.find(
+      ({ packageIdentity }) => packageIdentity.pluginId === "dataview",
+    );
+    expect(dataview).toMatchObject({
+      packageIdentity: {
+        manifestVersion: "0.5.68",
+        distributionTag: "0.5.68",
+        packageTreeSha256: "ec702f4933c75eb674953d437e59ed8c2c2a610c2f3a199bf64d972588ca77f6",
+      },
+      packageIdentityDigest: "fb77330c95607d4a20bddf5a952f5ebc1513b110b62406d7d6e9744e87a8a087",
+      expectedStaticCapabilities: [
+        "vault-read",
+        "network",
+        "editor-extension",
+        "workspace-ui",
+        "dynamic-code",
+      ],
+      executionProfile: "trusted-node-renderer",
+    });
     const excalidraw2253 = profiles.find(
       ({ packageIdentity }) =>
         packageIdentity.pluginId === "obsidian-excalidraw-plugin" &&

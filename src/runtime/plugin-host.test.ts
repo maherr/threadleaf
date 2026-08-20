@@ -25,7 +25,11 @@ import {
   testConstructionRequest,
 } from "../test-support/plugin-construction";
 import { installObsidianDomCompatibility } from "./obsidian-dom";
-import { maxConsumedPluginConstructionAttempts, PluginHost } from "./plugin-host";
+import {
+  maxConsumedPluginConstructionAttempts,
+  PluginHost,
+  waitForSettledPluginProjectionElement,
+} from "./plugin-host";
 
 const fixtureVault = path.resolve("fixtures/vaults/basic");
 const fixturePlugin = path.join(fixtureVault, ".obsidian", "plugins", "threadleaf-fixture");
@@ -131,6 +135,40 @@ async function readFixtureBytes(): Promise<Map<string, Buffer>> {
 }
 
 describe("PluginHost", () => {
+  it("waits through an async Markdown loading placeholder before capture", async () => {
+    const dom = new JSDOM("<!doctype html><body><div id='projection'>Loading...</div></body>");
+    try {
+      const element = dom.window.document.querySelector<HTMLElement>("#projection");
+      expect(element).not.toBeNull();
+      if (!element) return;
+      const settling = waitForSettledPluginProjectionElement(element, {
+        quietMs: 5,
+        timeoutMs: 100,
+      });
+      dom.window.setTimeout(() => {
+        element.replaceChildren(dom.window.document.createElement("table"));
+      }, 10);
+      await expect(settling).resolves.toBeUndefined();
+      expect(element.querySelector("table")).not.toBeNull();
+    } finally {
+      dom.window.close();
+    }
+  });
+
+  it("rejects a Markdown projection that never leaves its loading state", async () => {
+    const dom = new JSDOM("<!doctype html><body><div id='projection'>Loading...</div></body>");
+    try {
+      const element = dom.window.document.querySelector<HTMLElement>("#projection");
+      expect(element).not.toBeNull();
+      if (!element) return;
+      await expect(
+        waitForSettledPluginProjectionElement(element, { quietMs: 5, timeoutMs: 20 }),
+      ).rejects.toThrow("did not settle its loading state");
+    } finally {
+      dom.window.close();
+    }
+  });
+
   it("pins test construction to a fresh non-default authority policy", async () => {
     const dispatch = await testConstructionDispatch(fixturePlugin);
 

@@ -1581,6 +1581,55 @@ export function sanitizePluginMarkdownProjection(html: string): DocumentFragment
   return fragment;
 }
 
+/**
+ * Dataview file cells are emitted by Threadleaf's compatibility Markdown renderer as inert
+ * `data-href` anchors. Re-author only validated vault-local Markdown destinations after the
+ * generic plugin sanitizer has removed every privileged attribute and class. This keeps arbitrary
+ * plugin markup inert while making Dataview's ordinary file column behave like a native note link.
+ */
+export function sanitizeDataviewProjection(html: string, sourceNotePath: string): DocumentFragment {
+  const source = document.createElement("template");
+  source.innerHTML = html;
+  const destinations = [...source.content.querySelectorAll<HTMLAnchorElement>("a")].map(
+    (anchor) =>
+      anchor.dataset.href ?? anchor.getAttribute("data-href") ?? anchor.getAttribute("href"),
+  );
+  const fragment = sanitizePluginMarkdownProjection(html);
+  const anchors = [...fragment.querySelectorAll<HTMLAnchorElement>("a")];
+  for (let index = 0; index < anchors.length; index += 1) {
+    const anchor = anchors[index];
+    const rawDestination = destinations[index]?.trim();
+    if (!anchor || !rawDestination || rawDestination === "#") {
+      continue;
+    }
+    const { target: rawTarget, subpath } = splitMarkdownDestinationTarget(rawDestination);
+    const target = rawTarget.replaceAll("\\", "/");
+    const segments = target.split("/");
+    if (
+      !target ||
+      target.startsWith("/") ||
+      target.startsWith("//") ||
+      /^[a-z][a-z0-9+.-]*:/iu.test(target) ||
+      !target.toLocaleLowerCase("en-US").endsWith(".md") ||
+      segments.some((segment) => segment === "." || segment === ".." || segment.includes("\0"))
+    ) {
+      continue;
+    }
+    anchor.classList.add("internal-link");
+    anchor.href = "#";
+    anchor.dataset.threadleafLink = "wiki";
+    anchor.dataset.threadleafTarget = target;
+    anchor.dataset.threadleafSubpath = subpath ?? "";
+    anchor.dataset.threadleafOriginPath = sourceNotePath;
+    anchor.dataset.threadleafPath = target;
+    anchor.dataset.linkStatus = "resolved";
+    const label = anchor.textContent?.trim() || target;
+    anchor.ariaLabel = `${label}, resolved internal link`;
+    anchor.title = `Open ${target}`;
+  }
+  return fragment;
+}
+
 export interface PreviewSourceControlOptions {
   sourceNotePath?: string;
   lineOffset?: number;

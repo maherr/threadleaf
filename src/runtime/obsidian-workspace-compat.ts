@@ -1478,8 +1478,11 @@ export class CompatibilityIntegrationRegistry {
   async runMarkdownPostProcessors(
     rootElement: HTMLElement,
     context: MarkdownPostProcessorContext,
+    ownerId?: string,
   ): Promise<void> {
-    const registrations = [...this.markdownPostProcessors].sort(compareMarkdownProcessors);
+    const registrations = this.markdownPostProcessors
+      .filter((registration) => ownerId === undefined || registration.ownerId === ownerId)
+      .sort(compareMarkdownProcessors);
     const codeBlocks = [...rootElement.querySelectorAll<HTMLElement>("pre > code")];
     for (const codeBlock of codeBlocks) {
       const language = codeBlockLanguage(codeBlock);

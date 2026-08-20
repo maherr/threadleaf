@@ -116,6 +116,95 @@ export interface PluginHostOptions {
   onSurfaceChange?(): void;
 }
 
+interface PluginProjectionSettleOptions {
+  quietMs?: number;
+  timeoutMs?: number;
+}
+
+function hasLoadingProjectionPlaceholder(element: HTMLElement): boolean {
+  return [element, ...element.querySelectorAll("*")].some(
+    (candidate) => candidate.textContent?.trim() === "Loading...",
+  );
+}
+
+/**
+ * Markdown render children are live components and Obsidian does not await their async onload
+ * hooks. A returned compatibility projection cannot keep that live realm attached, so hold the
+ * bounded request through its loading placeholder and a short DOM-quiet window before capture.
+ */
+export async function waitForSettledPluginProjectionElement(
+  element: HTMLElement,
+  options: PluginProjectionSettleOptions = {},
+): Promise<void> {
+  const rendererWindow = element.ownerDocument.defaultView;
+  const MutationObserverType = rendererWindow?.MutationObserver;
+  if (!rendererWindow || !MutationObserverType) {
+    if (process.env.THREADLEAF_PLUGIN_E2E_DIAGNOSTICS === "1") {
+      console.debug("Compatibility Markdown projection has no DOM settle observer.");
+    }
+    return;
+  }
+  const quietMs = options.quietMs ?? 75;
+  const timeoutMs = options.timeoutMs ?? 12_000;
+  if (process.env.THREADLEAF_PLUGIN_E2E_DIAGNOSTICS === "1") {
+    console.debug("Compatibility Markdown projection settle started.", {
+      loading: hasLoadingProjectionPlaceholder(element),
+      quietMs,
+      timeoutMs,
+    });
+  }
+  await new Promise<void>((resolve, reject) => {
+    const startedAt = Date.now();
+    let lastMutationAt = startedAt;
+    let timer = 0;
+    const finish = (observer: MutationObserver, error?: Error) => {
+      observer.disconnect();
+      rendererWindow.clearTimeout(timer);
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    };
+    let scheduleCheck = () => undefined;
+    const observer = new MutationObserverType(() => {
+      lastMutationAt = Date.now();
+      scheduleCheck();
+    });
+    const check = () => {
+      const now = Date.now();
+      if (now - startedAt >= timeoutMs) {
+        finish(
+          observer,
+          hasLoadingProjectionPlaceholder(element)
+            ? new Error("Plugin Markdown projection did not settle its loading state.")
+            : undefined,
+        );
+        return;
+      }
+      if (!hasLoadingProjectionPlaceholder(element) && now - lastMutationAt >= quietMs) {
+        finish(observer);
+        return;
+      }
+      scheduleCheck();
+    };
+    scheduleCheck = () => {
+      rendererWindow.clearTimeout(timer);
+      const now = Date.now();
+      const nextQuietAt = lastMutationAt + quietMs;
+      const deadline = startedAt + timeoutMs;
+      timer = rendererWindow.setTimeout(check, Math.max(1, Math.min(nextQuietAt, deadline) - now));
+    };
+    observer.observe(element, {
+      attributes: true,
+      characterData: true,
+      childList: true,
+      subtree: true,
+    });
+    scheduleCheck();
+  });
+}
+
 export const maxConsumedPluginConstructionAttempts = 4_096;
 
 const networkBuiltinRoots = new Set(["dgram", "dns", "http", "http2", "https", "net", "tls"]);
@@ -349,6 +438,9 @@ export class PluginHost implements PluginRuntimePort {
         }
         throw error;
       }
+      if (process.env.THREADLEAF_PLUGIN_E2E_DIAGNOSTICS === "1") {
+        console.error(`Compatibility plugin load failed: ${manifest.id}`, error);
+      }
       const diagnosticCode = attachedPluginDiagnosticCode(error) ?? "runtime-load-failed";
       record.summary = {
         ...record.summary,
@@ -459,20 +551,36 @@ export class PluginHost implements PluginRuntimePort {
     const component = new Component();
     component.load();
     const element = document.createElement("div");
+    element.dataset.threadleafPluginProjectionStaging = "true";
+    element.setAttribute("aria-hidden", "true");
+    Object.assign(element.style, {
+      left: "-100000px",
+      pointerEvents: "none",
+      position: "fixed",
+      top: "0",
+      visibility: "hidden",
+      width: "960px",
+    });
+    document.body.append(element);
     let html: string;
     try {
-      await MarkdownRenderer.render(this.app, content, element, sourcePath, component);
+      await MarkdownRenderer.render(this.app, content, element, sourcePath, component, pluginId);
+      await waitForSettledPluginProjectionElement(element);
       // Capture the settled markup before unloading: an `onunload` handler's job is releasing
       // resources (timers, listeners), not producing the rendered artifact, and must never be
       // able to erase evidence of what the processor actually rendered.
       html = element.innerHTML;
     } catch (error) {
+      if (process.env.THREADLEAF_PLUGIN_E2E_DIAGNOSTICS === "1") {
+        console.error(`Compatibility Markdown projection failed: ${pluginId}`, error);
+      }
       this.record("error", createPluginDiagnostic("runtime-render-failed", { pluginId }).message);
       throw pluginDiagnosticError("runtime-render-failed", { pluginId }, error);
     } finally {
       // The projection is settled and captured above; nothing will call back into this component
       // afterward, so its render children release deterministically right here.
       component.unload();
+      element.remove();
     }
     const htmlBytes = Buffer.byteLength(html, "utf8");
     if (htmlBytes > maxMarkdownProjectionHtmlBytes) {

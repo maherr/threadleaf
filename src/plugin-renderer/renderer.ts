@@ -1,4 +1,5 @@
 import { ipcRenderer } from "electron";
+import { installLegacyCodeMirror5Global } from "../runtime/legacy-codemirror5";
 import { installObsidianDomCompatibility } from "../runtime/obsidian-dom";
 import {
   type PluginOpenFileRequest,
@@ -19,6 +20,7 @@ import { PluginRendererService } from "./plugin-renderer-service";
 
 installActiveWindowGlobal(window, globalThis);
 installObsidianDomCompatibility(window, globalThis);
+installLegacyCodeMirror5Global(window);
 
 const service = new PluginRendererService({
   openFile: (request: PluginOpenFileRequest) =>

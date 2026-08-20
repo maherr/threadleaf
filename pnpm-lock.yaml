@@ -50,6 +50,9 @@ importers:
       codemirror:
         specifier: 6.0.2
         version: 6.0.2
+      codemirror5:
+        specifier: npm:codemirror@5.65.21
+        version: codemirror@5.65.21
       dompurify:
         specifier: 3.4.13
         version: 3.4.13
@@ -1167,6 +1170,9 @@ packages:
 
   clone-response@1.0.3:
     resolution: {integrity: sha512-ROoL94jJH2dUVML2Y/5PEDNaSHgeOdSDicUyS7izcF63G6sTc/FTjLub4b8Il9S8S0beOfYt0TaA5qvFK+w0wA==}
+
+  codemirror@5.65.21:
+    resolution: {integrity: sha512-6teYk0bA0nR3QP0ihGMoxuKzpl5W80FpnHpBJpgy66NK3cZv5b/d/HY8PnRvfSsCG1MTfr92u2WUl+wT0E40mQ==}
 
   codemirror@6.0.2:
     resolution: {integrity: sha512-VhydHotNW5w1UGK0Qj96BwSk/Zqbp9WbnyK2W/eVMv4QyF41INRGpjUhFJY7/uDNuudSc33a/PKr4iDqRduvHw==}
@@ -3432,6 +3438,8 @@ snapshots:
   clone-response@1.0.3:
     dependencies:
       mimic-response: 1.0.1
+
+  codemirror@5.65.21: {}
 
   codemirror@6.0.2:
     dependencies:

@@ -13,6 +13,7 @@ import {
   hydrateMarkdownPreviewAttachments,
   hydrateMarkdownPreviewImages,
   renderMarkdownPreview,
+  sanitizeDataviewProjection,
   sanitizePluginMarkdownProjection,
 } from "./markdown-preview";
 
@@ -1187,5 +1188,28 @@ describe("sanitizePluginMarkdownProjection", () => {
     const span = container.querySelector("span");
     expect(span?.classList.contains("cite-citation")).toBe(true);
     expect(span?.classList.contains("internal-link")).toBe(false);
+  });
+});
+
+describe("sanitizeDataviewProjection", () => {
+  it("re-authors only vault-local Markdown file cells as native internal links", () => {
+    const fragment = sanitizeDataviewProjection(
+      [
+        '<a class="internal-link" href="#" data-href="Folder/Note.md#Result">Note</a>',
+        '<a href="#" data-href="https://example.com">External</a>',
+        '<a href="#" data-href="../Secret.md">Traversal</a>',
+      ].join(""),
+      "Queries/Dashboard.md",
+    );
+    const anchors = [...fragment.querySelectorAll<HTMLAnchorElement>("a")];
+    expect(anchors[0]?.outerHTML).toContain('data-threadleaf-path="Folder/Note.md"');
+    expect(anchors[0]?.dataset.threadleafSubpath).toBe("#Result");
+    expect(anchors[0]?.dataset.threadleafOriginPath).toBe("Queries/Dashboard.md");
+    expect(anchors[0]?.dataset.linkStatus).toBe("resolved");
+    expect(anchors[0]?.getAttribute("href")).toBe("#");
+    for (const anchor of anchors.slice(1)) {
+      expect(anchor.hasAttribute("href")).toBe(false);
+      expect(anchor.dataset.threadleafLink).toBeUndefined();
+    }
   });
 });

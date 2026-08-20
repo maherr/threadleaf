@@ -21,6 +21,11 @@ interface ObsidianDomElement extends Element {
   setAttr(name: string, value: string | number | null): void;
   setAttrs(attributes: Record<string, string | number | null>): void;
   getAttr(name: string): string | null;
+  find(selector: string): Element | null;
+  findAll(selector: string): Element[];
+  findAllSelf(selector: string): Element[];
+  isShown(): boolean;
+  onNodeInserted(callback: () => unknown): () => void;
   getText(): string;
   setText(value: string | DocumentFragment): void;
   empty(): void;
@@ -336,6 +341,45 @@ export function installObsidianDomCompatibility(
   );
   defineMethod(prototype, "getAttr", function (this: Element, name: string) {
     return this.getAttribute(name);
+  });
+  defineMethod(prototype, "find", function (this: Element, selector: string) {
+    return this.querySelector(selector);
+  });
+  defineMethod(prototype, "findAll", function (this: Element, selector: string) {
+    return Array.from(this.querySelectorAll(selector));
+  });
+  defineMethod(prototype, "findAllSelf", function (this: Element, selector: string) {
+    const matches = Array.from(this.querySelectorAll(selector));
+    return this.matches(selector) ? [this, ...matches] : matches;
+  });
+  defineMethod(prototype, "isShown", function (this: Element) {
+    if (
+      this instanceof targetWindow.Element &&
+      (this as HTMLElement).dataset?.threadleafPluginProjectionStaging === "true"
+    ) {
+      return true;
+    }
+    if (!this.isConnected || (this as HTMLElement).hidden) {
+      return false;
+    }
+    const view = this.ownerDocument.defaultView;
+    return !view || view.getComputedStyle(this).display !== "none";
+  });
+  defineMethod(prototype, "onNodeInserted", function (this: Element, callback: () => unknown) {
+    const view = this.ownerDocument.defaultView;
+    const MutationObserverType = view?.MutationObserver;
+    if (!MutationObserverType) {
+      return () => undefined;
+    }
+    let connected = this.isConnected;
+    const observer = new MutationObserverType(() => {
+      if (!connected && this.isConnected) {
+        callback();
+      }
+      connected = this.isConnected;
+    });
+    observer.observe(this.ownerDocument, { childList: true, subtree: true });
+    return () => observer.disconnect();
   });
   defineMethod(prototype, "getText", function (this: Element) {
     return this.textContent ?? "";

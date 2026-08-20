@@ -218,6 +218,7 @@ import {
   addPreviewSourceControls,
   hydrateMarkdownPreview,
   renderMarkdownPreview,
+  sanitizeDataviewProjection,
   sanitizePluginMarkdownProjection,
 } from "./markdown-preview";
 import {
@@ -2684,27 +2685,17 @@ function decoratePreviewLinks(
   }
 }
 
-/**
- * The exact CITE 0.1.2 compatibility fixture is the only plugin wired into this bounded settled
- * Reading projection slice (see docs/compatibility/open-plugin-api.md). This deliberately targets
- * one named, already-evidenced plugin rather than every installed plugin that registers a
- * Markdown post processor: it is a plugin-exact compatibility workflow, not a claim of general
- * dynamic render-child or Live Preview/CM6 delivery for arbitrary community plugins.
- */
-const settledMarkdownProjectionPluginId = "cite";
-
 function renderPluginMarkdownProjectionPanel(
   container: HTMLElement,
+  pluginId: string,
   state: "loading" | "ready" | "unavailable",
   detail: { html?: DocumentFragment; pluginName: string; message?: string },
 ): void {
-  container
-    .querySelector<HTMLElement>(`[data-plugin-projection="${settledMarkdownProjectionPluginId}"]`)
-    ?.remove();
+  container.querySelector<HTMLElement>(`[data-plugin-projection="${pluginId}"]`)?.remove();
   const doc = container.ownerDocument;
   const panel = doc.createElement("section");
   panel.className = "plugin-markdown-projection";
-  panel.dataset.pluginProjection = settledMarkdownProjectionPluginId;
+  panel.dataset.pluginProjection = pluginId;
   panel.dataset.pluginProjectionState = state;
   const heading = doc.createElement("p");
   heading.className = "plugin-markdown-projection-heading";
@@ -2737,50 +2728,121 @@ function renderCiteSettledProjection(
   vaultId: string,
   isCurrent: () => boolean,
 ): void {
-  const citePlugin = currentSnapshot?.plugins?.find(
-    ({ id }) => id === settledMarkdownProjectionPluginId,
-  );
+  const pluginId = "cite";
+  const citePlugin = currentSnapshot?.plugins?.find(({ id }) => id === pluginId);
   if (!citePlugin) {
     return;
   }
-  renderPluginMarkdownProjectionPanel(elements.notePreview, "loading", {
+  renderPluginMarkdownProjectionPanel(elements.notePreview, pluginId, "loading", {
     pluginName: citePlugin.name,
   });
   window.threadleaf
-    .renderPluginMarkdownProjection(
-      settledMarkdownProjectionPluginId,
-      sourceNotePath,
-      source,
-      vaultId,
-    )
+    .renderPluginMarkdownProjection(pluginId, sourceNotePath, source, vaultId)
     .then((response) => {
       if (!isCurrent()) {
         return;
       }
       if (response.status === "ready") {
-        renderPluginMarkdownProjectionPanel(elements.notePreview, "ready", {
+        renderPluginMarkdownProjectionPanel(elements.notePreview, pluginId, "ready", {
           html: sanitizePluginMarkdownProjection(response.html),
           pluginName: citePlugin.name,
         });
       } else if (response.status === "unavailable") {
-        renderPluginMarkdownProjectionPanel(elements.notePreview, "unavailable", {
+        renderPluginMarkdownProjectionPanel(elements.notePreview, pluginId, "unavailable", {
           pluginName: citePlugin.name,
           message: response.message,
         });
       } else {
-        elements.notePreview
-          .querySelector(`[data-plugin-projection="${settledMarkdownProjectionPluginId}"]`)
-          ?.remove();
+        elements.notePreview.querySelector(`[data-plugin-projection="${pluginId}"]`)?.remove();
       }
     })
     .catch(() => {
       if (!isCurrent()) {
         return;
       }
-      renderPluginMarkdownProjectionPanel(elements.notePreview, "unavailable", {
+      renderPluginMarkdownProjectionPanel(elements.notePreview, pluginId, "unavailable", {
         pluginName: citePlugin.name,
         message: "The settled Markdown projection request failed.",
       });
+    });
+}
+
+/**
+ * Replace each native Dataview fence in Reading view with the matching settled result from the
+ * exact reviewed Dataview package. The rest of the note remains Threadleaf's native preview, so
+ * users get an in-place table instead of a duplicate whole-note projection panel.
+ */
+function renderDataviewSettledProjection(
+  sourceNotePath: string,
+  source: string,
+  vaultId: string,
+  isCurrent: () => boolean,
+): void {
+  const pluginId = "dataview";
+  const targetCodeBlocks = [
+    ...elements.notePreview.querySelectorAll<HTMLElement>("pre > code.language-dataview"),
+  ];
+  if (targetCodeBlocks.length === 0) {
+    return;
+  }
+  const pluginName =
+    currentSnapshot?.plugins?.find(({ id }) => id === pluginId)?.name ?? "Dataview";
+  for (const codeBlock of targetCodeBlocks) {
+    codeBlock.parentElement?.setAttribute("aria-busy", "true");
+  }
+  window.threadleaf
+    .renderPluginMarkdownProjection(pluginId, sourceNotePath, source, vaultId)
+    .then((response) => {
+      if (!isCurrent()) {
+        return;
+      }
+      if (response.status !== "ready") {
+        renderPluginMarkdownProjectionPanel(elements.notePreview, pluginId, "unavailable", {
+          pluginName,
+          message:
+            response.status === "unavailable"
+              ? response.message
+              : "The Dataview result no longer matches this note.",
+        });
+        return;
+      }
+      const projection = sanitizeDataviewProjection(response.html, sourceNotePath);
+      const renderedBlocks = [...projection.querySelectorAll<HTMLElement>(".markdown-code-block")];
+      if (renderedBlocks.length !== targetCodeBlocks.length) {
+        renderPluginMarkdownProjectionPanel(elements.notePreview, pluginId, "unavailable", {
+          pluginName,
+          message: "Dataview did not produce a complete result for every query in this note.",
+        });
+        return;
+      }
+      for (let index = 0; index < targetCodeBlocks.length; index += 1) {
+        const target = targetCodeBlocks[index]?.parentElement;
+        const rendered = renderedBlocks[index];
+        if (!target || !rendered) {
+          continue;
+        }
+        rendered.classList.add("threadleaf-dataview-result");
+        rendered.dataset.pluginProjection = pluginId;
+        rendered.dataset.pluginProjectionState = "ready";
+        target.replaceWith(rendered);
+      }
+    })
+    .catch(() => {
+      if (!isCurrent()) {
+        return;
+      }
+      renderPluginMarkdownProjectionPanel(elements.notePreview, pluginId, "unavailable", {
+        pluginName,
+        message: "The Dataview query could not be rendered.",
+      });
+    })
+    .finally(() => {
+      if (!isCurrent()) {
+        return;
+      }
+      for (const codeBlock of targetCodeBlocks) {
+        codeBlock.parentElement?.removeAttribute("aria-busy");
+      }
     });
 }
 
@@ -2869,6 +2931,7 @@ function renderReadingView(): void {
       if (isCurrent()) imageLightbox.bind(elements.notePreview);
     });
     renderCiteSettledProjection(loadedNote.path, source, vaultId, isCurrent);
+    renderDataviewSettledProjection(loadedNote.path, source, vaultId, isCurrent);
   }
 }
 

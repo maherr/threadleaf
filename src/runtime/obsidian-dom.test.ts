@@ -10,6 +10,11 @@ interface TestElement extends HTMLDivElement {
   hasClass(className: string): boolean;
   setAttrs(attributes: Record<string, string | number | null>): void;
   getAttr(name: string): string | null;
+  find(selector: string): Element | null;
+  findAll(selector: string): Element[];
+  findAllSelf(selector: string): Element[];
+  isShown(): boolean;
+  onNodeInserted(callback: () => unknown): () => void;
   getText(): string;
   setText(value: string): void;
   empty(): void;
@@ -27,7 +32,7 @@ interface TestElement extends HTMLDivElement {
 }
 
 describe("Obsidian DOM compatibility", () => {
-  it("installs idempotent class, content, attribute, and creation helpers", () => {
+  it("installs idempotent class, content, attribute, and creation helpers", async () => {
     const dom = new JSDOM("<!doctype html><body><div id='root'></div></body>", {
       url: "https://threadleaf.invalid/",
     });
@@ -60,6 +65,19 @@ describe("Obsidian DOM compatibility", () => {
     expect(root?.getAttr("role")).toBe("region");
     expect(root?.getAttr("tabindex")).toBe("0");
     expect(root?.getAttr("title")).toBeNull();
+
+    root?.append(dom.window.document.createElement("p"), dom.window.document.createElement("span"));
+    expect(root?.find("p")?.tagName).toBe("P");
+    expect(root?.findAll("p, span").map(({ tagName }) => tagName)).toEqual(["P", "SPAN"]);
+    expect(root?.findAllSelf("div, p").map(({ tagName }) => tagName)).toEqual(["DIV", "P"]);
+    expect(root?.isShown()).toBe(true);
+    const detached = dom.window.document.createElement("div") as TestElement;
+    const inserted = vi.fn();
+    const stopWatching = detached.onNodeInserted(inserted);
+    root?.append(detached);
+    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+    expect(inserted).toHaveBeenCalledTimes(1);
+    stopWatching();
 
     root?.setText("existing");
     const appended = root?.createDiv({ cls: ["card", "active"], text: "card" });

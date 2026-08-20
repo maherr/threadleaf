@@ -1,0 +1,28 @@
+{
+  "$schema": "./reviewed-authority-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profileId": "cite-0.1.2-fixture",
+  "profileRevision": 1,
+  "packageIdentity": {
+    "pluginId": "cite",
+    "manifestVersion": "0.1.2",
+    "distributionTag": "0.1.2",
+    "manifestSha256": "6557d34aa41b227b77ecb551f6d566c8a20c33ca078c703eef1738e3f649c901",
+    "mainSha256": "c430d2d70a1df7bb81c32593185b29430d4d99d751045bc396f3b34cbb3657dd",
+    "stylesSha256": null,
+    "packageTreeSha256": "95d69f60b008b64e9d95052d01bc3209f5e6fbe01e63a4497671059f9a5511b2"
+  },
+  "packageIdentityDigest": "2857d6e6f7be49e98af313431174247d69bdb03af6f71020f47c95715c9ad53f",
+  "expectedStaticCapabilities": ["workspace-ui"],
+  "requiredAuthorities": [
+    "network",
+    "filesystem",
+    "subprocess",
+    "host-environment",
+    "workspace-ui",
+    "dynamic-code"
+  ],
+  "executionProfile": "trusted-node-renderer",
+  "allowedPlatforms": ["linux", "darwin", "win32"],
+  "authorityDigest": "8277b42f94e887ef7c86567053363f297a6d8284a850a7e9214de875f7ce5702"
+}

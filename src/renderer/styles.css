@@ -3525,11 +3525,7 @@ input.tl-live-task[data-task="?"]::before {
   font-size: 0.76em;
 }
 
-/*
- * A bounded, explicitly labeled settled Markdown post-processor projection for exactly the CITE
- * 0.1.2 compatibility fixture (see docs/compatibility/open-plugin-api.md). State is carried in
- * text and `data-plugin-projection-state`, never color alone.
- */
+/* Settled Markdown processor fallbacks carry state in text and data, never color alone. */
 .plugin-markdown-projection {
   width: min(100%, 780px);
   margin: 28px auto 0;
@@ -3578,6 +3574,17 @@ input.tl-live-task[data-task="?"]::before {
   color: var(--ink-muted);
   font-family: var(--font-interface);
   font-size: 11px;
+}
+
+.preview-block .threadleaf-dataview-result table {
+  font-family: var(--font-interface);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.preview-block .threadleaf-dataview-result th,
+.preview-block .threadleaf-dataview-result td {
+  padding: 9px 11px;
 }
 
 .preview-attachment-card {

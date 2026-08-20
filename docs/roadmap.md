@@ -282,6 +282,9 @@ normal external vault backup and the privacy-safe feedback workflow.
 - [ ] Run plugin bundles through automated compatibility and security checks before distribution.
 - [ ] Verify representative open plugins for queries, tasks, templates, Git, citations, calendars,
       tables, and databases through named end-to-end workflows.
+- [x] Run the official Dataview 0.5.68 release through exact-package grant and activation, reviewed
+      Blob-worker and CodeMirror 5 support, frontmatter indexing, an in-place linked table in native
+      Reading view in both themes, native file navigation, and an explicit disabled-plugin fallback.
 - [x] Run the unchanged open Excalidraw 2.25.3 bundle through discovery and `onload` activation in a
       disposable DOM realm, including view, ribbon, settings-tab, and Markdown-processor
       registration.

@@ -12,7 +12,7 @@ import {
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import MarkdownIt from "markdown-it";
+import MarkdownIt, { type StateInline } from "markdown-it";
 import momentLibrary from "moment";
 import TurndownService from "turndown";
 import { parse as parseYamlDocument, stringify as yamlStringify } from "yaml";
@@ -2783,6 +2783,48 @@ const compatibilityMarkdown = new MarkdownIt({
   typographer: false,
 });
 
+function compatibilityWikiLinkRule(state: StateInline, silent: boolean): boolean {
+  const start = state.pos;
+  if (state.src.slice(start, start + 2) !== "[[") {
+    return false;
+  }
+  const close = state.src.indexOf("]]", start + 2);
+  if (close === -1 || state.src.slice(start + 2, close).includes("\n")) {
+    return false;
+  }
+  const raw = state.src.slice(start + 2, close);
+  const aliasAt = raw.indexOf("|");
+  const destination = (aliasAt === -1 ? raw : raw.slice(0, aliasAt)).trim();
+  if (!destination) {
+    return false;
+  }
+  if (!silent) {
+    const token = state.push("threadleaf_compat_wikilink", "a", 0);
+    token.meta = {
+      destination,
+      label: aliasAt === -1 ? destination : raw.slice(aliasAt + 1).trim() || destination,
+    };
+  }
+  state.pos = close + 2;
+  return true;
+}
+
+compatibilityMarkdown.inline.ruler.before(
+  "image",
+  "threadleaf_compat_wikilink",
+  compatibilityWikiLinkRule,
+);
+compatibilityMarkdown.renderer.rules.threadleaf_compat_wikilink = (tokens, index) => {
+  const metadata = tokens[index]?.meta as
+    | { destination?: unknown; label?: unknown }
+    | null
+    | undefined;
+  const destination = typeof metadata?.destination === "string" ? metadata.destination : "";
+  const label = typeof metadata?.label === "string" ? metadata.label : destination;
+  const escapeHtml = compatibilityMarkdown.utils.escapeHtml;
+  return `<a class="internal-link" href="${escapeHtml(destination)}" data-href="${escapeHtml(destination)}">${escapeHtml(label)}</a>`;
+};
+
 interface MarkdownPreviewProcessorRegistration {
   defaultSortOrder: number;
   processor: MarkdownPostProcessor;
@@ -2922,6 +2964,7 @@ export abstract class MarkdownRenderer extends MarkdownRenderChild {
     element: HTMLElement,
     sourcePath: string,
     component: Component,
+    ownerId?: string,
   ): Promise<void> {
     const template = element.ownerDocument.createElement("template");
     template.innerHTML = compatibilityMarkdown.render(markdown);
@@ -2980,8 +3023,10 @@ export abstract class MarkdownRenderer extends MarkdownRenderChild {
         };
       },
     };
-    await app.compatibility.runMarkdownPostProcessors(element, context);
-    await MarkdownPreviewRenderer.runPostProcessors(element, context);
+    await app.compatibility.runMarkdownPostProcessors(element, context, ownerId);
+    if (ownerId === undefined) {
+      await MarkdownPreviewRenderer.runPostProcessors(element, context);
+    }
   }
 }
 
