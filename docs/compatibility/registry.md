@@ -4,10 +4,11 @@ This document is generated from the versioned receipt-aware source [`compatibili
 Discovery in the external community package directory is separate from Threadleaf compatibility evidence.
 A row applies only to the exact plugin and Threadleaf versions shown.
 
-Registry schema: 2. Threadleaf version: 0.1.0. Generation: b4856a969abc552bb6ba1344af4969c5fa86f6f1f30123224960aef0f0f2458e.
+Registry schema: 2. Threadleaf version: 0.1.0. Generation: 8b29ad895b41335af003203b6ec21706acea671e7e890d371582da85da0ac5ea.
 
 | Plugin | Plugin version | Threadleaf | Level | Evidence | Last tested |
 | --- | --- | --- | ---: | --- | --- |
+| [Natural Language Dates](https://github.com/argenos/nldates-obsidian) | 0.6.2 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Auto Link Title](https://github.com/zolrath/obsidian-auto-link-title) | 1.5.5 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Auto Link Title](https://github.com/zolrath/obsidian-auto-link-title) | 1.5.5 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) | 2.25.3 | 0.1.0 | 0 | composed | 2026-08-16 |
@@ -16,6 +17,37 @@ Registry schema: 2. Threadleaf version: 0.1.0. Generation: b4856a969abc552bb6ba1
 | [Threadleaf Compatibility Fixture](https://github.com/maherr/threadleaf) | 0.1.0 | 0.1.0 | 0 | direct | 2026-08-15 |
 | [Paste URL into Selection](https://github.com/denolehov/obsidian-url-into-selection) | 1.11.4 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Paste URL into Selection](https://github.com/denolehov/obsidian-url-into-selection) | 1.11.4 | 0.1.0 | 3 | direct | 2026-08-20 |
+
+## Natural Language Dates 0.6.2
+
+The unchanged Natural Language Dates 0.6.2 release, byte-identical to the package installed in the acceptance vault, passed exact-package authority review and a direct Linux Electron command-palette workflow. Selected natural-language text was replaced by the expected date link while eight commands and one editor suggest remained registered.
+
+Bundle SHA-256: `387d36a43412f761c0c69320655a7ec09aa9189ae2267550224cacc861e63fd6`. License: MIT.
+
+Required static authority review: `vault-read`, `workspace-ui`.
+
+### Supported workflows
+
+- **Parse selected natural-language text into a date link from the command palette** (passed)
+  - `pnpm test:natural-dates` via [scripts/check-url-selection-paste.mjs](../../scripts/check-url-selection-paste.mjs)
+  - `pnpm exec vitest run src/runtime/plugin-host.test.ts` via [src/runtime/plugin-host.test.ts](../../src/runtime/plugin-host.test.ts)
+
+### Platform limits
+
+- **linux-x64-electron**: verified. Verified in Linux X11 and Xvfb Electron with the exact upstream and acceptance-vault bundle, a disposable vault, and private state. The runtime is trusted same-user desktop code, not a sandbox.
+- **macos-electron**: unverified. This exact package workflow is not verified on macOS.
+- **windows-x64-electron**: unverified. This exact package workflow is not verified on Windows.
+
+### Known failures
+
+- No reproducible failure is recorded for the supported workflows above.
+
+### Limitations
+
+- The editor suggest registration is observed, but native autosuggest display and selection are not verified by this workflow.
+- Date Picker, date and time insertion commands, daily-note creation, Obsidian URI handling, plugin settings, and cross-plugin daily-note settings are outside this claim.
+- This is supporting behavior evidence, not Level 4 evidence.
+- No controller-finalized signed production receipt exists for this tuple.
 
 ## Auto Link Title 1.5.5
 

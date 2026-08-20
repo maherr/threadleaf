@@ -180,6 +180,16 @@ describe("plugin compatibility settings", () => {
     expect(
       createPluginCompatibilityReport({ id: "obsidian-auto-link-title", version: "1.5.5" }),
     ).toMatchObject({ level: 0, status: "unverified" });
+    expect(
+      createPluginCompatibilityReport({
+        id: "nldates-obsidian",
+        version: "0.6.2",
+        bundleSha256: "387d36a43412f761c0c69320655a7ec09aa9189ae2267550224cacc861e63fd6",
+      }),
+    ).toMatchObject({ level: 3, status: "verified" });
+    expect(
+      createPluginCompatibilityReport({ id: "nldates-obsidian", version: "0.6.2" }),
+    ).toMatchObject({ level: 3, status: "verified" });
     expect(createPluginCompatibilityReport({ id: "unknown-plugin", version: "1.0.0" })).toEqual({
       level: 0,
       status: "unverified",

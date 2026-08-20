@@ -248,7 +248,7 @@ describe("PluginHost", () => {
     expect(after).toEqual(before);
   });
 
-  it("does not force a global command through a native editor when no native leaf exists", async () => {
+  it("does not force a global command through a native editor without a renderer document", async () => {
     const host = new PluginHost(fixtureVault);
     await loadPlugin(host, fixturePlugin);
 
@@ -1344,6 +1344,16 @@ module.exports = class SettingsFixture extends Plugin {
 module.exports = class EditorFixture extends Plugin {
   async onload() {
     this.addCommand({
+      id: "callback-insert",
+      name: "Callback insert",
+      callback: () => {
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view) return;
+        view.editor.replaceSelection("callback");
+        view.editor.focus();
+      },
+    });
+    this.addCommand({
       id: "insert-embed",
       name: "Insert drawing embed",
       checkCallback: (checking) => {
@@ -1369,7 +1379,17 @@ module.exports = class EditorFixture extends Plugin {
       await expect(host.runCommand("editor-fixture:insert-embed")).rejects.toThrow(
         "[runtime-command-failed].",
       );
-
+      const callbackSnapshot = await host.runCommand("editor-fixture:callback-insert", {
+        path: "Welcome.md",
+        content: "alpha\nomega",
+        revision: "c".repeat(64),
+        selection: { anchor: 0, head: 5 },
+      });
+      expect(callbackSnapshot.editorUpdate).toMatchObject({
+        baseContent: "alpha\nomega",
+        content: "callback\nomega",
+        revision: "c".repeat(64),
+      });
       const revision = "d".repeat(64);
       const snapshot = await host.runCommand("editor-fixture:insert-embed", {
         path: "Welcome.md",
@@ -1382,7 +1402,7 @@ module.exports = class EditorFixture extends Plugin {
         baseContent: "alpha\nomega",
         content: "alpha\n![[Drawing.excalidraw.md]]omega",
         focused: true,
-        id: "threadleaf-plugin-editor-1",
+        id: "threadleaf-plugin-editor-2",
         path: "Welcome.md",
         revision,
         selection: { anchor: 32, head: 32 },

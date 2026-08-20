@@ -474,11 +474,16 @@ export class PluginHost implements PluginRuntimePort {
     const ownerId = this.app.commands.ownerIdFor(commandId);
     try {
       const canRunInCurrentView = await this.app.commands.canRun(commandId);
+      const activeLeaf = this.app.workspace.activeLeaf;
+      const hasPluginOwnedActiveView =
+        activeLeaf !== null &&
+        activeLeaf !== this.nativeMarkdownLeaf &&
+        activeLeaf.view !== null &&
+        activeLeaf.view.getViewType() !== "empty";
       const shouldUseEditorContext =
         editorContext &&
-        (!canRunInCurrentView ||
-          (this.nativeMarkdownLeaf !== null &&
-            this.app.workspace.activeLeaf === this.nativeMarkdownLeaf));
+        typeof document !== "undefined" &&
+        (!canRunInCurrentView || !hasPluginOwnedActiveView);
       if (shouldUseEditorContext) {
         await this.openNativeEditorContext(editorContext);
       } else {

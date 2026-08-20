@@ -8,11 +8,18 @@ import path from "node:path";
 const appRoot = process.cwd();
 const electronPath = path.join(appRoot, "node_modules", ".bin", "electron");
 const autoLinkTitleMode = process.env.THREADLEAF_AUTO_LINK_TITLE === "1";
-const pluginId = autoLinkTitleMode ? "obsidian-auto-link-title" : "url-into-selection";
-const pluginVersion = autoLinkTitleMode ? "1.5.5" : "1.11.4";
-const sourcePluginPath = autoLinkTitleMode
-  ? process.env.THREADLEAF_AUTO_LINK_TITLE_PLUGIN_DIR
-  : process.env.THREADLEAF_URL_SELECTION_PLUGIN_DIR;
+const naturalDatesMode = process.env.THREADLEAF_NATURAL_DATES === "1";
+const pluginId = naturalDatesMode
+  ? "nldates-obsidian"
+  : autoLinkTitleMode
+    ? "obsidian-auto-link-title"
+    : "url-into-selection";
+const pluginVersion = naturalDatesMode ? "0.6.2" : autoLinkTitleMode ? "1.5.5" : "1.11.4";
+const sourcePluginPath = naturalDatesMode
+  ? process.env.THREADLEAF_NATURAL_DATES_PLUGIN_DIR
+  : autoLinkTitleMode
+    ? process.env.THREADLEAF_AUTO_LINK_TITLE_PLUGIN_DIR
+    : process.env.THREADLEAF_URL_SELECTION_PLUGIN_DIR;
 const screenshotDirectory = process.env.THREADLEAF_URL_SELECTION_SCREENSHOT_DIR;
 const testRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-url-selection-"));
 const vaultPath = path.join(testRoot, "vault");
@@ -24,36 +31,49 @@ let cdp;
 let exited;
 let titleServer;
 
-const officialAssets = autoLinkTitleMode
+const officialAssets = naturalDatesMode
   ? [
       {
         name: "manifest.json",
-        url: "https://github.com/zolrath/obsidian-auto-link-title/releases/download/1.5.5/manifest.json",
-        sha256: "21916c8c8fa1996d38fc79e6064b61f41c6b34d5d4eaddaf36f18432b3f49a11",
+        url: "https://github.com/argenos/nldates-obsidian/releases/download/0.6.2/manifest.json",
+        sha256: "dfdcbdd8272d839ec0620af3a1fa7ab1f785ad3cdc6feed1f18ccb7b09621f29",
       },
       {
         name: "main.js",
-        url: "https://github.com/zolrath/obsidian-auto-link-title/releases/download/1.5.5/main.js",
-        sha256: "eb27498bfd05dc5c3847dd072f555ed4c02aece24451042c2edb25fc961f38be",
-      },
-      {
-        name: "styles.css",
-        url: "https://github.com/zolrath/obsidian-auto-link-title/releases/download/1.5.5/styles.css",
-        sha256: "040d99c787acf90dba4374c21b67417dde43acc59ed4ab9bcee510bfbc4508b2",
+        url: "https://github.com/argenos/nldates-obsidian/releases/download/0.6.2/main.js",
+        sha256: "387d36a43412f761c0c69320655a7ec09aa9189ae2267550224cacc861e63fd6",
       },
     ]
-  : [
-      {
-        name: "manifest.json",
-        url: "https://github.com/denolehov/obsidian-url-into-selection/releases/download/1.11.4/manifest.json",
-        sha256: "6573c0ef277b0eb366e19acd558445a46473a5fccf0b7e80b9e07dc95f8b0443",
-      },
-      {
-        name: "main.js",
-        url: "https://github.com/denolehov/obsidian-url-into-selection/releases/download/1.11.4/main.js",
-        sha256: "377883d2fc2a1feeb96be868f7110782874206cb3065635281e89fdfdc6e6d77",
-      },
-    ];
+  : autoLinkTitleMode
+    ? [
+        {
+          name: "manifest.json",
+          url: "https://github.com/zolrath/obsidian-auto-link-title/releases/download/1.5.5/manifest.json",
+          sha256: "21916c8c8fa1996d38fc79e6064b61f41c6b34d5d4eaddaf36f18432b3f49a11",
+        },
+        {
+          name: "main.js",
+          url: "https://github.com/zolrath/obsidian-auto-link-title/releases/download/1.5.5/main.js",
+          sha256: "eb27498bfd05dc5c3847dd072f555ed4c02aece24451042c2edb25fc961f38be",
+        },
+        {
+          name: "styles.css",
+          url: "https://github.com/zolrath/obsidian-auto-link-title/releases/download/1.5.5/styles.css",
+          sha256: "040d99c787acf90dba4374c21b67417dde43acc59ed4ab9bcee510bfbc4508b2",
+        },
+      ]
+    : [
+        {
+          name: "manifest.json",
+          url: "https://github.com/denolehov/obsidian-url-into-selection/releases/download/1.11.4/manifest.json",
+          sha256: "6573c0ef277b0eb366e19acd558445a46473a5fccf0b7e80b9e07dc95f8b0443",
+        },
+        {
+          name: "main.js",
+          url: "https://github.com/denolehov/obsidian-url-into-selection/releases/download/1.11.4/main.js",
+          sha256: "377883d2fc2a1feeb96be868f7110782874206cb3065635281e89fdfdc6e6d77",
+        },
+      ];
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -65,6 +85,14 @@ function assert(condition, message) {
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function tomorrowDate() {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  return [date.getFullYear(), date.getMonth() + 1, date.getDate()]
+    .map((part, index) => String(part).padStart(index === 0 ? 4 : 2, "0"))
+    .join("-");
 }
 
 async function availablePort() {
@@ -280,7 +308,7 @@ try {
   await fs.mkdir(userDataPath, { recursive: true });
   await fs.writeFile(
     path.join(vaultPath, "Welcome.md"),
-    autoLinkTitleMode ? "" : "Threadleaf",
+    naturalDatesMode ? "tomorrow" : autoLinkTitleMode ? "" : "Threadleaf",
     "utf8",
   );
   const canonicalVaultPath = await fs.realpath(vaultPath);
@@ -404,8 +432,20 @@ try {
             plugin.compatibilityLevel === 3
           ),
           pasteRegistered: snapshot.integrations?.workspaceEvents?.includes("editor-paste") === true,
-        }))`).then((state) => state.loaded && state.pasteRegistered),
-      "The exact plugin did not load and register editor-paste",
+          editorSuggests: snapshot.integrations?.editorSuggests ?? 0,
+          commandCount: snapshot.commands?.filter((command) =>
+            command.id.startsWith(${JSON.stringify(`${pluginId}:`)})
+          ).length ?? 0,
+        }))`).then(
+          (state) =>
+            state.loaded &&
+            (naturalDatesMode
+              ? state.editorSuggests === 1 && state.commandCount === 8
+              : state.pasteRegistered),
+        ),
+      naturalDatesMode
+        ? "The exact plugin did not load and register its commands and editor suggest"
+        : "The exact plugin did not load and register editor-paste",
       20_000,
     );
   } catch (error) {
@@ -421,88 +461,161 @@ try {
     );
   }
 
-  await focusAndSelectAllEditor();
-  const urlPaste = await dispatchTextPaste(titleUrl);
-  assert(
-    urlPaste.dispatched && urlPaste.focused && urlPaste.defaultPrevented,
-    `The URL paste did not enter the compatibility path: ${JSON.stringify(urlPaste)}`,
-  );
-  try {
-    await waitFor(
-      async () =>
-        (await editorText()) ===
-        (autoLinkTitleMode
-          ? `[Threadleaf Compatibility Page](${titleUrl})`
-          : "[Threadleaf](https://example.test/path)"),
-      autoLinkTitleMode
-        ? "The exact plugin did not replace its fetching placeholder with the remote title"
-        : "The exact plugin did not wrap selected text with the pasted URL",
+  if (naturalDatesMode) {
+    await focusAndSelectAllEditor();
+    const command = await evaluate(`(() => {
+      const open = document.querySelector("#command-trigger");
+      const query = document.querySelector("#palette-query");
+      if (!(open instanceof HTMLButtonElement) || !(query instanceof HTMLInputElement)) {
+        return { opened: false, selected: false };
+      }
+      open.click();
+      query.value = "nldates-obsidian:nlp-dates";
+      query.dispatchEvent(new Event("input", { bubbles: true }));
+      const option = document.querySelector(
+        '[data-command-id="plugin.command.nldates-obsidian:nlp-dates"]'
+      );
+      if (!(option instanceof HTMLButtonElement) || option.disabled) {
+        return { opened: true, selected: false };
+      }
+      option.click();
+      return { opened: true, selected: true };
+    })()`);
+    assert(
+      command.opened && command.selected,
+      `The Natural Language Dates command was not reachable in the command palette: ${JSON.stringify(command)}`,
     );
-  } catch (error) {
-    const diagnostic = await evaluate(`window.threadleaf.getSnapshot().then((snapshot) => ({
+    const expected = `[[${tomorrowDate()}]]`;
+    try {
+      await waitFor(
+        async () => (await editorText()) === expected,
+        "Natural Language Dates did not parse the selected word through its visible command",
+      );
+    } catch (error) {
+      const diagnostic = await evaluate(`window.threadleaf.getSnapshot().then((snapshot) => ({
+        events: snapshot.events.slice(-20),
+        editorUpdate: snapshot.editorUpdate,
+        toast: document.querySelector("#toast")?.textContent ?? "",
+        paletteOpen: document.querySelector("#command-palette")?.open ?? false
+      }))`);
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)}: editor=${JSON.stringify(await editorText())} state=${JSON.stringify(diagnostic)}`,
+      );
+    }
+    const naturalDatesState = await evaluate(`window.threadleaf.getSnapshot().then((snapshot) => ({
+      commands: snapshot.commands.filter((command) =>
+        command.id.startsWith("nldates-obsidian:")
+      ).map((command) => command.id),
+      editorSuggests: snapshot.integrations?.editorSuggests ?? 0,
+      errors: snapshot.events.filter((event) => event.kind === "error").slice(-5),
+      toast: document.querySelector("#toast")?.textContent ?? ""
+    }))`);
+    assert(
+      naturalDatesState.commands.length === 8 &&
+        naturalDatesState.editorSuggests === 1 &&
+        naturalDatesState.errors.length === 0 &&
+        !naturalDatesState.toast.includes("failed"),
+      `Natural Language Dates exposed an incomplete registration or runtime failure: ${JSON.stringify(naturalDatesState)}`,
+    );
+    await captureScreenshot("natural-dates-command.png");
+    console.log(
+      JSON.stringify({
+        verified: true,
+        pluginId,
+        version: pluginVersion,
+        bundleSha256,
+        source: sourcePluginPath ? "operator-package" : "official-release",
+        workflows: {
+          naturalLanguageDateCommand: expected,
+          commands: naturalDatesState.commands.length,
+          editorSuggests: naturalDatesState.editorSuggests,
+        },
+      }),
+    );
+  } else {
+    await focusAndSelectAllEditor();
+    const urlPaste = await dispatchTextPaste(titleUrl);
+    assert(
+      urlPaste.dispatched && urlPaste.focused && urlPaste.defaultPrevented,
+      `The URL paste did not enter the compatibility path: ${JSON.stringify(urlPaste)}`,
+    );
+    try {
+      await waitFor(
+        async () =>
+          (await editorText()) ===
+          (autoLinkTitleMode
+            ? `[Threadleaf Compatibility Page](${titleUrl})`
+            : "[Threadleaf](https://example.test/path)"),
+        autoLinkTitleMode
+          ? "The exact plugin did not replace its fetching placeholder with the remote title"
+          : "The exact plugin did not wrap selected text with the pasted URL",
+      );
+    } catch (error) {
+      const diagnostic = await evaluate(`window.threadleaf.getSnapshot().then((snapshot) => ({
       events: snapshot.events.slice(-20),
       editorUpdate: snapshot.editorUpdate,
       editorEvent: snapshot.editorEvent,
       toast: document.querySelector("#toast")?.textContent ?? ""
     }))`);
-    throw new Error(
-      `${error instanceof Error ? error.message : String(error)}: editor=${JSON.stringify(await editorText())} state=${JSON.stringify(diagnostic)}`,
-    );
-  }
-  if (autoLinkTitleMode) {
-    await captureScreenshot("auto-link-title-link.png");
-  }
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)}: editor=${JSON.stringify(await editorText())} state=${JSON.stringify(diagnostic)}`,
+      );
+    }
+    if (autoLinkTitleMode) {
+      await captureScreenshot("auto-link-title-link.png");
+    }
 
-  for (const type of ["keyDown", "keyUp"]) {
-    await cdp.send("Input.dispatchKeyEvent", {
-      type,
-      key: "z",
-      code: "KeyZ",
-      modifiers: 2,
-      windowsVirtualKeyCode: 90,
-    });
-  }
-  await waitFor(
-    async () => (await editorText()) === (autoLinkTitleMode ? "" : "Threadleaf"),
-    "Undo did not reset the editor",
-  );
-  await focusAndSelectAllEditor();
-  const ordinaryPaste = await dispatchTextPaste("ordinary text");
-  assert(
-    ordinaryPaste.dispatched && ordinaryPaste.focused && ordinaryPaste.defaultPrevented,
-    `The ordinary paste did not enter the compatibility fallback: ${JSON.stringify(ordinaryPaste)}`,
-  );
-  await waitFor(
-    async () => (await editorText()) === "ordinary text",
-    "An unhandled paste was swallowed instead of falling back to ordinary text",
-  );
-  const ordinaryState = await evaluate(`window.threadleaf.getSnapshot().then((snapshot) => ({
+    for (const type of ["keyDown", "keyUp"]) {
+      await cdp.send("Input.dispatchKeyEvent", {
+        type,
+        key: "z",
+        code: "KeyZ",
+        modifiers: 2,
+        windowsVirtualKeyCode: 90,
+      });
+    }
+    await waitFor(
+      async () => (await editorText()) === (autoLinkTitleMode ? "" : "Threadleaf"),
+      "Undo did not reset the editor",
+    );
+    await focusAndSelectAllEditor();
+    const ordinaryPaste = await dispatchTextPaste("ordinary text");
+    assert(
+      ordinaryPaste.dispatched && ordinaryPaste.focused && ordinaryPaste.defaultPrevented,
+      `The ordinary paste did not enter the compatibility fallback: ${JSON.stringify(ordinaryPaste)}`,
+    );
+    await waitFor(
+      async () => (await editorText()) === "ordinary text",
+      "An unhandled paste was swallowed instead of falling back to ordinary text",
+    );
+    const ordinaryState = await evaluate(`window.threadleaf.getSnapshot().then((snapshot) => ({
     errors: snapshot.events.filter((event) => event.kind === "error").slice(-5),
     toast: document.querySelector("#toast")?.textContent ?? "",
   }))`);
-  assert(
-    !ordinaryState.toast.includes("failed") && ordinaryState.errors.length === 0,
-    `The ordinary fallback exposed a compatibility failure: ${JSON.stringify(ordinaryState)}`,
-  );
+    assert(
+      !ordinaryState.toast.includes("failed") && ordinaryState.errors.length === 0,
+      `The ordinary fallback exposed a compatibility failure: ${JSON.stringify(ordinaryState)}`,
+    );
 
-  await captureScreenshot(
-    autoLinkTitleMode ? "auto-link-title-paste-final.png" : "url-selection-paste-final.png",
-  );
-  console.log(
-    JSON.stringify({
-      verified: true,
-      pluginId,
-      version: pluginVersion,
-      bundleSha256,
-      source: sourcePluginPath ? "operator-package" : "official-release",
-      workflows: {
-        selectedUrlPaste: autoLinkTitleMode
-          ? `[Threadleaf Compatibility Page](${titleUrl})`
-          : "[Threadleaf](https://example.test/path)",
-        ordinaryPasteFallback: "ordinary text",
-      },
-    }),
-  );
+    await captureScreenshot(
+      autoLinkTitleMode ? "auto-link-title-paste-final.png" : "url-selection-paste-final.png",
+    );
+    console.log(
+      JSON.stringify({
+        verified: true,
+        pluginId,
+        version: pluginVersion,
+        bundleSha256,
+        source: sourcePluginPath ? "operator-package" : "official-release",
+        workflows: {
+          selectedUrlPaste: autoLinkTitleMode
+            ? `[Threadleaf Compatibility Page](${titleUrl})`
+            : "[Threadleaf](https://example.test/path)",
+          ordinaryPasteFallback: "ordinary text",
+        },
+      }),
+    );
+  }
 } catch (error) {
   console.error(output.join(""));
   throw error;

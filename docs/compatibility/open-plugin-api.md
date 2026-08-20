@@ -253,3 +253,19 @@ native. The same gate has passed the distinct 1.5.5 bundle installed in the acce
 bundle hash has its own authority profile and evidence row. Manual clipboard commands, editor drop,
 non-default settings, authenticated pages, script-rendered titles, and unrelated Electron remote
 members remain outside the claim.
+
+## Native editor context for callback commands
+
+When a plugin command is invoked from Threadleaf's native editor and no plugin-owned view is active,
+the compatibility host constructs the revision-bound `MarkdownView` before it runs either an editor
+callback or a plain callback. This matches commands that discover their editor through
+`app.workspace.getActiveViewOfType(MarkdownView)` instead of declaring an editor callback. A live
+plugin-owned view still wins, so canvas and other view commands remain on their own surface. A
+headless runtime without a renderer document does not fabricate an editor.
+
+`pnpm test:natural-dates` proves the unchanged MIT Natural Language Dates 0.6.2 release. The gate
+selects `tomorrow`, opens Threadleaf's command palette, runs the exact Parse natural language date
+command, and requires the expected date link. It also requires all eight commands and one editor
+suggest registration to remain present. The exact release is byte-identical to the package installed
+in the acceptance vault. Autosuggest presentation, Date Picker, daily-note creation, URI handling,
+settings, and the other commands remain outside this claim.

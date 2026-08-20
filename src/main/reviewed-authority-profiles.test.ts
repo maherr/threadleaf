@@ -8,7 +8,7 @@ import {
 } from "./reviewed-authority-profiles";
 
 describe("reviewed authority profiles", () => {
-  it("loads the twenty-two exact identity-bound records", () => {
+  it("loads the twenty-three exact identity-bound records", () => {
     const profiles = reviewedAuthorityProfiles();
     expect(profiles.map(({ packageIdentity }) => packageIdentity.pluginId).sort()).toEqual([
       "calendar-beta",
@@ -18,6 +18,7 @@ describe("reviewed authority profiles", () => {
       "inspection-runaway",
       "inspection-safe",
       "inspection-teardown",
+      "nldates-obsidian",
       "obsidian-auto-link-title",
       "obsidian-auto-link-title",
       "obsidian-excalidraw-plugin",

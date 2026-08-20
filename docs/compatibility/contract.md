@@ -321,6 +321,20 @@ title conversion without a timing guess. The evidence remains Level 3 supporting
 controller-finalized production receipt exists. It does not cover manual clipboard commands,
 editor drop, non-default settings, authenticated pages, or other Electron remote APIs.
 
+## Natural Language Dates fixture
+
+The unchanged MIT Natural Language Dates 0.6.2 release is byte-identical to the package installed in
+the acceptance vault. Its Linux Electron gate selects `tomorrow` in a disposable note, opens
+Threadleaf's real command palette, invokes the exact Parse natural language date command, and
+requires the expected date link. It also requires eight command registrations, one editor suggest
+registration, no compatibility error, and a rendered result.
+
+Callback commands receive a native revision-bound Markdown view when the caller supplies editor
+context and no plugin-owned view is active. A live plugin view remains authoritative, and headless
+runtimes do not invent a renderer. This evidence does not cover native autosuggest presentation,
+Date Picker, daily-note creation, Obsidian URI actions, settings, or the remaining commands. It is
+Level 3 supporting behavior until a controller-finalized production receipt exists.
+
 ## Phase 0 fixture
 
 The first fixture is an unchanged CommonJS bundle that:

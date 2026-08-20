@@ -1,0 +1,29 @@
+{
+  "$schema": "./reviewed-authority-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profileId": "nldates-obsidian-0.6.2",
+  "profileRevision": 1,
+  "packageIdentity": {
+    "pluginId": "nldates-obsidian",
+    "manifestVersion": "0.6.2",
+    "distributionTag": "0.6.2",
+    "manifestSha256": "dfdcbdd8272d839ec0620af3a1fa7ab1f785ad3cdc6feed1f18ccb7b09621f29",
+    "mainSha256": "387d36a43412f761c0c69320655a7ec09aa9189ae2267550224cacc861e63fd6",
+    "stylesSha256": null,
+    "packageTreeSha256": "c5a5ccbee098af84b449a9dc3eb938cfcc58e2d70b1ffbb05807aee0c1f2a8bf"
+  },
+  "packageIdentityDigest": "a726560d56ce47445e797b2c377d1d2af03232736c92e978f3f642a3f2c71eb1",
+  "expectedStaticCapabilities": ["vault-read", "workspace-ui"],
+  "requiredAuthorities": [
+    "vault-read",
+    "network",
+    "filesystem",
+    "subprocess",
+    "host-environment",
+    "workspace-ui",
+    "dynamic-code"
+  ],
+  "executionProfile": "trusted-node-renderer",
+  "allowedPlatforms": ["linux", "darwin", "win32"],
+  "authorityDigest": "a512ba3d041a6abd93855ff128c975640e5bdb263a1f9712ce48928a6b1e4cc9"
+}

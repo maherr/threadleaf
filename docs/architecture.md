@@ -72,6 +72,13 @@ used by the verified workflow. Its pending loads are host-owned compatibility re
 commands and paste delivery await those resources before capturing a native editor update, so a
 plugin's fire-and-forget title fetch cannot leak its temporary placeholder across the process seam.
 
+Command routing distinguishes native editor context from a live plugin-owned view. When the native
+renderer supplies a revision-bound editor context and the compatibility workspace has no active
+plugin view, the host creates the matching Markdown leaf before running either a declared editor
+callback or a plain callback. This supports plugins that discover `MarkdownView` from workspace
+state. A live plugin view remains authoritative so view commands are not retargeted, and headless
+runtimes never fabricate a renderer document.
+
 ### Trusted-workspace topology
 
 Compatibility settings are per vault and have two orthogonal fields: `restricted | enabled`
