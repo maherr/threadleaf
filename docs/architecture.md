@@ -235,8 +235,11 @@ fails, Threadleaf closes the candidate and leaves the current runtime active.
 The selection document lives in the operating system's application-data directory, outside every
 vault. It is written atomically with private file permissions and a versioned shape. On startup,
 Threadleaf opens a small plugin-free bootstrap runtime, registers IPC, and renders the first window
-before it opens the configured or restored vault. A startup snapshot names the real target and
-disables bootstrap writes and search while the target builds its derived index. Open vault remains
+before it opens the configured or restored vault. The renderer announces shell readiness after its
+first animation frame or a bounded idempotent timer when a hidden compositor suspends frames. The
+main process prefers `ready-to-show` and presents the loaded document through a bounded
+`did-finish-load` fallback if that event is suspended too. A startup snapshot names the real target
+and disables bootstrap writes and search while the target builds its derived index. Open vault remains
 available. After the first bootstrap render, the sandboxed renderer sends a one-way shell-ready
 signal; only then may the main process begin restored-vault activation. A generation guard prevents
 a late restore from replacing a vault picked while it was opening. A deferred runtime restores only

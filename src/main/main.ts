@@ -4516,14 +4516,27 @@ async function createWindow(trustedWorkspace = false): Promise<void> {
   );
 
   let boundsTimer: NodeJS.Timeout | undefined;
+  let showFallbackTimer: NodeJS.Timeout | undefined;
   let autosaveBridgeReady = false;
   let closeAfterAutosave = false;
   let closeAutosavePending = false;
+  const showWindow = (): void => {
+    if (showFallbackTimer !== undefined) {
+      clearTimeout(showFallbackTimer);
+      showFallbackTimer = undefined;
+    }
+    if (!window.isDestroyed() && !window.isVisible()) {
+      window.show();
+    }
+  };
   window.webContents.on("did-start-loading", () => {
     autosaveBridgeReady = false;
   });
   window.webContents.on("did-finish-load", () => {
     autosaveBridgeReady = true;
+    if (showFallbackTimer === undefined && !window.isVisible()) {
+      showFallbackTimer = setTimeout(showWindow, 250);
+    }
   });
   const persistBounds = (): void => {
     if (boundsTimer !== undefined) {
@@ -4576,7 +4589,7 @@ async function createWindow(trustedWorkspace = false): Promise<void> {
       });
   });
 
-  window.once("ready-to-show", () => window.show());
+  window.once("ready-to-show", showWindow);
   window.webContents.on("render-process-gone", (_event, details) => {
     rendererAutosaveFlush.cancelSender(rendererId);
     if (applicationQuitAuthorized || closeAfterAutosave) {
@@ -4592,6 +4605,10 @@ async function createWindow(trustedWorkspace = false): Promise<void> {
   });
   window.once("closed", () => {
     rendererAutosaveFlush.cancelSender(rendererId);
+    if (showFallbackTimer !== undefined) {
+      clearTimeout(showFallbackTimer);
+      showFallbackTimer = undefined;
+    }
     if (boundsTimer !== undefined) {
       clearTimeout(boundsTimer);
       boundsTimer = undefined;

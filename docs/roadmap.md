@@ -77,7 +77,8 @@ equivalence through the real writer-to-watcher seam.
       revert, revision-aware recoverable writes, external-change detection, and keep-both conflict UI.
 - [x] Arbitrary vault picker, validated runtime swaps, and persistent workspace restoration.
 - [x] Non-blocking first window through a plugin-free bootstrap runtime, explicit target-indexing
-      state, disabled bootstrap mutations, user-switch supersession, and a production startup probe.
+      state, disabled bootstrap mutations, user-switch supersession, bounded hidden-window frame
+      and presentation fallbacks, and a production startup probe.
 - [x] Single-read target bootstrap that seeds watcher and index state from one stable observation,
       excludes dot-prefixed trees, caches generation-bound projections, and verifies full readiness
       plus clean shutdown against a 20,621-note working vault.

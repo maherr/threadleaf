@@ -16117,11 +16117,16 @@ void window.threadleaf
   .getSnapshot()
   .then((snapshot) => {
     render(snapshot);
-    window.requestAnimationFrame(() => {
+    const markShellReady = () => {
+      if (document.documentElement.dataset.threadleafShellReady === "true") {
+        return;
+      }
       document.documentElement.dataset.threadleafShellReady = "true";
       performance.mark("threadleaf:shell-ready");
       window.threadleaf.markStartupShellReady();
-    });
+    };
+    window.requestAnimationFrame(markShellReady);
+    window.setTimeout(markShellReady, 100);
   })
   .catch((error: unknown) => showToast(error instanceof Error ? error.message : String(error)));
 void window.threadleaf
