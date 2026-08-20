@@ -2523,6 +2523,168 @@ h2 {
   overflow: auto;
 }
 
+.threadleaf-plugin-settings-surface > .vertical-tab-content {
+  box-sizing: border-box;
+  width: min(900px, 100%);
+  margin: 0 auto;
+  padding: 22px 30px 48px;
+  color: var(--text-normal, var(--ink));
+  font-family: var(--font-interface-theme, var(--sans));
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.threadleaf-plugin-settings-surface .setting-group {
+  min-width: 0;
+}
+
+.threadleaf-plugin-settings-surface .setting-item {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  padding: 12px 0;
+  border-top: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
+}
+
+.threadleaf-plugin-settings-surface .setting-item:first-child {
+  border-top: 0;
+}
+
+.threadleaf-plugin-settings-surface .setting-item[hidden] {
+  display: none;
+}
+
+.threadleaf-plugin-settings-surface .setting-item-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.threadleaf-plugin-settings-surface .setting-item-name {
+  color: var(--text-normal, var(--ink));
+  font-size: 13px;
+  font-weight: 620;
+  line-height: 1.35;
+}
+
+.threadleaf-plugin-settings-surface .setting-item-description,
+.threadleaf-plugin-settings-surface .setting-list-empty {
+  margin-top: 3px;
+  color: var(--text-muted, var(--ink-muted));
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.threadleaf-plugin-settings-surface .setting-item-description a {
+  color: var(--link-color, var(--accent));
+  text-underline-offset: 2px;
+}
+
+.threadleaf-plugin-settings-surface .setting-item-control {
+  display: flex;
+  max-width: min(48%, 360px);
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.threadleaf-plugin-settings-surface button,
+.threadleaf-plugin-settings-surface select,
+.threadleaf-plugin-settings-surface
+  input:not([type="checkbox"]):not([type="range"]):not([type="color"]) {
+  box-sizing: border-box;
+  min-height: 31px;
+  border: 1px solid var(--background-modifier-border, var(--line));
+  border-radius: 6px;
+  color: var(--text-normal, var(--ink));
+  background: var(--background-modifier-form-field, var(--surface-raised));
+  font: 12px var(--font-interface-theme, var(--sans));
+}
+
+.threadleaf-plugin-settings-surface button {
+  min-width: 31px;
+  padding: 5px 10px;
+  font-weight: 620;
+}
+
+.threadleaf-plugin-settings-surface button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--line));
+  background: var(--interactive-hover, var(--surface-hover));
+}
+
+.threadleaf-plugin-settings-surface select,
+.threadleaf-plugin-settings-surface
+  input:not([type="checkbox"]):not([type="range"]):not([type="color"]) {
+  width: min(280px, 100%);
+  padding: 5px 9px;
+  outline: 0;
+}
+
+.threadleaf-plugin-settings-surface input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--interactive-accent, var(--accent));
+}
+
+.threadleaf-plugin-settings-surface :disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.threadleaf-plugin-settings-surface .setting-item-page {
+  cursor: pointer;
+}
+
+.threadleaf-plugin-settings-surface .setting-item-page:hover {
+  background: color-mix(in srgb, var(--surface-hover) 72%, transparent);
+}
+
+.threadleaf-plugin-settings-surface .setting-page-titlebar {
+  position: sticky;
+  z-index: 2;
+  top: -22px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -22px -30px 12px;
+  padding: 15px 30px 12px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--background-primary, var(--surface)) 94%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.threadleaf-plugin-settings-surface .setting-page-titlebar h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.threadleaf-plugin-settings-surface .setting-definition-group > .extra-setting-button {
+  margin: 4px 0 8px auto;
+}
+
+@media (max-width: 760px) {
+  .threadleaf-plugin-settings-surface > .vertical-tab-content {
+    padding-inline: 18px;
+  }
+
+  .threadleaf-plugin-settings-surface .setting-item {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 9px;
+  }
+
+  .threadleaf-plugin-settings-surface .setting-item-control {
+    width: 100%;
+    max-width: none;
+    justify-content: flex-start;
+  }
+}
+
 .workspace[data-right-plugin-surface="true"] > .inspector {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
