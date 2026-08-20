@@ -48,8 +48,10 @@ loaded plugin that registered the tab. The unchanged Excalidraw tab renders 200 
 inputs, 22 dropdowns, and 32 buttons in the production compatibility renderer. It works with or
 without an open note, follows Threadleaf's light and dark scheme, persists a changed option through
 the plugin's normal `saveData` path on close, restores it on reopen, and removes the settings DOM on
-close or unload. Inline wiki-embed rendering, other export formats, and universal plugin parity are
-not implied by those results. The public-format byte and semantic boundary is exercised separately
+close or unload. Closing either Threadleaf Settings or the plugin-owned Options surface returns to
+the previously active drawing automatically after the prior child surface has fully detached.
+Inline wiki-embed rendering, other export formats, and universal plugin parity are not implied by
+those results. The public-format byte and semantic boundary is exercised separately
 by the [Excalidraw round-trip corpus and packaged gate](excalidraw-roundtrip.md), including native
 `.excalidraw` JSON and attachment manifests. Its pinned official Obsidian roundtrip is recorded as
 an attended external observation and remains separate from executable compatibility gates.

@@ -92,6 +92,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   real DOM surfaces detached behind a status placeholder.
 - Preserved Dataview's strict vault-local file destinations as native Threadleaf links after generic
   projection sanitization, without restoring arbitrary plugin-authored click authority.
+- Returned automatically to the active drawing after closing either Threadleaf Settings or a
+  plugin-owned Options surface, while waiting for the prior child surface to detach before reopen.
 
 ## [0.1.0]
 

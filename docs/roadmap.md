@@ -306,7 +306,8 @@ normal external vault backup and the privacy-safe feedback workflow.
       captured-error checks across two reload cycles.
 - [x] Expose plugin-owned settings tabs from the Community plugins page, including per-plugin
       ownership, light and dark presentation, no-note operation, standard save and reopen behavior,
-      and deterministic close and unload cleanup against unchanged Excalidraw.
+      deterministic close and unload cleanup, and automatic return to the active drawing after both
+      application and plugin-owned settings against unchanged Excalidraw.
 - [x] Provide contained vault resource URLs, Excalidraw's desktop adapter URL fields, a bounded
       read-only adapter surface, and byte-exact public binary codecs, including internal and
       external symlink fixtures.

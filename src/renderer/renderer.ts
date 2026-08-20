@@ -867,6 +867,12 @@ interface ShortcutTargetDefinition {
 
 type EditingViewMode = "live" | "source";
 type DocumentViewMode = EditingViewMode | "reading" | "plugin";
+
+interface DocumentPluginViewIdentity {
+  vaultId: string;
+  filePath: string;
+  viewType: string;
+}
 type SettingsPage =
   | "appearance"
   | "accessibility"
@@ -1095,6 +1101,7 @@ let pluginDocumentActivationRequest = 0;
 let pluginViewSuppressedPath: string | null = null;
 let pluginSettingsTargetId: string | null = null;
 let pluginLayoutReadyVaultId: string | null = null;
+let pluginSurfaceClosePromise: Promise<void> = Promise.resolve();
 let paletteMatches: RendererCommand[] = [];
 let paletteSelection = -1;
 let paletteRestoreFocus: HTMLElement | null = null;
@@ -1113,6 +1120,7 @@ let settingsSnapshot: AppSettingsSnapshot = {
   warning: null,
 };
 let settingsRestoreFocus: HTMLElement | null = null;
+let settingsPluginRestoreIdentity: DocumentPluginViewIdentity | null = null;
 let settingsPage: SettingsPage = "appearance";
 let settingsSearchQuery = "";
 let recordingShortcut: ShortcutTargetId | null = null;
@@ -3081,6 +3089,33 @@ function preferredPluginViewType(
   return filePath ? pluginViewTypeForPath(filePath, snapshot?.integrations) : null;
 }
 
+function currentDocumentPluginViewIdentity(): DocumentPluginViewIdentity | null {
+  const vaultId = currentSnapshot?.vault.id;
+  const filePath =
+    loadedNote?.path ?? workspacePaneSnapshot(activePaneContextId)?.activePluginFile?.path;
+  const viewType = filePath ? pluginViewTypeForPath(filePath, currentSnapshot?.integrations) : null;
+  return vaultId && filePath && viewType ? { vaultId, filePath, viewType } : null;
+}
+
+async function restoreDocumentPluginView(
+  identity: DocumentPluginViewIdentity,
+  afterClose: Promise<void>,
+): Promise<void> {
+  await afterClose;
+  const current = currentDocumentPluginViewIdentity();
+  if (
+    elements.settingsDialog.open ||
+    documentViewMode === "plugin" ||
+    !current ||
+    current.vaultId !== identity.vaultId ||
+    current.filePath !== identity.filePath ||
+    current.viewType !== identity.viewType
+  ) {
+    return;
+  }
+  await activatePluginView();
+}
+
 async function updatePluginSurfaceBounds(): Promise<void> {
   if (elements.pluginSurfaceHost.hidden) {
     return;
@@ -3150,7 +3185,7 @@ async function activatePluginSettings(pluginId: string): Promise<void> {
     return;
   }
   if (elements.settingsDialog.open) {
-    closeSettings(false);
+    closeSettings(false, false);
   }
   const request = ++pluginSurfaceRequest;
   pluginSettingsTargetId = pluginId;
@@ -3268,10 +3303,14 @@ function setDocumentView(mode: DocumentViewMode, focus = true): void {
       loadedNote?.path ??
       currentSnapshot?.pluginSurface?.filePath ??
       null;
-    pluginSurfaceRequest += 1;
-    void window.threadleaf
+    const closeRequest = ++pluginSurfaceRequest;
+    pluginSurfaceClosePromise = window.threadleaf
       .closePluginView()
-      .then(render)
+      .then((snapshot) => {
+        if (closeRequest === pluginSurfaceRequest) {
+          render(snapshot);
+        }
+      })
       .catch(() => undefined);
   }
   if (!focus) {
@@ -10299,6 +10338,10 @@ function openSettings(): void {
   if (elements.commandPalette.open) {
     closeCommandPalette(false);
   }
+  settingsPluginRestoreIdentity =
+    documentViewMode === "plugin" && pluginSettingsTargetId === null
+      ? currentDocumentPluginViewIdentity()
+      : null;
   if (documentViewMode === "plugin") {
     setDocumentView(editingViewMode, false);
   }
@@ -10342,10 +10385,12 @@ function openSettings(): void {
   }
 }
 
-function closeSettings(restoreFocus = true): void {
+function closeSettings(restoreFocus = true, restorePluginView = true): void {
   if (!elements.settingsDialog.open || settingsOperationBusy()) {
     return;
   }
+  const pluginRestoreIdentity = restorePluginView ? settingsPluginRestoreIdentity : null;
+  settingsPluginRestoreIdentity = null;
   recordingShortcut = null;
   noteWorkflowDraft = null;
   workspaceSettingsDraft = null;
@@ -10354,6 +10399,9 @@ function closeSettings(restoreFocus = true): void {
   settingsRestoreFocus = null;
   if (restoreFocus && restoreTarget?.isConnected) {
     restoreTarget.focus();
+  }
+  if (pluginRestoreIdentity) {
+    void restoreDocumentPluginView(pluginRestoreIdentity, pluginSurfaceClosePromise);
   }
 }
 
@@ -15021,7 +15069,12 @@ function bindWorkspacePaneEvents(paneId: WorkspacePaneId, pane: WorkspacePaneEle
   pane.pluginView.addEventListener("click", () => {
     if (!activate()) return;
     if (documentViewMode === "plugin") {
+      const restoreIdentity =
+        pluginSettingsTargetId === null ? null : currentDocumentPluginViewIdentity();
       setDocumentView(editingViewMode);
+      if (restoreIdentity) {
+        void restoreDocumentPluginView(restoreIdentity, pluginSurfaceClosePromise);
+      }
     } else {
       void activatePluginView();
     }

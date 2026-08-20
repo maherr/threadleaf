@@ -2367,6 +2367,26 @@ async function exerciseSettingsWhileDrawing(vaultId, filePath) {
       return true;
     })()`,
   );
+  await clickSelector(cdp, "#settings-close");
+  await waitFor(
+    cdp,
+    `(async () => {
+      const snapshot = await window.threadleaf.getSnapshot();
+      return document.querySelector('#shortcut-settings')?.open !== true &&
+        snapshot.pluginSurface?.viewType === 'excalidraw' &&
+        snapshot.pluginSurface?.filePath === ${JSON.stringify(filePath)}
+        ? snapshot
+        : null;
+    })()`,
+    "Excalidraw drawing restore after main settings",
+  );
+  await waitForExcalidrawCanvas(pluginCdp, "visible Excalidraw canvas after main settings");
+  await clickSelector(cdp, "#settings-trigger");
+  await waitFor(
+    cdp,
+    "document.querySelector('#shortcut-settings')?.open === true",
+    "settings dialog reopen before plugin options",
+  );
   await clickSelector(cdp, "#settings-nav-plugins");
   await waitFor(
     cdp,
@@ -2444,41 +2464,19 @@ async function exerciseSettingsWhileDrawing(vaultId, filePath) {
     cdp,
     `(async () => {
       const snapshot = await window.threadleaf.getSnapshot();
-      return snapshot.pluginSurface === null &&
-        (snapshot.workspace?.activePluginFile?.path ?? snapshot.workspace?.activeNote?.path) === ${JSON.stringify(filePath)}
-        ? snapshot
-        : null;
-    })()`,
-    "Excalidraw plugin-owned settings close",
-  );
-  await pressKey(cdp, "Escape", "Escape");
-  await waitFor(
-    cdp,
-    "document.querySelector('#shortcut-settings')?.open !== true",
-    "settings dialog close",
-  );
-  await evaluate(cdp, "window.threadleaf.waitForPluginMutations()");
-  const sourceAfter = await waitForStableFileBytes(sourcePath);
-  assert(
-    excalidrawSceneSemanticDigest(sourceAfter) === semanticSourceBefore,
-    "Opening and closing settings changed Excalidraw scene content or surrounding Markdown.",
-  );
-  await waitFor(
-    cdp,
-    "document.querySelector('#plugin-view') instanceof HTMLButtonElement && document.querySelector('#plugin-view').disabled === false",
-    "enabled Excalidraw view reopen control",
-  );
-  await clickSelector(cdp, "#plugin-view");
-  await waitFor(
-    cdp,
-    `(async () => {
-      const snapshot = await window.threadleaf.getSnapshot();
       return snapshot.pluginSurface?.viewType === 'excalidraw' &&
         snapshot.pluginSurface?.filePath === ${JSON.stringify(filePath)}
         ? snapshot
         : null;
     })()`,
-    "Excalidraw view reopen after settings",
+    "Excalidraw drawing restore after plugin-owned settings",
+  );
+  await waitForExcalidrawCanvas(pluginCdp, "visible Excalidraw canvas after plugin-owned settings");
+  await evaluate(cdp, "window.threadleaf.waitForPluginMutations()");
+  const sourceAfter = await waitForStableFileBytes(sourcePath);
+  assert(
+    excalidrawSceneSemanticDigest(sourceAfter) === semanticSourceBefore,
+    "Opening and closing settings changed Excalidraw scene content or surrounding Markdown.",
   );
   return {
     settingsResponseMs,

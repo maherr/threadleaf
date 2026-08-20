@@ -32,4 +32,22 @@ describe("compatibility plugin surface lifecycle", () => {
     expect(close).toBeGreaterThan(surfaceDecision);
     expect(open).toBeGreaterThan(close);
   });
+
+  it("restores the active document plugin after main and plugin-owned settings close", () => {
+    const openSettings = renderer.indexOf("function openSettings(): void");
+    const capture = renderer.indexOf("settingsPluginRestoreIdentity =", openSettings);
+    const hide = renderer.indexOf("setDocumentView(editingViewMode, false);", capture);
+    const closeSettings = renderer.indexOf("function closeSettings(", hide);
+    const restore = renderer.indexOf("restoreDocumentPluginView(", closeSettings);
+    const pluginButton = renderer.indexOf('pane.pluginView.addEventListener("click"', restore);
+    const settingsRestore = renderer.indexOf("pluginSettingsTargetId === null", pluginButton);
+
+    expect(openSettings).toBeGreaterThanOrEqual(0);
+    expect(capture).toBeGreaterThan(openSettings);
+    expect(hide).toBeGreaterThan(capture);
+    expect(closeSettings).toBeGreaterThan(hide);
+    expect(restore).toBeGreaterThan(closeSettings);
+    expect(pluginButton).toBeGreaterThan(restore);
+    expect(settingsRestore).toBeGreaterThan(pluginButton);
+  });
 });
