@@ -828,7 +828,88 @@ async function grantAndEnableInstalledPlugin(candidate) {
   return activation;
 }
 
-async function runInstalledPluginMatrix(vaultId, port) {
+async function verifyInstalledPluginMatrixRestart(vaultId, port) {
+  let snapshot;
+  try {
+    snapshot = await waitFor(
+      cdp,
+      `(async () => { const snapshot = await window.threadleaf.getSnapshot(); const ids = ${JSON.stringify(installedMatrixPlugins.map(({ id }) => id))}; return snapshot.vault.id === ${JSON.stringify(vaultId)} && ids.every((id) => snapshot.plugins?.some((plugin) => plugin.id === id && plugin.state === 'loaded')) && !snapshot.events.some((event) => event.kind === 'error') ? snapshot : null; })()`,
+      "installed plugin matrix restart activation",
+      60_000,
+    );
+  } catch (error) {
+    const diagnostic = await evaluate(
+      cdp,
+      `(async () => { const snapshot = await window.threadleaf.getSnapshot(); const catalog = await window.threadleaf.getPlugins(snapshot.vault.id); return { vault: snapshot.vault, workspace: snapshot.workspace?.state, plugins: snapshot.plugins, events: snapshot.events.slice(-60), enabled: (await window.threadleaf.getSettings()).pluginsByVault?.[snapshot.vault.id]?.enabledPluginIds, catalog: catalog.catalog?.plugins?.filter((plugin) => ${JSON.stringify(installedMatrixPlugins.map(({ id }) => id))}.includes(plugin.id)) }; })()`,
+    ).catch(() => null);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}: ${JSON.stringify(diagnostic)}`,
+    );
+  }
+
+  await openNavigatorPluginDocument("Data/sample.json");
+  const dataSurface = await connectPluginSurfaceBySelector(
+    port,
+    ".datafile-source-view .cm-editor",
+    "restarted Data Files Editor JSON view",
+  );
+  try {
+    await waitFor(
+      dataSurface.connection,
+      "document.querySelector('.datafile-source-view .cm-content')?.textContent?.includes('edited-through-plugin') === true",
+      "restarted Data Files Editor content",
+      20_000,
+    );
+  } finally {
+    dataSurface.connection.close();
+  }
+
+  await evaluate(cdp, 'window.threadleaf.openNote("Notes/Source.md")');
+  await waitFor(
+    cdp,
+    `(async () => (await window.threadleaf.getSnapshot()).navigatorDecorations?.some((decoration) => decoration.path === 'Notes/Source.md' && decoration.text === '🌟') === true)()`,
+    "restarted Iconize navigator projection",
+    30_000,
+  );
+  await clickSelector(cdp, "#reveal-active-note");
+  await waitFor(
+    cdp,
+    `document.querySelector('.navigator-tree-row[data-tree-path="Notes/Source.md"] .navigator-plugin-decoration')?.textContent === '🌟'`,
+    "restarted Iconize native navigator decoration",
+    20_000,
+  );
+
+  let minimal;
+  try {
+    minimal = await waitFor(
+      cdp,
+      `(() => { const font = getComputedStyle(document.querySelector('.cm-content')).fontSize; const value = getComputedStyle(document.body).getPropertyValue('--font-text-size').trim(); return document.body.classList.contains('minimal-theme') && value === '16.5px' && font === '16.5px' ? { font, value } : null; })()`,
+      "restarted Minimal native appearance",
+      30_000,
+    );
+  } catch (error) {
+    const diagnostic = await evaluate(
+      cdp,
+      `(async () => { const snapshot = await window.threadleaf.getSnapshot(); const body = getComputedStyle(document.body); const editor = document.querySelector('.cm-content'); return { pluginAppearance: snapshot.pluginAppearance, bodyClasses: [...document.body.classList], bodyFontVariable: body.getPropertyValue('--font-text-size').trim(), editorFont: editor ? getComputedStyle(editor).fontSize : null, plugin: snapshot.plugins?.find((item) => item.id === 'obsidian-minimal-settings'), events: snapshot.events.slice(-30) }; })()`,
+    ).catch(() => null);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}: ${JSON.stringify(diagnostic)}`,
+    );
+  }
+  const omnisearch = await verifyOmnisearchWorkflow(vaultId, port);
+  return {
+    pluginStates: installedMatrixPlugins.map(({ id }) => ({
+      id,
+      state: snapshot.plugins.find((plugin) => plugin.id === id)?.state ?? "missing",
+    })),
+    dataFile: "Data/sample.json",
+    icon: "🌟",
+    minimal,
+    omnisearch,
+  };
+}
+
+async function runInstalledPluginMatrix(vaultId, port, pluginState) {
   await clickSelector(cdp, "#settings-trigger");
   await waitFor(
     cdp,
@@ -896,6 +977,14 @@ async function runInstalledPluginMatrix(vaultId, port) {
     await verifyMinimalSettingsWorkflow(vaultId, port),
     await verifyOmnisearchWorkflow(vaultId, port),
   ];
+  await closeApp();
+  const restartPort = await availablePort();
+  const restarted = await startApp(restartPort, pluginState, { prepareAuthority: false });
+  assert(
+    restarted.vaultId === vaultId,
+    "Installed plugin matrix restart changed the vault identity.",
+  );
+  const restart = await verifyInstalledPluginMatrixRestart(restarted.vaultId, restartPort);
   console.log(
     JSON.stringify(
       {
@@ -904,6 +993,7 @@ async function runInstalledPluginMatrix(vaultId, port) {
         plugins: registrationSummary,
         integrations: snapshot.integrations,
         workflows: workflowSummary,
+        restart,
       },
       null,
       2,
@@ -2853,7 +2943,7 @@ async function run() {
   const port = await availablePort();
   const first = await startApp(port, pluginState);
   if (installedPluginMatrixRoot) {
-    await runInstalledPluginMatrix(first.vaultId, port);
+    await runInstalledPluginMatrix(first.vaultId, port, pluginState);
     return;
   }
   const targetPort = port;

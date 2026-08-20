@@ -1,6 +1,6 @@
 # Installed Obsidian extension parity study
 
-**Last updated:** 2026-08-19
+**Last updated:** 2026-08-20
 
 ## Decision
 
@@ -50,8 +50,9 @@ The plugin registers `TextFileView` subclasses for JSON, YAML, TXT, and XML, bin
 Disposition: **Adapt** the existing file-view and editor bridge, then **Benchmark** exact JSON and YAML persistence. Do not build a separate data editor.
 
 Result on 2026-08-20: the exact installed bundle passed reviewed activation, its registered JSON
-view accepted real CodeMirror input, and the changed bytes autosaved exactly. YAML, TXT, XML,
-reload, and restart remain outside this workflow claim.
+view accepted real CodeMirror input, and the changed bytes autosaved exactly. A second application
+launch reopened the plugin-owned JSON view with the edited content intact. YAML, TXT, XML, and
+explicit plugin reload remain outside this workflow claim.
 
 ### Excalidraw 2.25.3
 
@@ -73,7 +74,9 @@ Disposition: **Adapt** navigator decoration and context-menu projection. **Bench
 
 Result on 2026-08-20: the exact installed bundle's ordinary picker assigned and persisted a star,
 and Threadleaf projected the plugin-authored decoration into the native virtualized Files row in
-light and dark. SVG packs, rules, remove, rename, reload, and restart remain outside this claim.
+light and dark. A second application launch reconstructed both the plugin and the same native star
+without a startup error. SVG packs, rules, remove, rename, and explicit plugin reload remain outside
+this claim.
 
 ### Minimal Theme Settings 8.2.3
 
@@ -83,8 +86,9 @@ Disposition: **Depend** on the unchanged public plugin and theme assets. **Adapt
 
 Result on 2026-08-20: the exact installed plugin loaded beside official-matching Minimal 8.2.0,
 registered 51 owned commands, changed and persisted the body font through both APIs, and projected
-the result into the native editor at a measured 16.5px in light and dark. Other controls, reload,
-and restart remain outside this claim.
+the result into the native editor at a measured 16.5px in light and dark. A second application launch
+read the persisted vault preference and restored the same 16.5px computed native editor size. Other
+controls and explicit plugin reload remain outside this claim.
 
 ### Omnisearch 1.30.1
 
@@ -93,8 +97,9 @@ The plugin uses vault create, delete, modify, and rename events, metadata-cache 
 Disposition: **Depend** on the plugin's own index and UI. **Adapt** missing metadata and modal semantics. **Benchmark** initial index, query ranking, result open, mutation reindex, reload, and restart. Do not substitute Threadleaf's native search and call it plugin parity.
 
 Result on 2026-08-20: the exact installed bundle built its own index, returned the expected result
-through its own modal, and opened that result in Threadleaf's native workspace. Mutation reindex,
-cache reuse, reload, and restart remain outside this claim.
+through its own modal, and opened that result in Threadleaf's native workspace. A second application
+launch rebuilt the index, repeated the same query, and opened the same native note. Mutation reindex,
+cache reuse, and explicit plugin reload remain outside this claim.
 
 ## Saturation and stop gate
 

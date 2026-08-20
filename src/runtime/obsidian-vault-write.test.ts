@@ -143,6 +143,8 @@ describe("Obsidian compatibility vault writes", () => {
     vault.on("config-changed", (key, value) => changes.push([key, value]));
 
     expect(vault.getConfig("baseFontSize")).toBe(16);
+    expect(vault.getPersistedConfig("baseFontSize")).toBe(16);
+    expect(vault.getPersistedConfig("missingSetting")).toBeUndefined();
     await vault.setConfig("baseFontSize", 17.5);
 
     expect(vault.getConfig("baseFontSize")).toBe(17.5);

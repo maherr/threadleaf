@@ -116,6 +116,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   open.
 - Scoped callback-editor navigation suppression to host context construction so an Omnisearch
   result opened later on the same compatibility leaf reaches Threadleaf's native workspace.
+- Matched the current file-explorer deferred-leaf API used by Iconize and reapplied persisted vault
+  font size during compatibility startup, allowing installed plugin data, navigator decoration,
+  native appearance, and Omnisearch navigation to reconstruct cleanly after an application restart.
 
 ## [0.1.0]
 

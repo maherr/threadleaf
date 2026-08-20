@@ -723,7 +723,7 @@ export class Workspace extends Events {
         }
       : openViewState;
     await openFile.call(leaf, file, effectiveOpenViewState);
-    if (effectiveOpenViewState?.active !== false) {
+    if (effectiveOpenViewState?.active !== false && this.activeLeaf !== leaf) {
       this.setActiveLeaf(leaf);
     }
   }

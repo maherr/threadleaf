@@ -317,7 +317,13 @@ export class PluginHost implements PluginRuntimePort {
       if (containerEl) this.mountPluginSurfaceContainer(containerEl);
       return new WorkspaceLeaf(this.app, containerEl);
     });
-    this.app.workspace.setLayoutReadyErrorHandler((_error) => {
+    this.app.workspace.setLayoutReadyErrorHandler((error) => {
+      if (process.env.THREADLEAF_PLUGIN_E2E_DIAGNOSTICS === "1") {
+        console.error(
+          `Compatibility plugin layout-ready callback failed: ${this.lastPluginId}`,
+          error,
+        );
+      }
       this.record("error", createPluginDiagnostic("runtime-load-failed").message);
     });
     this.app.compatibility.setEditorExtensionChangeListener((extensions) => {
@@ -443,6 +449,9 @@ export class PluginHost implements PluginRuntimePort {
 
       const commandIdsBefore = new Set(this.app.commands.list().map(({ id }) => id));
       this.ensureAppearanceBaseline();
+      if (this.vault.getPersistedConfig("baseFontSize") !== undefined) {
+        this.app.updateFontSize();
+      }
       await instance.__load();
       await this.app.workspace.waitForLayoutReadyCallbacks();
       record.summary = { ...record.summary, compatibilityLevel: 2 };
@@ -914,10 +923,15 @@ export class PluginHost implements PluginRuntimePort {
     const leaf = new WorkspaceLeaf(this.app, container);
     this.activePluginLeaf = leaf;
     try {
-      await leaf.setViewState({
-        type: viewType,
-        state: filePath ? { file: filePath } : {},
-      });
+      this.suppressPluginFileNavigation = true;
+      try {
+        await leaf.setViewState({
+          type: viewType,
+          state: filePath ? { file: filePath } : {},
+        });
+      } finally {
+        this.suppressPluginFileNavigation = false;
+      }
       this.record(
         "runtime",
         `Opened plugin view ${viewType}${filePath ? ` for ${filePath}` : ""}.`,
@@ -1218,10 +1232,13 @@ export class PluginHost implements PluginRuntimePort {
       const view = {
         fileItems: this.fileExplorerItems,
         getViewType: () => "file-explorer",
-        loadIfDeferred: () => Promise.resolve(),
       };
       this.app.workspace.setProjectedLeaves("file-explorer", [
-        { view } as unknown as WorkspaceLeaf,
+        {
+          isDeferred: false,
+          loadIfDeferred: () => Promise.resolve(),
+          view,
+        } as unknown as WorkspaceLeaf,
       ]);
     }
     const entries = this.vault.getAllLoadedFiles().filter((entry) => entry.path.length > 0);

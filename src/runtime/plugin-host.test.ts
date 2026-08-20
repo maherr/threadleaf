@@ -1470,9 +1470,13 @@ module.exports = class EditorFixture extends Plugin {
       );
       await fs.writeFile(
         path.join(pluginPath, "main.js"),
-        `const { Plugin } = require("obsidian");
+        `const { Plugin, TextFileView } = require("obsidian");
+class NavigationView extends TextFileView {
+  getViewType() { return "navigation-view"; }
+}
 module.exports = class NavigationFixture extends Plugin {
   async onload() {
+    this.registerView("navigation-view", (leaf) => new NavigationView(leaf));
     this.addCommand({
       id: "open-result",
       name: "Open result",
@@ -1493,6 +1497,9 @@ module.exports = class NavigationFixture extends Plugin {
         },
       });
       await loadPlugin(host, pluginPath);
+      await host.openPluginView("navigation-view", "Result.md");
+      expect(openedPaths).toEqual([]);
+      await host.closePluginView();
       await host.runCommand("navigation-fixture:open-result", {
         path: "Welcome.md",
         content: "origin",
@@ -1528,6 +1535,12 @@ module.exports = class NavigationFixture extends Plugin {
       });
       await fs.mkdir(vaultPath, { recursive: true });
       await fs.writeFile(path.join(vaultPath, "Decorated.md"), "decorated", "utf8");
+      await fs.mkdir(path.join(vaultPath, ".obsidian"), { recursive: true });
+      await fs.writeFile(
+        path.join(vaultPath, ".obsidian", "app.json"),
+        JSON.stringify({ baseFontSize: 16.5 }),
+        "utf8",
+      );
       const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "navigator-fixture");
       await fs.mkdir(pluginPath, { recursive: true });
       await fs.writeFile(
@@ -1541,9 +1554,11 @@ module.exports = class NavigationFixture extends Plugin {
 module.exports = class NavigatorFixture extends Plugin {
   async onload() {
     document.body.classList.add("minimal-theme");
-    document.body.style.setProperty("--font-text-size", "16.5px");
-    this.app.workspace.onLayoutReady(() => {
+    document.body.style.setProperty("--fixture-accent", "#0072b2");
+    this.app.workspace.onLayoutReady(async () => {
       const explorer = this.app.workspace.getLeavesOfType("file-explorer")[0];
+      if (!explorer || explorer.isDeferred) throw new Error("Projected file explorer is deferred");
+      await explorer.loadIfDeferred();
       const item = explorer?.view?.fileItems?.["Decorated.md"];
       if (!item) throw new Error("Projected file explorer item missing");
       const icon = document.createElement("span");
@@ -1568,7 +1583,7 @@ module.exports = class NavigatorFixture extends Plugin {
       ]);
       expect(snapshot.pluginAppearance).toEqual({
         bodyClasses: ["minimal-theme"],
-        variables: { "--font-text-size": "16.5px" },
+        variables: { "--fixture-accent": "#0072b2", "--font-text-size": "16.5px" },
       });
       await host.close();
     } finally {

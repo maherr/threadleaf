@@ -375,6 +375,14 @@ describe("Obsidian workspace compatibility wedge", () => {
       }
       expect(targetLeaf.view.editor.getSelection()).toBe("one");
 
+      let fileOpenCount = 0;
+      const fileOpenRef = app.workspace.on("file-open", () => {
+        fileOpenCount += 1;
+      });
+      await app.workspace.openLinkText("Target", "Notes/Source.md", false);
+      fileOpenRef.off();
+      expect(fileOpenCount).toBe(1);
+
       await targetLeaf.setViewState({
         active: false,
         group: sourceLeaf,

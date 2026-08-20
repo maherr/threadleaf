@@ -4,7 +4,7 @@ This document is generated from the versioned receipt-aware source [`compatibili
 Discovery in the external community package directory is separate from Threadleaf compatibility evidence.
 A row applies only to the exact plugin and Threadleaf versions shown.
 
-Registry schema: 2. Threadleaf version: 0.1.0. Generation: d904fbcae3fa2d3565ce9ed0e81e96f33cfc75c8346860a8f064026351098615.
+Registry schema: 2. Threadleaf version: 0.1.0. Generation: 2e2af03ea286e840bedb8b9acbab1c416cbf194a5fdf5c8f2cf7293c764a3688.
 
 | Plugin | Plugin version | Threadleaf | Level | Evidence | Last tested |
 | --- | --- | --- | ---: | --- | --- |
@@ -24,7 +24,7 @@ Registry schema: 2. Threadleaf version: 0.1.0. Generation: d904fbcae3fa2d3565ce9
 
 ## Data Files Editor 1.3.0
 
-The exact Obsidian-installed Data Files Editor 1.3.0 bundle passed reviewed authority, opened its registered JSON file view, accepted real CodeMirror input, autosaved the changed JSON bytes, and exposed its settings surface while four installed plugins remained loaded together.
+The exact Obsidian-installed Data Files Editor 1.3.0 bundle passed reviewed authority, opened its registered JSON file view, accepted real CodeMirror input, autosaved the changed JSON bytes, restored that content after a full application restart, and exposed its settings surface while four installed plugins remained loaded together.
 
 Bundle SHA-256: `1f962a44845adad7ea3de6792bbf536f111ee131b0fcd16fa9cf4d18ff0d0676`. License: MIT.
 
@@ -47,7 +47,7 @@ Required static authority review: `editor-extension`, `workspace-ui`, `network`,
 
 ### Limitations
 
-- YAML, TXT, XML, non-default settings, rename, reload, and restart remain outside this exact workflow claim.
+- YAML, TXT, XML, non-default settings, rename, and explicit plugin reload remain outside this exact workflow claim.
 - This is supporting behavior evidence, not Level 4 evidence.
 - No controller-finalized signed production receipt exists for this tuple.
 
@@ -219,7 +219,7 @@ Required static authority review: `vault-read`, `vault-write`, `network`, `clipb
 
 ## Iconize 2.14.7
 
-The exact Obsidian-installed Iconize 2.14.7 bundle passed reviewed authority, opened its ordinary icon picker, persisted the selected star for a note, projected it into Threadleaf's native virtualized Files row, and rendered it in light and dark while four installed plugins remained loaded together.
+The exact Obsidian-installed Iconize 2.14.7 bundle passed reviewed authority, opened its ordinary icon picker, persisted the selected star for a note, projected it into Threadleaf's native virtualized Files row, rendered it in light and dark, and reconstructed it after a full application restart while four installed plugins remained loaded together.
 
 Bundle SHA-256: `b68bcfd318d678892f671736e54396fd72414180736e58f164fb17a3f72a22e1`. License: MIT.
 
@@ -243,13 +243,13 @@ Required static authority review: `vault-read`, `network`, `editor-extension`, `
 
 ### Limitations
 
-- This workflow proves one emoji decoration. SVG icon packs, custom rules, folder and tab icons, color controls, remove, rename, reload, and restart remain outside this claim.
+- This workflow proves one emoji decoration. SVG icon packs, custom rules, folder and tab icons, color controls, remove, rename, and explicit plugin reload remain outside this claim.
 - This is supporting behavior evidence, not Level 4 evidence.
 - No controller-finalized signed production receipt exists for this tuple.
 
 ## Minimal Theme Settings 8.2.3
 
-The exact Obsidian-installed Minimal Theme Settings 8.2.3 bundle passed reviewed authority beside the exact Minimal 8.2.0 theme, registered 51 owned commands, increased the native editor font to a measured 16.5px, persisted the value through both plugin and app APIs, and rendered in light and dark.
+The exact Obsidian-installed Minimal Theme Settings 8.2.3 bundle passed reviewed authority beside the exact Minimal 8.2.0 theme, registered 51 owned commands, increased the native editor font to a measured 16.5px, persisted the value through both plugin and app APIs, rendered in light and dark, and restored the same computed size after a full application restart.
 
 Bundle SHA-256: `70573512ec859fad644e79ca9883d0b6d7dfb5369cde66e366884638317efdf3`. License: MIT.
 
@@ -273,7 +273,7 @@ Required static authority review: `workspace-ui`, `network`, `filesystem`, `subp
 
 ### Limitations
 
-- This workflow proves one of 51 commands and the paired theme's existing visual matrix. The remaining commands, settings controls, non-default schemes, reload, and restart remain outside this claim.
+- This workflow proves one of 51 commands and the paired theme's existing visual matrix. The remaining commands, settings controls, non-default schemes, and explicit plugin reload remain outside this claim.
 - A non-default Threadleaf accessibility editor-font preference takes precedence over the plugin's body-font projection.
 - This is supporting behavior evidence, not Level 4 evidence.
 - No controller-finalized signed production receipt exists for this tuple.
@@ -312,7 +312,7 @@ Required static authority review: `workspace-ui`, `dynamic-code`.
 
 ## Omnisearch 1.30.1
 
-The exact Obsidian-installed Omnisearch 1.30.1 bundle passed reviewed authority, built its own index over the disposable vault, opened its own visible search modal, returned the expected Unicode-scene result, and handed that result back to Threadleaf's native note navigation while four installed plugins remained loaded together.
+The exact Obsidian-installed Omnisearch 1.30.1 bundle passed reviewed authority, built its own index over the disposable vault, opened its own visible search modal, returned the expected Unicode-scene result, handed that result back to Threadleaf's native note navigation, and repeated the query and open workflow after a full application restart while four installed plugins remained loaded together.
 
 Bundle SHA-256: `4ea4d51f5ce283ea0f83ceb1f1db8e8f8c3ae156fab69a5f8f4c4e09d101a314`. License: GPL-3.0.
 
@@ -336,7 +336,7 @@ Required static authority review: `vault-read`, `network`, `workspace-ui`, `file
 
 ### Limitations
 
-- Mutation reindexing, cache reuse, in-file search, PDF and image indexing, HTTP APIs, non-default settings, reload, and restart remain outside this claim.
+- Mutation reindexing, cache reuse, in-file search, PDF and image indexing, HTTP APIs, non-default settings, and explicit plugin reload remain outside this claim.
 - This is supporting behavior evidence, not Level 4 evidence.
 - No controller-finalized signed production receipt exists for this tuple.
 

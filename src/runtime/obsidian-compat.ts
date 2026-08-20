@@ -935,6 +935,10 @@ export class Vault extends Events {
     return persisted === undefined ? defaultVaultConfigValues[key] : persisted;
   }
 
+  getPersistedConfig(key: string): unknown {
+    return readVaultAppSettings(this)[key];
+  }
+
   setConfig(key: string, value: unknown): Promise<void> {
     if (!key || key.includes("\0")) {
       return Promise.reject(new Error("Vault configuration keys must be non-empty."));
