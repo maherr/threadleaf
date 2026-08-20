@@ -9,6 +9,8 @@ import {
   type DropdownComponent,
   Editor,
   FuzzySuggestModal,
+  Modal,
+  type Scope,
   SecretComponent,
   Setting,
   SettingGroup,
@@ -469,6 +471,43 @@ describe("Obsidian declarative settings compatibility", () => {
 });
 
 describe("Obsidian confirmation modal compatibility", () => {
+  it("closes ordinary modals from their backdrop and Escape scope", () => {
+    const dom = new JSDOM("<!doctype html><body></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    vi.stubGlobal("document", dom.window.document);
+    try {
+      const scopes: Scope[] = [];
+      const app = {
+        keymap: {
+          popScope: vi.fn((scope: Scope) => {
+            const index = scopes.lastIndexOf(scope);
+            if (index >= 0) scopes.splice(index, 1);
+          }),
+          pushScope: vi.fn((scope: Scope) => scopes.push(scope)),
+        },
+        registerPluginModal: vi.fn(() => () => undefined),
+      } as never;
+      const modal = new Modal(app).setTitle("Fixture modal");
+
+      modal.open();
+      expect(modal.containerEl.isConnected).toBe(true);
+      expect(scopes).toEqual([modal.scope]);
+      modal.bgEl.click();
+      expect(modal.containerEl.isConnected).toBe(false);
+      expect(scopes).toEqual([]);
+
+      modal.open();
+      const event = new dom.window.KeyboardEvent("keydown", { key: "Escape" });
+      expect(modal.scope.handleKeyEvent(event)).toMatchObject({ matched: true, result: false });
+      expect(modal.containerEl.isConnected).toBe(false);
+      expect(scopes).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+      dom.window.close();
+    }
+  });
+
   it("supports confirmation buttons, focus, secondary placement, and cancellation", async () => {
     const dom = new JSDOM("<!doctype html><body></body></html>", {
       url: "https://threadleaf.invalid/",

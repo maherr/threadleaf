@@ -1304,6 +1304,11 @@ export class Modal {
     this.headerEl.append(this.titleEl);
     this.modalEl.append(this.headerEl, this.contentEl);
     this.containerEl.append(this.bgEl, this.modalEl);
+    this.bgEl.addEventListener("click", () => this.close());
+    this.scope.register([], "Escape", () => {
+      this.close();
+      return false;
+    });
   }
 
   open(): void {
@@ -1312,12 +1317,14 @@ export class Modal {
     }
     this.openState = true;
     this.releasePluginOwnership = this.app.registerPluginModal(this);
+    this.app.keymap?.pushScope(this.scope);
     currentDocument().body.append(this.containerEl);
     try {
       this.onOpen();
     } catch (error) {
       this.openState = false;
       this.containerEl.remove();
+      this.app.keymap?.popScope(this.scope);
       this.releasePluginOwnership?.();
       this.releasePluginOwnership = null;
       throw error;
@@ -1333,6 +1340,7 @@ export class Modal {
       this.onClose();
     } finally {
       this.containerEl.remove();
+      this.app.keymap?.popScope(this.scope);
       this.releasePluginOwnership?.();
       this.releasePluginOwnership = null;
       const closeCallback = this.closeCallback;

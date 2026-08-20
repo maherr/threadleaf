@@ -2186,6 +2186,31 @@ async function exportPublicFixtures() {
   const svgText = svg.toString("utf8");
   assert(/^<svg[\s>]/u.test(svgText.trim()), "Plugin SVG export is not XML-shaped.");
   assert(svgText.includes("<svg"), "Plugin SVG export has no SVG root.");
+  await runPaletteCommand(
+    "obsidian-excalidraw-plugin:export-image",
+    "export image",
+    "plugin.command.obsidian-excalidraw-plugin:export-image",
+  );
+  await waitFor(
+    pluginCdp,
+    "document.body?.textContent?.includes('Export Drawing')",
+    "dismissible Excalidraw export dialog",
+  );
+  await pluginCdp.send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "Escape",
+    code: "Escape",
+  });
+  await pluginCdp.send("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "Escape",
+    code: "Escape",
+  });
+  await waitFor(
+    pluginCdp,
+    "!document.body?.textContent?.includes('Export Drawing')",
+    "Escape-dismissed Excalidraw export dialog",
+  );
   return {
     png: { path: "Drawings/Unicode Scene.excalidraw.png", sha256: sha256(png) },
     svg: { path: "Drawings/Unicode Scene.excalidraw.svg", sha256: sha256(svg) },
