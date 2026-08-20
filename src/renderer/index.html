@@ -12,54 +12,77 @@
   <body class="app-container is-desktop theme-light">
     <div class="app-frame workspace-container">
       <header class="topbar titlebar">
-        <a
-          class="brand"
-          href="#note-editor-shell"
-          aria-label="Focus the Threadleaf workspace"
-          title="Threadleaf"
-        >
-          <span class="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M7 20h9" />
-              <path d="M10 19c-1.8-1.6-2.6-3.5-2.3-5.7.6-4.2 4.2-6.6 9.3-7.3.5 5.1-.7 9-4.2 11.2" />
-              <path d="M9.5 16.5c1.7-2.4 4.2-4.3 7.1-5.4" />
-            </svg>
-          </span>
-          <span class="brand-copy">
-            <strong>Threadleaf</strong>
-            <small>Open vault workspace</small>
-          </span>
-        </a>
-
-        <button
-          class="titlebar-dock-toggle"
-          id="titlebar-left-dock"
-          type="button"
-          aria-label="Collapse notes dock"
-          aria-expanded="true"
-          title="Collapse notes dock"
-        >
-          <svg class="topbar-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="3.5" y="4" width="17" height="16" rx="2.5" />
-            <path d="M9 4v16" />
-          </svg>
-        </button>
-
-        <div class="vault-switcher">
-          <div class="vault-identity" id="vault-identity" aria-live="polite">
-            <span class="status-shape" id="status-shape" aria-hidden="true"></span>
-            <span>
-              <small id="vault-kicker">Active vault</small>
-              <strong id="vault-name">Connecting</strong>
+        <div class="titlebar-left-cluster" role="toolbar" aria-label="Workspace controls">
+          <a
+            class="brand"
+            href="#note-editor-shell"
+            aria-label="Focus the Threadleaf workspace"
+            title="Threadleaf"
+          >
+            <span class="brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 20h9" />
+                <path d="M10 19c-1.8-1.6-2.6-3.5-2.3-5.7.6-4.2 4.2-6.6 9.3-7.3.5 5.1-.7 9-4.2 11.2" />
+                <path d="M9.5 16.5c1.7-2.4 4.2-4.3 7.1-5.4" />
+              </svg>
             </span>
-            <span class="state-word" id="runtime-state">Starting</span>
-          </div>
-          <button class="vault-open" id="open-vault" type="button" aria-label="Open another vault">
+            <span class="brand-copy">
+              <strong>Threadleaf</strong>
+              <small>Open vault workspace</small>
+            </span>
+          </a>
+
+          <button
+            class="titlebar-dock-toggle"
+            id="titlebar-left-dock"
+            type="button"
+            aria-label="Collapse notes dock"
+            aria-expanded="true"
+            title="Collapse notes dock"
+          >
             <svg class="topbar-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M3.5 7.5h6l2-2h9v12.75H3.5z" />
-              <path d="M12 10.5v5M9.5 13h5" />
+              <rect x="3.5" y="4" width="17" height="16" rx="2.5" />
+              <path d="M9 4v16" />
             </svg>
-            <span id="open-vault-label">Open</span>
+          </button>
+
+          <div class="vault-switcher">
+            <div class="vault-identity" id="vault-identity" aria-live="polite">
+              <span class="status-shape" id="status-shape" aria-hidden="true"></span>
+              <span>
+                <small id="vault-kicker">Active vault</small>
+                <strong id="vault-name">Connecting</strong>
+              </span>
+              <span class="state-word" id="runtime-state">Starting</span>
+            </div>
+            <button
+              class="vault-open"
+              id="open-vault"
+              type="button"
+              aria-label="Open another vault"
+              title="Open another vault"
+            >
+              <svg class="topbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3.5 7.5h6l2-2h9v12.75H3.5z" />
+                <path d="M12 10.5v5M9.5 13h5" />
+              </svg>
+              <span id="open-vault-label">Open</span>
+            </button>
+          </div>
+
+          <button
+            class="icon-button command-trigger"
+            id="command-trigger"
+            type="button"
+            aria-label="Open command palette"
+            title="Command palette"
+          >
+            <svg class="topbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="10.5" cy="10.5" r="5.5" />
+              <path d="m14.5 14.5 5 5" />
+            </svg>
+            <span class="command-trigger-copy">Commands</span>
+            <kbd id="command-shortcut">Ctrl K</kbd>
           </button>
         </div>
 
@@ -80,19 +103,6 @@
         </button>
 
         <div class="topbar-actions">
-          <button
-            class="icon-button command-trigger"
-            id="command-trigger"
-            type="button"
-            aria-label="Open command palette"
-          >
-            <svg class="topbar-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="10.5" cy="10.5" r="5.5" />
-              <path d="m14.5 14.5 5 5" />
-            </svg>
-            <span class="command-trigger-copy">Commands</span>
-            <kbd id="command-shortcut">Ctrl K</kbd>
-          </button>
           <button
             class="icon-button settings-trigger"
             id="settings-trigger"

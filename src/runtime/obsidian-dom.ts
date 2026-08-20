@@ -30,6 +30,7 @@ interface ObsidianDomElement extends Element {
   getText(): string;
   setText(value: string | DocumentFragment): void;
   empty(): void;
+  detach(): void;
   createEl<K extends keyof HTMLElementTagNameMap>(
     tagName: K,
     options?: DomElementOptions | string | null,
@@ -397,6 +398,9 @@ export function installObsidianDomCompatibility(
   });
   defineMethod(prototype, "empty", function (this: Element) {
     this.replaceChildren();
+  });
+  defineMethod(prototype, "detach", function (this: Element) {
+    this.remove();
   });
   defineMethod(prototype, "createEl", function <
     K extends keyof HTMLElementTagNameMap,

@@ -95,6 +95,20 @@ describe("Obsidian compatibility workspace lifecycle", () => {
     );
   });
 
+  it("treats absent and already-released workspace event references as no-ops", () => {
+    const workspace = new Workspace();
+    let calls = 0;
+    const eventRef = workspace.on("layout-change", () => {
+      calls += 1;
+    });
+
+    expect(() => workspace.offref(undefined)).not.toThrow();
+    workspace.offref(eventRef);
+    expect(() => workspace.offref(eventRef)).not.toThrow();
+    workspace.trigger("layout-change");
+    expect(calls).toBe(0);
+  });
+
   it("reports synchronous and asynchronous callback failures without poisoning readiness", async () => {
     const workspace = new Workspace();
     const failures: string[] = [];

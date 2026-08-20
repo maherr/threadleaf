@@ -426,8 +426,8 @@ export class Workspace extends Events {
       .sort((left, right) => left.localeCompare(right, "en-US"));
   }
 
-  offref(eventRef: CompatibilityEventRef): void {
-    eventRef.off();
+  offref(eventRef?: CompatibilityEventRef | null): void {
+    eventRef?.off();
   }
 
   updateOptions(): void {
@@ -854,6 +854,13 @@ export class Workspace extends Events {
 
   getLastOpenFiles(): string[] {
     return [...this.recentFiles];
+  }
+
+  getRecentFiles(options: { maxCount: number }): string[] {
+    const maxCount = Number.isFinite(options?.maxCount)
+      ? Math.max(0, Math.floor(options.maxCount))
+      : this.recentFiles.length;
+    return this.recentFiles.slice(0, maxCount);
   }
 
   getLeafGroupMember(leaf: WorkspaceLeaf): WorkspaceLeaf | null {

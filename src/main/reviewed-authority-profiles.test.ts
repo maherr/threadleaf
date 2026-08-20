@@ -8,11 +8,12 @@ import {
 } from "./reviewed-authority-profiles";
 
 describe("reviewed authority profiles", () => {
-  it("loads the twenty-five exact identity-bound records", () => {
+  it("loads the twenty-six exact identity-bound records", () => {
     const profiles = reviewedAuthorityProfiles();
     expect(profiles.map(({ packageIdentity }) => packageIdentity.pluginId).sort()).toEqual([
       "calendar-beta",
       "cite",
+      "darlal-switcher-plus",
       "data-files-editor",
       "dataview",
       "inspection-runaway",

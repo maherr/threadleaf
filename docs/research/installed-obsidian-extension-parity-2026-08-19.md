@@ -27,6 +27,7 @@ This study covers the initial community-plugin and theme acceptance corpus, the 
 | Minimal Theme Settings | 8.1.1 | [kepano/obsidian-minimal-settings](https://github.com/kepano/obsidian-minimal-settings/tree/8.1.1) | MIT | `a092f66342eb46dd93d96ffd75c9dc5e4f398d8547c41fa51b38f9edb59f4df6` | Repeat the paired theme, computed-style, persistence, and restart workflow against the active vault's exact package |
 | Minimal Theme Settings | 8.2.3 | [kepano/obsidian-minimal-settings](https://github.com/kepano/obsidian-minimal-settings/tree/8.2.3) | MIT | `70573512ec859fad644e79ca9883d0b6d7dfb5369cde66e366884638317efdf3` | Change representative Minimal controls, verify computed styles, reload, and restart |
 | Omnisearch | 1.30.1 | [scambier/obsidian-omnisearch](https://github.com/scambier/obsidian-omnisearch/tree/1.30.1) | GPL-3.0 | `4ea4d51f5ce283ea0f83ceb1f1db8e8f8c3ae156fab69a5f8f4c4e09d101a314` | Index a fixture vault, search from its command and ribbon surface, open a result, modify, and reindex |
+| Quick Switcher++ | 5.4.0 | [darlal/obsidian-switcher-plus](https://github.com/darlal/obsidian-switcher-plus/tree/5.4.0) | GPL-3.0 | `67145686997a07216fc19575502c9c0a27cbb5f03882e8ba1820bd564ca82b49` | Extend an independently authored core switcher, query Standard Mode, select a native note, and reconstruct after restart |
 | Minimal theme | 8.2.0 | [kepano/obsidian-minimal](https://github.com/kepano/obsidian-minimal/tree/8.2.0) | MIT | `theme.css` is `c75b6043bb8e7de95efaf835b509c3e995fe5fd49c43d7639a6b4a9efe934bdd` | Apply with Minimal Settings, verify representative components in light and dark, reload, and restart |
 
 The local Minimal 8.2.0 `theme.css` and `manifest.json` hashes exactly match the two [official 8.2.0 release assets](https://github.com/kepano/obsidian-minimal/releases/tag/8.2.0).
@@ -135,6 +136,21 @@ Result on 2026-08-20: the exact installed bundle built its own index, returned t
 through its own modal, and opened that result in Threadleaf's native workspace. A second application
 launch rebuilt the index, repeated the same query, and opened the same native note. Mutation reindex,
 cache reuse, and explicit plugin reload remain outside this claim.
+
+### Quick Switcher++ 5.4.0
+
+The plugin does not supply an independent modal. Its public GPL-3.0 source subclasses the built-in
+Quick Switcher and consumes its chooser, recent-file, view-registry, event-reference, fuzzy-result,
+folder, and DOM contracts. Threadleaf therefore implements those contracts independently and keeps
+the unchanged plugin package as the dependency.
+
+Disposition: **Depend** on the exact GPL-3.0 package. **Adapt** the chooser-backed core switcher and
+the small public compatibility shapes it consumes. **Benchmark** Standard Mode with physical key
+events, an enhanced file/path result, native navigation, both themes, and application restart.
+Result on 2026-08-20: the exact active-vault 5.4.0 package registered all 11 commands, filtered
+`Source` to `Notes/Source.md`, rendered a polished plugin-owned result in dark and light, opened the
+note through Threadleaf's native workspace, and reloaded after restart beside the other eight matrix
+plugins. The ten non-Standard modes remain outside this workflow claim.
 
 ## Saturation and stop gate
 

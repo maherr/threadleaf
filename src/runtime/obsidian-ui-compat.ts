@@ -1492,9 +1492,15 @@ export class SuggestModal<T> extends Modal {
   emptyStateText = "No matches found.";
   readonly inputEl: HTMLInputElement;
   readonly resultContainerEl: HTMLElement;
+  protected readonly chooser: {
+    values: T[];
+    suggestions: HTMLElement[];
+    selectedItem: number;
+    setSuggestions(values: T[] | null): void;
+    setSelectedItem(index: number, event: MouseEvent | KeyboardEvent | null): void;
+    useSelectedItem(event: MouseEvent | KeyboardEvent): void;
+  };
   private instructions: Instruction[] = [];
-  private suggestions: T[] = [];
-  private activeSuggestionIndex = 0;
 
   constructor(app: App) {
     super(app);
@@ -1503,8 +1509,20 @@ export class SuggestModal<T> extends Modal {
     this.inputEl.className = "prompt-input";
     this.resultContainerEl = doc.createElement("div");
     this.resultContainerEl.className = "suggestion-container";
+    this.chooser = {
+      selectedItem: 0,
+      setSelectedItem: (index) => {
+        if (this.chooser.values.length === 0) return;
+        this.chooser.selectedItem = Math.max(0, Math.min(index, this.chooser.values.length - 1));
+        this.renderActiveSuggestion();
+      },
+      setSuggestions: (values) => this.renderSuggestions(values ?? []),
+      suggestions: [],
+      useSelectedItem: (event) => this.selectActiveSuggestion(event),
+      values: [],
+    };
     this.contentEl.append(this.inputEl, this.resultContainerEl);
-    this.inputEl.addEventListener("input", () => void this.refreshSuggestions());
+    this.inputEl.addEventListener("input", () => this.updateSuggestions());
     this.inputEl.addEventListener("keydown", (event) => this.handleKeyDown(event));
   }
 
@@ -1529,7 +1547,7 @@ export class SuggestModal<T> extends Modal {
   }
 
   selectActiveSuggestion(event: MouseEvent | KeyboardEvent): void {
-    const active = this.suggestions[this.activeSuggestionIndex];
+    const active = this.chooser.values[this.chooser.selectedItem];
     if (active !== undefined) {
       this.selectSuggestion(active, event);
     }
@@ -1549,25 +1567,38 @@ export class SuggestModal<T> extends Modal {
     return [...this.instructions];
   }
 
+  protected updateSuggestions(): void {
+    void this.refreshSuggestions().catch((error: unknown) => {
+      console.error("Obsidian suggestion refresh failed", error);
+      this.renderSuggestions([]);
+    });
+  }
+
   private async refreshSuggestions(): Promise<void> {
     const values = await this.getSuggestions(this.inputEl.value);
-    this.suggestions = values.slice(0, this.limit);
-    this.activeSuggestionIndex = 0;
+    this.renderSuggestions(values.slice(0, this.limit));
+  }
+
+  private renderSuggestions(values: T[]): void {
+    this.chooser.values = [...values];
+    this.chooser.selectedItem = 0;
+    this.chooser.suggestions = [];
     this.resultContainerEl.replaceChildren();
-    if (this.suggestions.length === 0) {
+    if (this.chooser.values.length === 0) {
       this.onNoSuggestion();
       return;
     }
-    for (const [index, suggestion] of this.suggestions.entries()) {
+    for (const [index, suggestion] of this.chooser.values.entries()) {
       const element = this.resultContainerEl.ownerDocument.createElement("div");
       element.className = "suggestion-item";
-      element.classList.toggle("is-selected", index === this.activeSuggestionIndex);
+      element.classList.toggle("is-selected", index === this.chooser.selectedItem);
       this.renderSuggestion(suggestion, element);
       element.addEventListener("click", (event) => this.selectSuggestion(suggestion, event));
       element.addEventListener("mouseenter", () => {
-        this.activeSuggestionIndex = index;
+        this.chooser.selectedItem = index;
         this.renderActiveSuggestion();
       });
+      this.chooser.suggestions.push(element);
       this.resultContainerEl.append(element);
     }
   }
@@ -1578,13 +1609,13 @@ export class SuggestModal<T> extends Modal {
       this.close();
       return;
     }
-    if (this.suggestions.length === 0) return;
+    if (this.chooser.values.length === 0) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       const direction = event.key === "ArrowDown" ? 1 : -1;
-      this.activeSuggestionIndex =
-        (this.activeSuggestionIndex + direction + this.suggestions.length) %
-        this.suggestions.length;
+      this.chooser.selectedItem =
+        (this.chooser.selectedItem + direction + this.chooser.values.length) %
+        this.chooser.values.length;
       this.renderActiveSuggestion();
       return;
     }
@@ -1595,11 +1626,10 @@ export class SuggestModal<T> extends Modal {
   }
 
   private renderActiveSuggestion(): void {
-    const elements = this.resultContainerEl.querySelectorAll<HTMLElement>(".suggestion-item");
-    for (const [index, element] of [...elements].entries()) {
-      element.classList.toggle("is-selected", index === this.activeSuggestionIndex);
+    for (const [index, element] of this.chooser.suggestions.entries()) {
+      element.classList.toggle("is-selected", index === this.chooser.selectedItem);
     }
-    elements[this.activeSuggestionIndex]?.scrollIntoView({ block: "nearest" });
+    this.chooser.suggestions[this.chooser.selectedItem]?.scrollIntoView({ block: "nearest" });
   }
 }
 

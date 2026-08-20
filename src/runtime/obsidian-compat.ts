@@ -273,7 +273,7 @@ export class TFolder extends TAbstractFile {
     return this.vault?.childrenForFolder(this.path) ?? [];
   }
 
-  get isRoot(): boolean {
+  isRoot(): boolean {
     return this.path === "";
   }
 }
@@ -3306,6 +3306,85 @@ function createCanvasNode(file: TFile) {
   };
 }
 
+interface CoreQuickSwitcherSuggestion {
+  file: TFile;
+  match: { score: number; matches: Array<[number, number]> } | null;
+  type: "file";
+}
+
+class CoreQuickSwitcherModal extends SuggestModal<CoreQuickSwitcherSuggestion> {
+  shouldShowAlias = false;
+  allowCreateNewFile = false;
+  readonly createButtonEl: HTMLButtonElement;
+  protected isOpen = false;
+
+  constructor(
+    app: App,
+    _options: {
+      showAllFileTypes?: boolean;
+      showAttachments?: boolean;
+      showExistingOnly?: boolean;
+    } = {},
+  ) {
+    super(app);
+    this.modalEl.classList.add("mod-quick-switcher");
+    this.createButtonEl = this.contentEl.ownerDocument.createElement("button");
+    this.createButtonEl.hidden = true;
+    this.createButtonEl.type = "button";
+    this.setPlaceholder("Type a file name...");
+  }
+
+  override onOpen(): void {
+    this.isOpen = true;
+    this.inputEl.value = "";
+    this.updateSuggestions();
+    this.inputEl.focus();
+  }
+
+  override onClose(): void {
+    this.isOpen = false;
+  }
+
+  override getSuggestions(query: string): CoreQuickSwitcherSuggestion[] {
+    const needle = query.trim().toLocaleLowerCase("en-US");
+    return this.app.vault
+      .getFiles()
+      .map((file) => {
+        const candidate = file.path.toLocaleLowerCase("en-US");
+        const start = needle.length === 0 ? 0 : candidate.indexOf(needle);
+        return { file, start };
+      })
+      .filter(({ start }) => start >= 0)
+      .sort((left, right) => {
+        const byStart = left.start - right.start;
+        return byStart !== 0 ? byStart : left.file.path.localeCompare(right.file.path, "en-US");
+      })
+      .slice(0, this.limit)
+      .map(({ file, start }) => ({
+        file,
+        match:
+          needle.length === 0
+            ? null
+            : {
+                matches: [[start, start + needle.length]],
+                score: 1 / (start + 1),
+              },
+        type: "file" as const,
+      }));
+  }
+
+  override renderSuggestion(value: CoreQuickSwitcherSuggestion, element: HTMLElement): void {
+    element.textContent = value.file.path;
+  }
+
+  override onChooseSuggestion(
+    value: CoreQuickSwitcherSuggestion,
+    _event: MouseEvent | KeyboardEvent,
+  ): void {
+    void this.app.workspace.openLinkText(value.file.path, "", false);
+  }
+}
+
 function createInternalPlugins() {
   const nodes = new Set<ReturnType<typeof createCanvasNode>>();
   const canvas = {
@@ -3336,12 +3415,23 @@ function createInternalPlugins() {
   const bookmarks = { enabled: false };
   const fileExplorer = { enabled: false };
   const outline = { enabled: false };
+  const switcherInstance = {
+    id: "switcher",
+    options: {
+      showAllFileTypes: false,
+      showAttachments: true,
+      showExistingOnly: true,
+    },
+    QuickSwitcherModal: CoreQuickSwitcherModal,
+  };
+  const switcher = { enabled: true, instance: switcherInstance };
   const plugins = {
     canvas: canvasPlugin,
     "daily-notes": dailyNotes,
     bookmarks,
     "file-explorer": fileExplorer,
     outline,
+    switcher,
   };
   const getPluginById = (pluginId: string) =>
     Object.hasOwn(plugins, pluginId) ? plugins[pluginId as keyof typeof plugins] : null;
@@ -3418,6 +3508,11 @@ export class App {
   readonly notices: NoticeBus;
   readonly workspace = new Workspace();
   readonly compatibility = new CompatibilityIntegrationRegistry();
+  readonly viewRegistry: {
+    readonly typeByExtension: Record<string, string>;
+    readonly viewByType: Record<string, true>;
+    isExtensionRegistered(extension: string): boolean;
+  };
   readonly internalPlugins = createInternalPlugins();
   readonly foldManager = {
     load: (file: TFile): unknown | null => this.foldStates.get(file.path) ?? null,
@@ -3448,6 +3543,23 @@ export class App {
     this.metadataCache = new MetadataCache(vault);
     this.commands = commands;
     this.notices = notices;
+    const app = this;
+    this.viewRegistry = {
+      get typeByExtension() {
+        return Object.fromEntries(
+          app.compatibility
+            .snapshot()
+            .extensions.map(({ extension, viewType }) => [extension, viewType]),
+        );
+      },
+      get viewByType() {
+        return Object.fromEntries(
+          app.compatibility.snapshot().viewTypes.map((viewType) => [viewType, true as const]),
+        );
+      },
+      isExtensionRegistered: (extension) =>
+        this.compatibility.getViewTypeForExtension(extension) !== null,
+    };
     this.workspace.setLinkResolver((linktext, sourcePath) =>
       this.metadataCache.getFirstLinkpathDest(linktext, sourcePath),
     );
@@ -4377,10 +4489,10 @@ export function renderMatches(
 export function renderResults(
   element: HTMLElement,
   text: string,
-  result: SearchResult,
+  result: SearchResult | null | undefined,
   offset = 0,
 ): void {
-  renderMatches(element, text, result.matches, offset);
+  renderMatches(element, text, result?.matches ?? null, offset);
 }
 
 export function setIcon(parent: HTMLElement, iconId: string): void {

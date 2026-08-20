@@ -5,8 +5,12 @@ import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { basicSetup } from "codemirror";
 import {
+  ArrowLeft,
+  ArrowRight,
+  ArrowRightFromLine,
   ChevronDown,
   ChevronRight,
+  Columns2,
   createElement as createLucideElement,
   File,
   FileArchive,
@@ -28,8 +32,11 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  PictureInPicture2,
   Plus,
+  Rows2,
   Shapes,
+  X,
 } from "lucide";
 import { splitMarkdownDestinationTarget } from "../kernel/markdown-links";
 import { rendererEditorCompatibilityFields } from "../runtime/obsidian-editor-compat";
@@ -807,6 +814,20 @@ const paneElements = new Map<WorkspacePaneId, WorkspacePaneElements>([
   ["primary", paneElementsFor("primary", elements.workspacePane)],
   ["secondary", paneElementsFor("secondary", secondaryPaneRoot)],
 ]);
+
+for (const pane of paneElements.values()) {
+  for (const [button, icon] of [
+    [pane.navigateBack, ArrowLeft],
+    [pane.navigateForward, ArrowRight],
+    [pane.splitPaneRight, Columns2],
+    [pane.splitPaneDown, Rows2],
+    [pane.moveTabPane, ArrowRightFromLine],
+    [pane.popOutPluginView, PictureInPicture2],
+    [pane.closePane, X],
+  ] as const) {
+    button.replaceChildren(interfaceIcon(icon, "pane-layout-icon"));
+  }
+}
 
 for (const [paneId, pane] of paneElements) {
   const shell = pane.noteTabs.closest<HTMLElement>(".note-tabs-shell");

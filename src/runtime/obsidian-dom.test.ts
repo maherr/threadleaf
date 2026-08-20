@@ -19,6 +19,7 @@ interface TestElement extends HTMLDivElement {
   getText(): string;
   setText(value: string): void;
   empty(): void;
+  detach(): void;
   createDiv(
     options?: string | { cls?: string | string[]; text?: string; prepend?: boolean } | null,
   ): TestElement;
@@ -90,6 +91,8 @@ describe("Obsidian DOM compatibility", () => {
     root?.prepend(prepended ?? "");
     expect(root?.getText()).toBe("firstexisting appendedcard");
     expect(appended?.className).toBe("card active");
+    appended?.detach();
+    expect(appended?.isConnected).toBe(false);
     expect(globals.createDiv({ text: "global" }).textContent).toBe("global");
     const fragment = globals.createFragment((value) => {
       value.appendText("fragment");

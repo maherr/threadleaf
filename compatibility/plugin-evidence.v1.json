@@ -760,6 +760,73 @@
     },
     {
       "plugin": {
+        "id": "darlal-switcher-plus",
+        "name": "Quick Switcher++",
+        "version": "5.4.0",
+        "repository": "https://github.com/darlal/obsidian-switcher-plus",
+        "license": "GPL-3.0",
+        "bundleSha256": "67145686997a07216fc19575502c9c0a27cbb5f03882e8ba1820bd564ca82b49"
+      },
+      "threadleafVersion": "0.1.0",
+      "lastTested": "2026-08-20",
+      "compatibilityLevel": 3,
+      "summary": "The exact active-vault Quick Switcher++ 5.4.0 package passed reviewed authority, extended Threadleaf's independently implemented chooser-backed core switcher, registered all 11 owned modes and settings, accepted physical Standard Mode query keystrokes, rendered its enhanced file and path result in dark and light, opened the selected note through native navigation, and reconstructed after a full application restart beside eight other community plugins.",
+      "evidenceMode": "direct",
+      "requiredCapabilities": [
+        "vault-read",
+        "workspace-ui",
+        "network",
+        "filesystem",
+        "subprocess",
+        "host-environment"
+      ],
+      "platforms": [
+        {
+          "id": "linux-x64-electron",
+          "status": "verified",
+          "limits": [
+            "Verified under Xvfb Electron with the exact active-vault package, disposable vault and private state, physical key events, native note navigation, application restart, and visible light and dark screenshots.",
+            "The runtime is trusted same-user desktop code, not a sandbox."
+          ]
+        },
+        {
+          "id": "macos-electron",
+          "status": "unverified",
+          "limits": ["This exact package workflow is not verified on macOS."]
+        },
+        {
+          "id": "windows-x64-electron",
+          "status": "unverified",
+          "limits": ["This exact package workflow is not verified on Windows."]
+        }
+      ],
+      "workflows": [
+        {
+          "id": "quick-switcher-plus.standard-query-native-open.v1",
+          "name": "Open Standard Mode, filter with physical keys, and navigate from the enhanced result",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "scripts/check-excalidraw-roundtrip.mjs",
+              "command": "THREADLEAF_QUICK_SWITCHER_PLUS_PLUGIN_PATH=$ACTIVE_VAULT/.obsidian/plugins/darlal-switcher-plus pnpm run test:excalidraw-roundtrip"
+            },
+            {
+              "path": "src/runtime/obsidian-internal-plugins.test.ts",
+              "command": "pnpm exec vitest run src/runtime/obsidian-internal-plugins.test.ts src/runtime/obsidian-ui-compat.test.ts src/runtime/obsidian-workspace-filemanager-compat.test.ts"
+            }
+          ]
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "This workflow proves Standard Mode query and selection, all 11 command registrations, settings registration, and restart loading. Editor, symbols, workspaces, headings, bookmarks, commands, related items, and vault modes remain outside this behavioral claim.",
+        "The core-switcher facade is an independently authored compatibility implementation informed by the plugin's public GPL-3.0 source contract; it contains no Obsidian proprietary source or assets.",
+        "This is supporting behavior evidence, not Level 4 evidence.",
+        "No controller-finalized signed production receipt exists for this tuple."
+      ]
+    },
+    {
+      "plugin": {
         "id": "dataview",
         "name": "Dataview",
         "version": "0.5.68",

@@ -4,6 +4,9 @@ import calendarProfileJson from "../../scripts/compatibility/trust/calendar-beta
 import citeFixtureProfileJson from "../../scripts/compatibility/trust/cite-0.1.2-fixture.authority-profile.json" with {
   type: "json",
 };
+import quickSwitcherPlus540ObsidianInstalledProfileJson from "../../scripts/compatibility/trust/darlal-switcher-plus-5.4.0-obsidian-installed.authority-profile.json" with {
+  type: "json",
+};
 import dataFilesEditor130ObsidianInstalledProfileJson from "../../scripts/compatibility/trust/data-files-editor-1.3.0-obsidian-installed.authority-profile.json" with {
   type: "json",
 };
@@ -304,6 +307,7 @@ const parsedProfiles = [
   parseReviewedAuthorityProfile(calendarProfileJson),
   parseReviewedAuthorityProfile(citeFixtureProfileJson),
   parseReviewedAuthorityProfile(dataviewProfileJson),
+  parseReviewedAuthorityProfile(quickSwitcherPlus540ObsidianInstalledProfileJson),
   parseReviewedAuthorityProfile(dataFilesEditor130ObsidianInstalledProfileJson),
   parseReviewedAuthorityProfile(advancedTablesProfileJson),
   parseReviewedAuthorityProfile(templaterProfileJson),

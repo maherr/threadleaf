@@ -4,11 +4,12 @@ This document is generated from the versioned receipt-aware source [`compatibili
 Discovery in the external community package directory is separate from Threadleaf compatibility evidence.
 A row applies only to the exact plugin and Threadleaf versions shown.
 
-Registry schema: 2. Threadleaf version: 0.1.0. Generation: b5680c2286aca7255a5fa8812ef9027643bdc9b7e1726e08472e6c6312413a8b.
+Registry schema: 2. Threadleaf version: 0.1.0. Generation: f4a4c4ffbaf7dc11b0c1317aa8244508e81137f6f386b493354857eac3c7f920.
 
 | Plugin | Plugin version | Threadleaf | Level | Evidence | Last tested |
 | --- | --- | --- | ---: | --- | --- |
 | [Calendar (Beta)](https://github.com/liamcain/obsidian-calendar-plugin) | 2.0.0 | 0.1.0 | 3 | direct | 2026-08-20 |
+| [Quick Switcher++](https://github.com/darlal/obsidian-switcher-plus) | 5.4.0 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Data Files Editor](https://github.com/zuktol/obsidian-data-files-editor) | 1.3.0 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Dataview](https://github.com/blacksmithgu/obsidian-dataview) | 0.5.68 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Natural Language Dates](https://github.com/argenos/nldates-obsidian) | 0.6.2 | 0.1.0 | 3 | direct | 2026-08-20 |
@@ -55,6 +56,37 @@ Required static authority review: `vault-read`, `network`, `filesystem`, `subpro
 
 - Weekly and monthly Periodic Notes integration, drag-and-drop placement, right-dock pop-outs, mutation from external filesystem events, and explicit plugin reload remain outside this exact workflow claim.
 - Fold payloads are preserved for the live workflow but native editor fold rendering is not claimed.
+- This is supporting behavior evidence, not Level 4 evidence.
+- No controller-finalized signed production receipt exists for this tuple.
+
+## Quick Switcher++ 5.4.0
+
+The exact active-vault Quick Switcher++ 5.4.0 package passed reviewed authority, extended Threadleaf's independently implemented chooser-backed core switcher, registered all 11 owned modes and settings, accepted physical Standard Mode query keystrokes, rendered its enhanced file and path result in dark and light, opened the selected note through native navigation, and reconstructed after a full application restart beside eight other community plugins.
+
+Bundle SHA-256: `67145686997a07216fc19575502c9c0a27cbb5f03882e8ba1820bd564ca82b49`. License: GPL-3.0.
+
+Required static authority review: `vault-read`, `workspace-ui`, `network`, `filesystem`, `subprocess`, `host-environment`.
+
+### Supported workflows
+
+- **Open Standard Mode, filter with physical keys, and navigate from the enhanced result** (passed)
+  - `THREADLEAF_QUICK_SWITCHER_PLUS_PLUGIN_PATH=$ACTIVE_VAULT/.obsidian/plugins/darlal-switcher-plus pnpm run test:excalidraw-roundtrip` via [scripts/check-excalidraw-roundtrip.mjs](../../scripts/check-excalidraw-roundtrip.mjs)
+  - `pnpm exec vitest run src/runtime/obsidian-internal-plugins.test.ts src/runtime/obsidian-ui-compat.test.ts src/runtime/obsidian-workspace-filemanager-compat.test.ts` via [src/runtime/obsidian-internal-plugins.test.ts](../../src/runtime/obsidian-internal-plugins.test.ts)
+
+### Platform limits
+
+- **linux-x64-electron**: verified. Verified under Xvfb Electron with the exact active-vault package, disposable vault and private state, physical key events, native note navigation, application restart, and visible light and dark screenshots. The runtime is trusted same-user desktop code, not a sandbox.
+- **macos-electron**: unverified. This exact package workflow is not verified on macOS.
+- **windows-x64-electron**: unverified. This exact package workflow is not verified on Windows.
+
+### Known failures
+
+- No reproducible failure is recorded for the supported workflows above.
+
+### Limitations
+
+- This workflow proves Standard Mode query and selection, all 11 command registrations, settings registration, and restart loading. Editor, symbols, workspaces, headings, bookmarks, commands, related items, and vault modes remain outside this behavioral claim.
+- The core-switcher facade is an independently authored compatibility implementation informed by the plugin's public GPL-3.0 source contract; it contains no Obsidian proprietary source or assets.
 - This is supporting behavior evidence, not Level 4 evidence.
 - No controller-finalized signed production receipt exists for this tuple.
 

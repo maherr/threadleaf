@@ -18,6 +18,7 @@ const installedThemeMatrixRoot = process.env.THREADLEAF_INSTALLED_THEME_MATRIX_R
 const minimalSettingsPluginPath = process.env.THREADLEAF_MINIMAL_SETTINGS_PLUGIN_PATH?.trim();
 const minimalSettingsPluginVersion =
   process.env.THREADLEAF_MINIMAL_SETTINGS_VERSION?.trim() || "8.2.3";
+const quickSwitcherPlusPluginPath = process.env.THREADLEAF_QUICK_SWITCHER_PLUS_PLUGIN_PATH?.trim();
 const templaterPluginPath = process.env.THREADLEAF_TEMPLATER_PLUGIN_PATH?.trim();
 const advancedTablesPluginPath = process.env.THREADLEAF_ADVANCED_TABLES_PLUGIN_PATH?.trim();
 const installedPluginMatrixClean = process.env.THREADLEAF_INSTALLED_PLUGIN_MATRIX_CLEAN === "1";
@@ -73,6 +74,7 @@ const installedMatrixPlugins = [
   { id: "obsidian-icon-folder", version: "2.14.7" },
   { id: "obsidian-minimal-settings", version: minimalSettingsPluginVersion },
   { id: "omnisearch", version: "1.30.1" },
+  ...(quickSwitcherPlusPluginPath ? [{ id: "darlal-switcher-plus", version: "5.4.0" }] : []),
   ...(advancedTablesPluginPath ? [{ id: "table-editor-obsidian", version: "0.22.1" }] : []),
   ...(templaterPluginPath ? [{ id: "templater-obsidian", version: "2.25.0" }] : []),
 ];
@@ -743,11 +745,13 @@ async function prepareInstalledPluginMatrix() {
     const source =
       plugin.id === "obsidian-minimal-settings" && minimalSettingsPluginPath
         ? path.resolve(minimalSettingsPluginPath)
-        : plugin.id === "templater-obsidian" && templaterPluginPath
-          ? path.resolve(templaterPluginPath)
-          : plugin.id === "table-editor-obsidian" && advancedTablesPluginPath
-            ? path.resolve(advancedTablesPluginPath)
-            : path.join(path.resolve(installedPluginMatrixRoot), plugin.id);
+        : plugin.id === "darlal-switcher-plus" && quickSwitcherPlusPluginPath
+          ? path.resolve(quickSwitcherPlusPluginPath)
+          : plugin.id === "templater-obsidian" && templaterPluginPath
+            ? path.resolve(templaterPluginPath)
+            : plugin.id === "table-editor-obsidian" && advancedTablesPluginPath
+              ? path.resolve(advancedTablesPluginPath)
+              : path.join(path.resolve(installedPluginMatrixRoot), plugin.id);
     const target = path.join(vaultPath, ".obsidian", "plugins", plugin.id);
     assert(await exists(source), `Installed matrix source is missing: ${plugin.id}`);
     await fs.cp(source, target, { recursive: true });
@@ -1085,6 +1089,7 @@ async function runInstalledPluginMatrix(vaultId, port, pluginState) {
     await verifyIconizeWorkflow(vaultId, port),
     await verifyMinimalSettingsWorkflow(vaultId, port),
     await verifyOmnisearchWorkflow(vaultId, port),
+    ...(quickSwitcherPlusPluginPath ? [await verifyQuickSwitcherPlusWorkflow(vaultId, port)] : []),
     ...(advancedTablesPluginPath ? [await verifyAdvancedTablesWorkflow(vaultId)] : []),
     ...(templaterPluginPath ? [await verifyTemplaterWorkflow(vaultId)] : []),
   ];
@@ -1947,6 +1952,87 @@ async function verifyOmnisearchWorkflow(vaultId, port) {
     workflow: "command-query-result-native-open",
     query: "Unicode scene",
     resultPath: "Notes/Source.md",
+  };
+}
+
+async function verifyQuickSwitcherPlusWorkflow(vaultId, port) {
+  await evaluate(cdp, 'window.threadleaf.openNote("Notes/External.md")');
+  await waitFor(
+    cdp,
+    "document.querySelector('#note-path')?.textContent === 'Notes/External.md'",
+    "Quick Switcher++ navigation origin",
+  );
+  const commandId = "darlal-switcher-plus:switcher-plus:open";
+  await runPaletteCommand(commandId, "quick switcher", `plugin.command.${commandId}`);
+  await waitFor(
+    cdp,
+    `(async () => { const snapshot = await window.threadleaf.getSnapshot(); const host = document.querySelector('#plugin-surface-host'); if (!(host instanceof HTMLElement)) return false; const bounds = host.getBoundingClientRect(); return snapshot.pluginSurface?.viewType === 'threadleaf-plugin-modal' && !host.hidden && bounds.width > 0 && bounds.height > 0; })()`,
+    "Quick Switcher++ visible modal surface",
+    45_000,
+  );
+  const surface = await connectPluginSurfaceBySelector(
+    port,
+    ".qsp-prompt-instructions-modes",
+    "Quick Switcher++ Standard Mode",
+    45_000,
+  );
+  let resultText;
+  let appearanceShots;
+  try {
+    const modalSelector = await evaluate(
+      surface.connection,
+      `(() => { const modal = document.querySelector('.qsp-prompt-instructions-modes')?.closest('.modal'); if (!(modal instanceof HTMLElement)) return null; modal.id = 'threadleaf-e2e-qsp-modal'; return '#threadleaf-e2e-qsp-modal'; })()`,
+    );
+    assert(modalSelector, "Quick Switcher++ modal could not be scoped for interaction.");
+    const promptSelector = `${modalSelector} .prompt-input`;
+    const itemSelector = `${modalSelector} .suggestion-item`;
+    await clickSelector(surface.connection, promptSelector);
+    for (const character of "Source") {
+      await pressKey(surface.connection, character, `Key${character.toUpperCase()}`);
+    }
+    resultText = await waitFor(
+      surface.connection,
+      `(() => { const item = [...document.querySelectorAll(${JSON.stringify(itemSelector)})].find((candidate) => candidate.textContent?.includes('Source')); return item?.textContent?.trim() ?? null; })()`,
+      "Quick Switcher++ Source result",
+      10_000,
+    ).catch(async (error) => {
+      const diagnostic = await evaluate(
+        surface.connection,
+        `({ input: document.querySelector(${JSON.stringify(promptSelector)})?.value ?? null, items: [...document.querySelectorAll(${JSON.stringify(itemSelector)})].map((item) => item.textContent?.trim() ?? ''), empty: document.querySelector(${JSON.stringify(`${modalSelector} .suggestion-empty`)})?.textContent?.trim() ?? null, modal: document.querySelector(${JSON.stringify(modalSelector)})?.textContent?.trim()?.slice(0, 2_000) ?? null })`,
+      ).catch(() => null);
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)}: ${JSON.stringify(diagnostic)}`,
+      );
+    });
+    appearanceShots = [
+      await capture(cdp, "quick-switcher-plus-standard", "dark"),
+      await capture(cdp, "quick-switcher-plus-standard", "light"),
+    ];
+    assert(
+      appearanceShots[0].digest !== appearanceShots[1].digest,
+      "Quick Switcher++ dark and light modal screenshots are identical.",
+    );
+    await evaluate(
+      surface.connection,
+      `(() => { const item = [...document.querySelectorAll(${JSON.stringify(itemSelector)})].find((candidate) => candidate.textContent?.includes('Source')); if (!(item instanceof HTMLElement)) return false; item.click(); return true; })()`,
+    );
+  } finally {
+    surface.connection.close();
+  }
+  await waitFor(
+    cdp,
+    `(async () => { const snapshot = await window.threadleaf.getSnapshot(); return snapshot.vault.id === ${JSON.stringify(vaultId)} && snapshot.workspace?.activeNote?.path === 'Notes/Source.md' && document.querySelector('#note-path')?.textContent === 'Notes/Source.md'; })()`,
+    "Quick Switcher++ native note navigation",
+    30_000,
+  );
+  await capture(cdp, "quick-switcher-plus-restored", "dark");
+  return {
+    pluginId: "darlal-switcher-plus",
+    workflow: "standard-mode-query-native-open",
+    query: "Source",
+    resultText,
+    resultPath: "Notes/Source.md",
+    screenshots: appearanceShots.map(({ filePath }) => filePath),
   };
 }
 

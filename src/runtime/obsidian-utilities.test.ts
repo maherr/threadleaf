@@ -5,6 +5,7 @@ import {
   htmlToMarkdown,
   Platform,
   prepareFuzzySearch,
+  renderResults,
   setTooltip,
   Tasks,
 } from "./obsidian-compat";
@@ -52,6 +53,18 @@ describe("Obsidian public utility compatibility", () => {
       [9, 10],
     ]);
     expect(prepareFuzzySearch("")("Anything")).toEqual({ score: 0, matches: [] });
+  });
+
+  it("renders plain result text when no fuzzy match is supplied", () => {
+    const dom = new JSDOM("<!doctype html><body><div></div></body>");
+    const element = dom.window.document.querySelector("div");
+    expect(element).not.toBeNull();
+    if (element) {
+      renderResults(element, "Source", null);
+      expect(element.textContent).toBe("Source");
+      expect(element.childElementCount).toBe(0);
+    }
+    dom.window.close();
   });
 
   it("converts HTML strings and DOM fragments to stable Markdown", () => {

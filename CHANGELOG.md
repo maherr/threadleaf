@@ -28,6 +28,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   table with contained native file links, both themes, and an explicit disabled-plugin fallback.
 - Published Tested L3 evidence for the exact active-vault Dataview 0.5.68 package after rerunning
   that workflow from the local installed bytes and confirming they match the official release.
+- Added exact Quick Switcher++ 5.4.0 compatibility with all 11 modes registered, a chooser-backed
+  core switcher, physical-key Standard Mode search, native result navigation, restart recovery,
+  and polished dark and light prompt surfaces.
 - Added an exact reviewed profile and restart-tested command-palette workflow for Advanced Tables
   0.22.1, including all 22 commands, its settings, toolbar view, ribbon action, and native editor
   integration in the combined trusted-workspace plugin matrix.
@@ -56,9 +59,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Applied workspace controls directly to both editor panes and the visible workbench, including
   attachment insertion defaults, without requiring an application restart or rewriting vault
   metadata.
-- Refined the desktop chrome into one uninterrupted 48-pixel workbench rail with a real dock
-  toggle, vault action group, full-width tab labels, overlaid tab actions, compact global controls,
-  and native window controls in both themes and at the minimum supported width.
+- Refined the desktop chrome into one uninterrupted 52-pixel workbench rail with a sidebar-aligned
+  control cluster, readable fixed-width scrolling tabs that join the active editor, quiet vector
+  pane actions, compact global controls, and native window controls in both themes and at the
+  minimum supported width.
 - Rebuilt Longstitch around neutral Paper and Graphite themes, compact 30-pixel explorer rows,
   coherent Hanken Grotesk interface and document typography, restrained violet interaction state,
   and less ornamental workspace chrome.

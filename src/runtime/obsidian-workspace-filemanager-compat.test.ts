@@ -206,6 +206,7 @@ describe("Obsidian workspace compatibility wedge", () => {
       });
       expect(app.workspace.getMostRecentLeaf(app.workspace.rootSplit)).toBe(grouped);
       expect(app.workspace.getLastOpenFiles()).toEqual(["Notes/Two.md", "Notes/One.md"]);
+      expect(app.workspace.getRecentFiles({ maxCount: 1 })).toEqual(["Notes/Two.md"]);
       expect(layout.left.children).toHaveLength(1);
       expect(layout.right.children).toHaveLength(1);
       expect(layout.main.children).toHaveLength(4);

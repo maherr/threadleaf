@@ -1,0 +1,28 @@
+{
+  "$schema": "./reviewed-authority-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profileId": "darlal-switcher-plus-5.4.0-obsidian-installed",
+  "profileRevision": 1,
+  "packageIdentity": {
+    "pluginId": "darlal-switcher-plus",
+    "manifestVersion": "5.4.0",
+    "distributionTag": "5.4.0+obsidian-installed",
+    "manifestSha256": "663e2d69b36ac8b7d624222fe5cab35bad88d5a0e45c42c7a111f781552b8880",
+    "mainSha256": "67145686997a07216fc19575502c9c0a27cbb5f03882e8ba1820bd564ca82b49",
+    "stylesSha256": "912338f7e550b5f1a4b59ba16b633bf2f5a26e7db98a04d0c056d549f463391a",
+    "packageTreeSha256": "b04c1513d5d537655afc8437b8f0d60ad139145d1412987ddcc391618a74ef4b"
+  },
+  "packageIdentityDigest": "6bb7a0587b75ddd2d5638739978a44e71722ada1f18755b013f9b74f91b99fa7",
+  "expectedStaticCapabilities": ["vault-read", "workspace-ui"],
+  "requiredAuthorities": [
+    "vault-read",
+    "workspace-ui",
+    "network",
+    "filesystem",
+    "subprocess",
+    "host-environment"
+  ],
+  "executionProfile": "trusted-node-renderer",
+  "allowedPlatforms": ["linux", "darwin", "win32"],
+  "authorityDigest": "fca8e7fef7e2b1220a91701d2e9e6e2e6cc6bb3027dec03a4d93517eb8cf8e18"
+}

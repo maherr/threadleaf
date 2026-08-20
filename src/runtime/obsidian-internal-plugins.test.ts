@@ -71,6 +71,53 @@ describe("internal plugin compatibility", () => {
     expect(internalPlugins.getEnabledPluginById("not-a-core-plugin")).toBeNull();
   });
 
+  it("backs the enabled core Quick Switcher with a chooser-compatible modal", async () => {
+    const dom = new JSDOM("<!doctype html><body></body>");
+    installObsidianDomCompatibility(dom.window);
+    exposeDom(dom);
+    const app = createApp();
+    const entry = app.internalPlugins.getPluginById("switcher");
+    expect(entry?.enabled).toBe(true);
+    const instance = app.internalPlugins.getEnabledPluginById("switcher") as {
+      QuickSwitcherModal: new (
+        app: App,
+        options: Record<string, boolean>,
+      ) => {
+        close(): void;
+        inputEl: HTMLInputElement;
+        open(): void;
+      };
+      options: Record<string, boolean>;
+    };
+    expect(instance.options).toMatchObject({ showAttachments: true, showExistingOnly: true });
+
+    const modal = new instance.QuickSwitcherModal(app, instance.options);
+    modal.open();
+    expect(dom.window.document.querySelector(".modal.mod-quick-switcher")).not.toBeNull();
+    modal.inputEl.value = "Welcome";
+    modal.inputEl.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(dom.window.document.querySelector(".suggestion-item")?.textContent).toBe("Welcome.md");
+    modal.close();
+    dom.window.close();
+  });
+
+  it("projects registered extension and view types through the live view registry", () => {
+    const app = createApp();
+    const releaseExtension = app.compatibility.registerExtensions("fixture", ["png"], "image");
+    const releaseView = app.compatibility.registerView("fixture", "image", () => ({}));
+
+    expect(app.viewRegistry.typeByExtension).toEqual({ png: "image" });
+    expect(app.viewRegistry.viewByType).toEqual({ image: true });
+    expect(app.viewRegistry.isExtensionRegistered(".png")).toBe(true);
+
+    releaseExtension();
+    releaseView();
+    expect(app.viewRegistry.typeByExtension).toEqual({});
+    expect(app.viewRegistry.viewByType).toEqual({});
+  });
+
   it("projects Threadleaf daily-note settings through the enabled core-plugin facade", () => {
     const app = createApp();
     app.setDailyNoteOptions({
