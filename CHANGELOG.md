@@ -26,6 +26,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Added an exact-package workflow for the official Dataview 0.5.68 release, including reviewed Blob
   workers, the real CodeMirror 5 mode registry, frontmatter indexing, an in-place Reading-view
   table with contained native file links, both themes, and an explicit disabled-plugin fallback.
+- Published Tested L3 evidence for the exact active-vault Dataview 0.5.68 package after rerunning
+  that workflow from the local installed bytes and confirming they match the official release.
 - Added an exact reviewed profile and restart-tested command-palette workflow for Advanced Tables
   0.22.1, including all 22 commands, its settings, toolbar view, ribbon action, and native editor
   integration in the combined trusted-workspace plugin matrix.

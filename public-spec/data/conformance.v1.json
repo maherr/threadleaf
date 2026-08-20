@@ -387,6 +387,12 @@
       "compatibilityLevel": 3
     },
     {
+      "id": "dataview",
+      "version": "0.5.68",
+      "threadleafVersion": "0.1.0",
+      "compatibilityLevel": 3
+    },
+    {
       "id": "nldates-obsidian",
       "version": "0.6.2",
       "threadleafVersion": "0.1.0",

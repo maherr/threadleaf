@@ -4,12 +4,13 @@ This document is generated from the versioned receipt-aware source [`compatibili
 Discovery in the external community package directory is separate from Threadleaf compatibility evidence.
 A row applies only to the exact plugin and Threadleaf versions shown.
 
-Registry schema: 2. Threadleaf version: 0.1.0. Generation: 3ee3d383f745826181d946536279a710e9e464ddf3bdbaed0c9f9b360c391021.
+Registry schema: 2. Threadleaf version: 0.1.0. Generation: b5680c2286aca7255a5fa8812ef9027643bdc9b7e1726e08472e6c6312413a8b.
 
 | Plugin | Plugin version | Threadleaf | Level | Evidence | Last tested |
 | --- | --- | --- | ---: | --- | --- |
 | [Calendar (Beta)](https://github.com/liamcain/obsidian-calendar-plugin) | 2.0.0 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Data Files Editor](https://github.com/zuktol/obsidian-data-files-editor) | 1.3.0 | 0.1.0 | 3 | direct | 2026-08-20 |
+| [Dataview](https://github.com/blacksmithgu/obsidian-dataview) | 0.5.68 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Natural Language Dates](https://github.com/argenos/nldates-obsidian) | 0.6.2 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Auto Link Title](https://github.com/zolrath/obsidian-auto-link-title) | 1.5.5 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Auto Link Title](https://github.com/zolrath/obsidian-auto-link-title) | 1.5.5 | 0.1.0 | 3 | direct | 2026-08-20 |
@@ -83,6 +84,37 @@ Required static authority review: `editor-extension`, `workspace-ui`, `network`,
 ### Limitations
 
 - YAML, TXT, XML, non-default settings, rename, and explicit plugin reload remain outside this exact workflow claim.
+- This is supporting behavior evidence, not Level 4 evidence.
+- No controller-finalized signed production receipt exists for this tuple.
+
+## Dataview 0.5.68
+
+The exact active-vault Dataview 0.5.68 package matched the pinned official release, passed reviewed authority, loaded its Blob worker and CodeMirror 5 bridge, indexed typed frontmatter, replaced a Dataview fence with an in-place linked table, followed the result through native note navigation, rendered in dark and light, and degraded to an explicit raw-query fallback when disabled.
+
+Bundle SHA-256: `794e9eaede73920bb8d54b0eda4f5de2182d698cc638774500f24f14bcd4da0b`. License: MIT.
+
+Required static authority review: `vault-read`, `network`, `filesystem`, `subprocess`, `host-environment`, `editor-extension`, `workspace-ui`, `dynamic-code`.
+
+### Supported workflows
+
+- **Index frontmatter, render a linked table, navigate natively, and retain the query when disabled** (passed)
+  - `THREADLEAF_DATAVIEW_PLUGIN_PATH=$ACTIVE_VAULT/.obsidian/plugins/dataview pnpm run test:dataview-reading` via [scripts/check-dataview-reading.mjs](../../scripts/check-dataview-reading.mjs)
+  - `pnpm exec vitest run src/application/plugin-markdown-projection-service.test.ts src/runtime/obsidian-markdown-processors.test.ts` via [src/application/plugin-markdown-projection-service.test.ts](../../src/application/plugin-markdown-projection-service.test.ts)
+
+### Platform limits
+
+- **linux-x64-electron**: verified. Verified under Xvfb Electron with the exact active-vault package, disposable vault and private state, native linked-table navigation, and visible light and dark screenshots. The runtime is trusted same-user desktop code, not a sandbox.
+- **macos-electron**: unverified. This exact package workflow is not verified on macOS.
+- **windows-x64-electron**: unverified. This exact package workflow is not verified on Windows.
+
+### Known failures
+
+- No reproducible failure is recorded for the supported workflows above.
+
+### Limitations
+
+- This workflow proves one TABLE query over typed frontmatter, one native file link, three registered commands, both themes, and disabled fallback. DataviewJS, tasks, lists, calendars, inline queries, arbitrary expressions, and live mutation reindex remain outside this claim.
+- The package uses reviewed same-origin and Blob workers inside the trusted compatibility renderer.
 - This is supporting behavior evidence, not Level 4 evidence.
 - No controller-finalized signed production receipt exists for this tuple.
 

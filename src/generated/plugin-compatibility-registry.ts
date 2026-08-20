@@ -146,6 +146,79 @@ export const pluginCompatibilityRegistry = {
     },
     {
       "plugin": {
+        "id": "dataview",
+        "name": "Dataview",
+        "version": "0.5.68",
+        "repository": "https://github.com/blacksmithgu/obsidian-dataview",
+        "license": "MIT",
+        "bundleSha256": "794e9eaede73920bb8d54b0eda4f5de2182d698cc638774500f24f14bcd4da0b"
+      },
+      "threadleafVersion": "0.1.0",
+      "lastTested": "2026-08-20",
+      "compatibilityLevel": 3,
+      "summary": "The exact active-vault Dataview 0.5.68 package matched the pinned official release, passed reviewed authority, loaded its Blob worker and CodeMirror 5 bridge, indexed typed frontmatter, replaced a Dataview fence with an in-place linked table, followed the result through native note navigation, rendered in dark and light, and degraded to an explicit raw-query fallback when disabled.",
+      "evidenceMode": "direct",
+      "requiredCapabilities": [
+        "vault-read",
+        "network",
+        "filesystem",
+        "subprocess",
+        "host-environment",
+        "editor-extension",
+        "workspace-ui",
+        "dynamic-code"
+      ],
+      "platforms": [
+        {
+          "id": "linux-x64-electron",
+          "status": "verified",
+          "limits": [
+            "Verified under Xvfb Electron with the exact active-vault package, disposable vault and private state, native linked-table navigation, and visible light and dark screenshots.",
+            "The runtime is trusted same-user desktop code, not a sandbox."
+          ]
+        },
+        {
+          "id": "macos-electron",
+          "status": "unverified",
+          "limits": [
+            "This exact package workflow is not verified on macOS."
+          ]
+        },
+        {
+          "id": "windows-x64-electron",
+          "status": "unverified",
+          "limits": [
+            "This exact package workflow is not verified on Windows."
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "id": "dataview.frontmatter-table-native-link-disable-fallback.v1",
+          "name": "Index frontmatter, render a linked table, navigate natively, and retain the query when disabled",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "scripts/check-dataview-reading.mjs",
+              "command": "THREADLEAF_DATAVIEW_PLUGIN_PATH=$ACTIVE_VAULT/.obsidian/plugins/dataview pnpm run test:dataview-reading"
+            },
+            {
+              "path": "src/application/plugin-markdown-projection-service.test.ts",
+              "command": "pnpm exec vitest run src/application/plugin-markdown-projection-service.test.ts src/runtime/obsidian-markdown-processors.test.ts"
+            }
+          ]
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "This workflow proves one TABLE query over typed frontmatter, one native file link, three registered commands, both themes, and disabled fallback. DataviewJS, tasks, lists, calendars, inline queries, arbitrary expressions, and live mutation reindex remain outside this claim.",
+        "The package uses reviewed same-origin and Blob workers inside the trusted compatibility renderer.",
+        "This is supporting behavior evidence, not Level 4 evidence.",
+        "No controller-finalized signed production receipt exists for this tuple."
+      ]
+    },
+    {
+      "plugin": {
         "id": "nldates-obsidian",
         "name": "Natural Language Dates",
         "version": "0.6.2",
@@ -1253,7 +1326,7 @@ export const pluginCompatibilityRegistry = {
       ]
     }
   ],
-  "generationId": "3ee3d383f745826181d946536279a710e9e464ddf3bdbaed0c9f9b360c391021"
+  "generationId": "b5680c2286aca7255a5fa8812ef9027643bdc9b7e1726e08472e6c6312413a8b"
 } as const;
 export const pluginCompatibilityRegistryGenerationId = pluginCompatibilityRegistry.generationId;
 export const pluginCompatibilityRegistryAuthorityGenerationId = authoritativeCompatibilityRegistry.generationId;

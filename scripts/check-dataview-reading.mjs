@@ -10,6 +10,7 @@ const execFileAsync = promisify(execFile);
 const appRoot = process.cwd();
 const electronPath = path.join(appRoot, "node_modules", ".bin", "electron");
 const screenshotDirectory = process.env.THREADLEAF_DATAVIEW_SCREENSHOT_DIR;
+const installedPluginSource = process.env.THREADLEAF_DATAVIEW_PLUGIN_PATH?.trim();
 const testRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-dataview-reading-"));
 const vaultPath = path.join(testRoot, "vault");
 const userDataPath = path.join(testRoot, "user-data");
@@ -225,12 +226,27 @@ async function fetchOfficialPackage() {
   }
 }
 
+async function prepareDataviewPackage() {
+  if (!installedPluginSource) {
+    await fetchOfficialPackage();
+    return;
+  }
+  await fs.cp(path.resolve(installedPluginSource), pluginPath, { recursive: true });
+  for (const asset of officialAssets) {
+    const bytes = await fs.readFile(path.join(pluginPath, asset.name));
+    assert(
+      sha256(bytes) === asset.sha256,
+      `Installed Dataview ${asset.name} did not match the pinned 0.5.68 SHA-256.`,
+    );
+  }
+}
+
 try {
   if (process.platform !== "linux") {
     throw new Error("The Dataview Reading check currently requires Linux and Xvfb.");
   }
   await fs.access(electronPath);
-  await fetchOfficialPackage();
+  await prepareDataviewPackage();
   await fs.mkdir(userDataPath, { recursive: true });
   await fs.writeFile(
     path.join(vaultPath, "Welcome.md"),
