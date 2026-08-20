@@ -658,6 +658,24 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
     const resourcePolicy =
       operationSnapshot?.resourcePolicy ?? orderedSnapshots.at(-1)?.resourcePolicy;
     const resourceDiagnostics = this.mergeResourceDiagnostics(orderedSnapshots);
+    const navigatorDecorations = [
+      ...new Map(
+        orderedSnapshots
+          .flatMap((snapshot) => snapshot.navigatorDecorations ?? [])
+          .map((decoration) => [decoration.path, decoration] as const),
+      ).values(),
+    ].sort((left, right) => left.path.localeCompare(right.path, "en-US"));
+    const pluginAppearance = {
+      bodyClasses: [
+        ...new Set(
+          orderedSnapshots.flatMap((snapshot) => snapshot.pluginAppearance?.bodyClasses ?? []),
+        ),
+      ].sort((left, right) => left.localeCompare(right, "en-US")),
+      variables: Object.assign(
+        {},
+        ...orderedSnapshots.map((snapshot) => snapshot.pluginAppearance?.variables ?? {}),
+      ) as Record<string, string>,
+    };
     return {
       ...this.baseSnapshot,
       vault: operationSnapshot?.vault ?? orderedSnapshots.at(-1)?.vault ?? this.baseSnapshot.vault,
@@ -671,6 +689,8 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
       editorUpdate: operationSnapshot?.editorUpdate ?? null,
       editorEvent: operationSnapshot?.editorEvent ?? null,
       editorSuggest: operationSnapshot?.editorSuggest ?? null,
+      navigatorDecorations,
+      pluginAppearance,
       markdownProjection: operationSnapshot?.markdownProjection ?? null,
       pluginSurface: visibleSurface,
       ...(resourceDiagnostics.length > 0 ? { resourceDiagnostics } : {}),

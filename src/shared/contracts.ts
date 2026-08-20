@@ -286,6 +286,17 @@ export interface PluginEditorSuggestSnapshot {
   ownerId: string;
 }
 
+export interface PluginNavigatorDecoration {
+  path: string;
+  text: string;
+  title: string | null;
+}
+
+export interface PluginAppearanceSnapshot {
+  bodyClasses: string[];
+  variables: Record<string, string>;
+}
+
 export type VaultSelectionSource = "bundled" | "direct" | "environment" | "picked" | "restored";
 
 export interface VaultStartupSnapshot {
@@ -316,6 +327,8 @@ export interface RuntimeSnapshot {
   editorUpdate?: PluginEditorUpdate | null;
   editorEvent?: PluginEditorEventSnapshot | null;
   editorSuggest?: PluginEditorSuggestSnapshot | null;
+  navigatorDecorations?: PluginNavigatorDecoration[];
+  pluginAppearance?: PluginAppearanceSnapshot;
   markdownProjection?: PluginMarkdownProjectionSnapshot | null;
   pluginSurface?: PluginSurfaceSnapshot | null;
   resourcePolicy?: PluginResourcePolicySnapshot;

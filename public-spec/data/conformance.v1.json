@@ -375,6 +375,12 @@
   ],
   "registryEntries": [
     {
+      "id": "data-files-editor",
+      "version": "1.3.0",
+      "threadleafVersion": "0.1.0",
+      "compatibilityLevel": 3
+    },
+    {
       "id": "nldates-obsidian",
       "version": "0.6.2",
       "threadleafVersion": "0.1.0",
@@ -405,8 +411,26 @@
       "compatibilityLevel": 2
     },
     {
+      "id": "obsidian-icon-folder",
+      "version": "2.14.7",
+      "threadleafVersion": "0.1.0",
+      "compatibilityLevel": 3
+    },
+    {
+      "id": "obsidian-minimal-settings",
+      "version": "8.2.3",
+      "threadleafVersion": "0.1.0",
+      "compatibilityLevel": 3
+    },
+    {
       "id": "obsidian-style-settings",
       "version": "1.0.9",
+      "threadleafVersion": "0.1.0",
+      "compatibilityLevel": 3
+    },
+    {
+      "id": "omnisearch",
+      "version": "1.30.1",
       "threadleafVersion": "0.1.0",
       "compatibilityLevel": 3
     },

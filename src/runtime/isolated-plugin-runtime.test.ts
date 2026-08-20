@@ -82,6 +82,8 @@ class FakeIsolatedRuntime implements PluginRuntimePort {
   pluginId: string | null = null;
   pluginState: PluginSummary["state"] = "empty";
   editorSuggestEnabled = false;
+  navigatorDecorationText: string | null = null;
+  pluginAppearanceClass: string | null = null;
   surface: PluginSurfaceSnapshot | null = null;
 
   constructor(instanceId: number) {
@@ -267,6 +269,25 @@ class FakeIsolatedRuntime implements PluginRuntimePort {
           }
         : {}),
       pluginSurface: this.surface,
+      ...(this.navigatorDecorationText
+        ? {
+            navigatorDecorations: [
+              {
+                path: `${this.pluginId}.md`,
+                text: this.navigatorDecorationText,
+                title: `${this.pluginId} decoration`,
+              },
+            ],
+          }
+        : {}),
+      ...(this.pluginAppearanceClass
+        ? {
+            pluginAppearance: {
+              bodyClasses: [this.pluginAppearanceClass],
+              variables: { "--plugin-font-size": `${this.instanceId}px` },
+            },
+          }
+        : {}),
     };
   }
 }
@@ -423,6 +444,8 @@ describe("IsolatedPluginRuntime", () => {
     const beta = created[1];
     if (!beta) throw new Error("The isolated suggestion fixture did not create beta.");
     beta.editorSuggestEnabled = true;
+    beta.navigatorDecorationText = "🌟";
+    beta.pluginAppearanceClass = "minimal-theme";
     await runtime.getSnapshot();
     const editorContext = {
       path: "Welcome.md",
@@ -437,6 +460,13 @@ describe("IsolatedPluginRuntime", () => {
     expect(queried.editorSuggest).toMatchObject({
       id: "beta-suggest-session",
       ownerId: "beta",
+    });
+    expect(queried.navigatorDecorations).toEqual([
+      { path: "beta.md", text: "🌟", title: "beta decoration" },
+    ]);
+    expect(queried.pluginAppearance).toEqual({
+      bodyClasses: ["minimal-theme"],
+      variables: { "--plugin-font-size": "2px" },
     });
 
     const selected = await runtime.selectPluginEditorSuggest(

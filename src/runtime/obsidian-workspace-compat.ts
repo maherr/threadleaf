@@ -213,6 +213,7 @@ export class Workspace extends Events {
   private readonly listeners = new Map<string, Set<EventCallback>>();
   private readonly leafParents = new Map<WorkspaceSplit, WorkspaceTabs>();
   private readonly leftLeaves = new Set<WorkspaceLeaf>();
+  private readonly projectedLeaves = new Map<string, WorkspaceLeaf[]>();
   private readonly rightLeaves = new Set<WorkspaceLeaf>();
   private readonly recentLeaves: WorkspaceLeaf[] = [];
   private readonly recentFiles: string[] = [];
@@ -425,16 +426,23 @@ export class Workspace extends Events {
   }
 
   getLeavesOfType(viewType: string): WorkspaceLeaf[] {
-    return [...this.leaves].filter((leaf) => {
-      const view = leaf.view;
-      return (
-        view !== null &&
-        typeof view === "object" &&
-        "getViewType" in view &&
-        typeof view.getViewType === "function" &&
-        view.getViewType() === viewType
-      );
-    });
+    return [
+      ...[...this.leaves].filter((leaf) => {
+        const view = leaf.view;
+        return (
+          view !== null &&
+          typeof view === "object" &&
+          "getViewType" in view &&
+          typeof view.getViewType === "function" &&
+          view.getViewType() === viewType
+        );
+      }),
+      ...(this.projectedLeaves.get(viewType) ?? []),
+    ];
+  }
+
+  setProjectedLeaves(viewType: string, leaves: readonly WorkspaceLeaf[]): void {
+    this.projectedLeaves.set(viewType, [...leaves]);
   }
 
   detachLeavesOfType(viewType: string): void {

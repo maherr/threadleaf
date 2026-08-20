@@ -56,7 +56,9 @@ import {
   Plugin,
   type PluginManifest,
   sleep,
+  type TAbstractFile,
   TFile,
+  TFolder,
   Vault,
 } from "./obsidian-compat";
 import { Component } from "./obsidian-components";
@@ -270,6 +272,20 @@ export class PluginHost implements PluginRuntimePort {
   private activeEditorSuggestSession: ActiveEditorSuggestSession | null = null;
   private editorSuggestSequence = 0;
   private editorUpdateSequence = 0;
+  private fileExplorerProjectionRoot: HTMLElement | null = null;
+  private readonly fileExplorerItems: Record<
+    string,
+    {
+      file: TAbstractFile;
+      innerEl: HTMLElement;
+      rowEl: HTMLElement;
+      selfEl: HTMLElement;
+      titleEl: HTMLElement;
+      titleInnerEl: HTMLElement;
+    }
+  > = {};
+  private appearanceBaseline: { bodyClasses: Set<string>; variables: Map<string, string> } | null =
+    null;
   private lastPluginId: string | null = null;
   private nativeEditorContext: PluginEditorContext | null = null;
   private nativeMarkdownLeaf: WorkspaceLeaf | null = null;
@@ -280,6 +296,7 @@ export class PluginHost implements PluginRuntimePort {
   private readonly compatibilityEditorFields: EditorCompatibilityFields | undefined;
   private readonly onEditorExtensionsChange: ((extensions: readonly unknown[]) => void) | undefined;
   private editorExtensionNoticeRecorded = false;
+  private suppressPluginFileNavigation = false;
 
   constructor(
     vaultPath: string,
@@ -317,11 +334,7 @@ export class PluginHost implements PluginRuntimePort {
       }
     });
     this.app.workspace.on("file-open", (file) => {
-      if (
-        file instanceof TFile &&
-        this.app.workspace.activeLeaf !== this.nativeMarkdownLeaf &&
-        options?.onOpenFile
-      ) {
+      if (file instanceof TFile && !this.suppressPluginFileNavigation && options?.onOpenFile) {
         void Promise.resolve(options.onOpenFile(file.path)).catch((error) => {
           this.record(
             "error",
@@ -343,6 +356,7 @@ export class PluginHost implements PluginRuntimePort {
   async loadAuthorizedPlugin(dispatch: PluginConstructionDispatch): Promise<RuntimeSnapshot> {
     try {
       await this.vault.initialize();
+      this.syncFileExplorerProjection();
       return await this.loadPluginUnsafe(dispatch);
     } catch (error) {
       if (isPluginConstructionRefusal(error)) {
@@ -428,6 +442,7 @@ export class PluginHost implements PluginRuntimePort {
       this.record("plugin", "Injected the open compatibility module and constructed the plugin.");
 
       const commandIdsBefore = new Set(this.app.commands.list().map(({ id }) => id));
+      this.ensureAppearanceBaseline();
       await instance.__load();
       await this.app.workspace.waitForLayoutReadyCallbacks();
       record.summary = { ...record.summary, compatibilityLevel: 2 };
@@ -831,7 +846,12 @@ export class PluginHost implements PluginRuntimePort {
     const container = document.createElement("div");
     container.className = "threadleaf-native-editor-context workspace-leaf";
     const leaf = new WorkspaceLeaf(this.app, container);
-    await leaf.setViewState({ type: "markdown", state: { file: context.path } });
+    this.suppressPluginFileNavigation = true;
+    try {
+      await leaf.setViewState({ type: "markdown", state: { file: context.path } });
+    } finally {
+      this.suppressPluginFileNavigation = false;
+    }
     if (!(leaf.view instanceof MarkdownView)) {
       await leaf.detach();
       throw new Error("Native editor compatibility could not open a Markdown view.");
@@ -1111,6 +1131,7 @@ export class PluginHost implements PluginRuntimePort {
 
   async getSnapshot(): Promise<RuntimeSnapshot> {
     await this.vault.initialize();
+    this.syncFileExplorerProjection();
     const plugins = [...this.plugins.values()]
       .map(({ summary }) => ({ ...summary }))
       .sort((left, right) => left.name.localeCompare(right.name, "en-US", { numeric: true }));
@@ -1154,6 +1175,8 @@ export class PluginHost implements PluginRuntimePort {
         ...this.app.compatibility.snapshot(),
         workspaceEvents: this.app.workspace.eventNames(),
       },
+      navigatorDecorations: this.captureNavigatorDecorations(),
+      pluginAppearance: this.capturePluginAppearance(),
       editorUpdate: this.editorUpdate ? structuredClone(this.editorUpdate) : null,
       editorEvent: this.editorEvent ? { ...this.editorEvent } : null,
       editorSuggest: this.editorSuggest ? structuredClone(this.editorSuggest) : null,
@@ -1181,7 +1204,117 @@ export class PluginHost implements PluginRuntimePort {
   }
 
   seedVaultMarkdownPaths(paths: readonly string[]): Promise<void> {
-    return this.vault.seedMarkdownPaths(paths);
+    return this.vault.seedMarkdownPaths(paths).then(() => this.syncFileExplorerProjection());
+  }
+
+  private syncFileExplorerProjection(): void {
+    if (typeof document === "undefined") return;
+    if (!this.fileExplorerProjectionRoot) {
+      const root = document.createElement("div");
+      root.hidden = true;
+      root.dataset.threadleafFileExplorerProjection = "true";
+      document.body.append(root);
+      this.fileExplorerProjectionRoot = root;
+      const view = {
+        fileItems: this.fileExplorerItems,
+        getViewType: () => "file-explorer",
+        loadIfDeferred: () => Promise.resolve(),
+      };
+      this.app.workspace.setProjectedLeaves("file-explorer", [
+        { view } as unknown as WorkspaceLeaf,
+      ]);
+    }
+    const entries = this.vault.getAllLoadedFiles().filter((entry) => entry.path.length > 0);
+    const activePaths = new Set(entries.map(({ path }) => path));
+    for (const [entryPath, item] of Object.entries(this.fileExplorerItems)) {
+      if (activePaths.has(entryPath)) continue;
+      item.rowEl.remove();
+      Reflect.deleteProperty(this.fileExplorerItems, entryPath);
+    }
+    for (const entry of entries) {
+      if (this.fileExplorerItems[entry.path]) continue;
+      const titleEl = document.createElement("div");
+      titleEl.dataset.path = entry.path;
+      titleEl.className = entry instanceof TFolder ? "nav-folder-title" : "nav-file-title";
+      const titleInnerEl = document.createElement("div");
+      titleInnerEl.className =
+        entry instanceof TFolder ? "nav-folder-title-content" : "nav-file-title-content";
+      titleInnerEl.textContent = entry.name;
+      titleEl.append(titleInnerEl);
+      this.fileExplorerProjectionRoot.append(titleEl);
+      this.fileExplorerItems[entry.path] = {
+        file: entry,
+        innerEl: titleInnerEl,
+        rowEl: titleEl,
+        selfEl: titleEl,
+        titleEl,
+        titleInnerEl,
+      };
+    }
+  }
+
+  private captureNavigatorDecorations(): NonNullable<RuntimeSnapshot["navigatorDecorations"]> {
+    const decorations: NonNullable<RuntimeSnapshot["navigatorDecorations"]> = [];
+    for (const [entryPath, item] of Object.entries(this.fileExplorerItems)) {
+      const decoration = item.titleEl.querySelector<HTMLElement>("[data-icon], .iconize-icon");
+      const text = (decoration?.textContent ?? "").replace(/\s+/gu, " ").trim().slice(0, 16);
+      if (!decoration || !text) continue;
+      decorations.push({
+        path: entryPath,
+        text,
+        title: decoration.getAttribute("title")?.slice(0, 160) ?? null,
+      });
+    }
+    return decorations.sort((left, right) => left.path.localeCompare(right.path, "en-US"));
+  }
+
+  private inlinePluginVariables(): Map<string, string> {
+    const variables = new Map<string, string>();
+    if (typeof document === "undefined") return variables;
+    for (const style of [document.documentElement.style, document.body.style]) {
+      for (const name of style) {
+        if (!name.startsWith("--")) continue;
+        const value = style.getPropertyValue(name).trim();
+        if (value) variables.set(name, value);
+      }
+    }
+    return variables;
+  }
+
+  private ensureAppearanceBaseline(): void {
+    if (this.appearanceBaseline || typeof document === "undefined") return;
+    this.appearanceBaseline = {
+      bodyClasses: new Set(document.body.classList),
+      variables: this.inlinePluginVariables(),
+    };
+  }
+
+  private capturePluginAppearance(): NonNullable<RuntimeSnapshot["pluginAppearance"]> {
+    this.ensureAppearanceBaseline();
+    if (!this.appearanceBaseline || typeof document === "undefined") {
+      return { bodyClasses: [], variables: {} };
+    }
+    const bodyClasses = [...document.body.classList]
+      .filter(
+        (className) =>
+          !this.appearanceBaseline?.bodyClasses.has(className) &&
+          /^[a-z0-9_-]{1,80}$/iu.test(className),
+      )
+      .slice(0, 128)
+      .sort((left, right) => left.localeCompare(right, "en-US"));
+    const variables: Record<string, string> = {};
+    for (const [name, value] of this.inlinePluginVariables()) {
+      if (
+        this.appearanceBaseline.variables.get(name) === value ||
+        !/^--[a-z0-9_-]{1,120}$/iu.test(name) ||
+        value.length > 1_024
+      ) {
+        continue;
+      }
+      variables[name] = value;
+      if (Object.keys(variables).length >= 256) break;
+    }
+    return { bodyClasses, variables };
   }
 
   private async evaluatePlugin(

@@ -5,6 +5,68 @@
   "entries": [
     {
       "plugin": {
+        "id": "data-files-editor",
+        "name": "Data Files Editor",
+        "version": "1.3.0",
+        "repository": "https://github.com/zuktol/obsidian-data-files-editor",
+        "license": "MIT",
+        "bundleSha256": "1f962a44845adad7ea3de6792bbf536f111ee131b0fcd16fa9cf4d18ff0d0676"
+      },
+      "threadleafVersion": "0.1.0",
+      "lastTested": "2026-08-20",
+      "compatibilityLevel": 3,
+      "summary": "The exact Obsidian-installed Data Files Editor 1.3.0 bundle passed reviewed authority, opened its registered JSON file view, accepted real CodeMirror input, autosaved the changed JSON bytes, and exposed its settings surface while four installed plugins remained loaded together.",
+      "evidenceMode": "direct",
+      "requiredCapabilities": [
+        "editor-extension",
+        "workspace-ui",
+        "network",
+        "filesystem",
+        "subprocess",
+        "host-environment"
+      ],
+      "platforms": [
+        {
+          "id": "linux-x64-electron",
+          "status": "verified",
+          "limits": [
+            "Verified under Xvfb Electron with the exact installed bundle, isolated plugin renderer, disposable vault, and private state.",
+            "The runtime is trusted same-user desktop code, not a sandbox."
+          ]
+        },
+        {
+          "id": "macos-electron",
+          "status": "unverified",
+          "limits": ["This exact package workflow is not verified on macOS."]
+        },
+        {
+          "id": "windows-x64-electron",
+          "status": "unverified",
+          "limits": ["This exact package workflow is not verified on Windows."]
+        }
+      ],
+      "workflows": [
+        {
+          "id": "data-files-editor.json-open-edit-autosave.v1",
+          "name": "Open, edit, and autosave JSON through the plugin-owned file view",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "scripts/check-excalidraw-roundtrip.mjs",
+              "command": "THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT=$PLUGIN_ROOT THREADLEAF_INSTALLED_THEME_MATRIX_ROOT=$MINIMAL_THEME pnpm test:excalidraw-roundtrip"
+            }
+          ]
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "YAML, TXT, XML, non-default settings, rename, reload, and restart remain outside this exact workflow claim.",
+        "This is supporting behavior evidence, not Level 4 evidence.",
+        "No controller-finalized signed production receipt exists for this tuple."
+      ]
+    },
+    {
+      "plugin": {
         "id": "nldates-obsidian",
         "name": "Natural Language Dates",
         "version": "0.6.2",
@@ -390,6 +452,140 @@
     },
     {
       "plugin": {
+        "id": "obsidian-icon-folder",
+        "name": "Iconize",
+        "version": "2.14.7",
+        "repository": "https://github.com/florianwoelki/obsidian-iconize",
+        "license": "MIT",
+        "bundleSha256": "b68bcfd318d678892f671736e54396fd72414180736e58f164fb17a3f72a22e1"
+      },
+      "threadleafVersion": "0.1.0",
+      "lastTested": "2026-08-20",
+      "compatibilityLevel": 3,
+      "summary": "The exact Obsidian-installed Iconize 2.14.7 bundle passed reviewed authority, opened its ordinary icon picker, persisted the selected star for a note, projected it into Threadleaf's native virtualized Files row, and rendered it in light and dark while four installed plugins remained loaded together.",
+      "evidenceMode": "direct",
+      "requiredCapabilities": [
+        "vault-read",
+        "network",
+        "editor-extension",
+        "workspace-ui",
+        "dynamic-code",
+        "filesystem",
+        "subprocess",
+        "host-environment"
+      ],
+      "platforms": [
+        {
+          "id": "linux-x64-electron",
+          "status": "verified",
+          "limits": [
+            "Verified under Xvfb Electron with the exact installed bundle, isolated plugin renderer, disposable vault, private state, and visible light and dark navigator screenshots.",
+            "The runtime is trusted same-user desktop code, not a sandbox."
+          ]
+        },
+        {
+          "id": "macos-electron",
+          "status": "unverified",
+          "limits": ["This exact package workflow is not verified on macOS."]
+        },
+        {
+          "id": "windows-x64-electron",
+          "status": "unverified",
+          "limits": ["This exact package workflow is not verified on Windows."]
+        }
+      ],
+      "workflows": [
+        {
+          "id": "iconize.note-star-picker-persist-render.v1",
+          "name": "Assign a star from the picker, persist it, and render it in the native Files tree",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "scripts/check-excalidraw-roundtrip.mjs",
+              "command": "THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT=$PLUGIN_ROOT THREADLEAF_INSTALLED_THEME_MATRIX_ROOT=$MINIMAL_THEME pnpm test:excalidraw-roundtrip"
+            },
+            {
+              "path": "src/runtime/plugin-host.test.ts",
+              "command": "pnpm exec vitest run src/runtime/plugin-host.test.ts src/runtime/isolated-plugin-runtime.test.ts"
+            }
+          ]
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "This workflow proves one emoji decoration. SVG icon packs, custom rules, folder and tab icons, color controls, remove, rename, reload, and restart remain outside this claim.",
+        "This is supporting behavior evidence, not Level 4 evidence.",
+        "No controller-finalized signed production receipt exists for this tuple."
+      ]
+    },
+    {
+      "plugin": {
+        "id": "obsidian-minimal-settings",
+        "name": "Minimal Theme Settings",
+        "version": "8.2.3",
+        "repository": "https://github.com/kepano/obsidian-minimal-settings",
+        "license": "MIT",
+        "bundleSha256": "70573512ec859fad644e79ca9883d0b6d7dfb5369cde66e366884638317efdf3"
+      },
+      "threadleafVersion": "0.1.0",
+      "lastTested": "2026-08-20",
+      "compatibilityLevel": 3,
+      "summary": "The exact Obsidian-installed Minimal Theme Settings 8.2.3 bundle passed reviewed authority beside the exact Minimal 8.2.0 theme, registered 51 owned commands, increased the native editor font to a measured 16.5px, persisted the value through both plugin and app APIs, and rendered in light and dark.",
+      "evidenceMode": "direct",
+      "requiredCapabilities": [
+        "workspace-ui",
+        "network",
+        "filesystem",
+        "subprocess",
+        "host-environment"
+      ],
+      "platforms": [
+        {
+          "id": "linux-x64-electron",
+          "status": "verified",
+          "limits": [
+            "Verified under Xvfb Electron with the exact installed plugin and official-matching Minimal 8.2.0 theme, isolated plugin renderer, disposable vault, private state, computed style, and light and dark screenshots.",
+            "The runtime is trusted same-user desktop code, not a sandbox."
+          ]
+        },
+        {
+          "id": "macos-electron",
+          "status": "unverified",
+          "limits": ["This exact package workflow is not verified on macOS."]
+        },
+        {
+          "id": "windows-x64-electron",
+          "status": "unverified",
+          "limits": ["This exact package workflow is not verified on Windows."]
+        }
+      ],
+      "workflows": [
+        {
+          "id": "minimal-settings.native-font-command-persist.v1",
+          "name": "Change, project, measure, and persist the Minimal native editor font size",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "scripts/check-excalidraw-roundtrip.mjs",
+              "command": "THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT=$PLUGIN_ROOT THREADLEAF_INSTALLED_THEME_MATRIX_ROOT=$MINIMAL_THEME pnpm test:excalidraw-roundtrip"
+            },
+            {
+              "path": "scripts/check-community-theme-matrix.mjs",
+              "command": "pnpm community-theme:check"
+            }
+          ]
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "This workflow proves one of 51 commands and the paired theme's existing visual matrix. The remaining commands, settings controls, non-default schemes, reload, and restart remain outside this claim.",
+        "A non-default Threadleaf accessibility editor-font preference takes precedence over the plugin's body-font projection.",
+        "This is supporting behavior evidence, not Level 4 evidence.",
+        "No controller-finalized signed production receipt exists for this tuple."
+      ]
+    },
+    {
+      "plugin": {
         "id": "obsidian-style-settings",
         "name": "Style Settings",
         "version": "1.0.9",
@@ -445,6 +641,72 @@
         "The controls style only the isolated plugin surface.",
         "Threadleaf native editor, file tree, settings shell, and unrelated plugin views are outside the claim.",
         "The runtime is a trusted same-user Node renderer, not a sandbox.",
+        "This is supporting behavior evidence, not Level 4 evidence.",
+        "No controller-finalized signed production receipt exists for this tuple."
+      ]
+    },
+    {
+      "plugin": {
+        "id": "omnisearch",
+        "name": "Omnisearch",
+        "version": "1.30.1",
+        "repository": "https://github.com/scambier/obsidian-omnisearch",
+        "license": "GPL-3.0",
+        "bundleSha256": "4ea4d51f5ce283ea0f83ceb1f1db8e8f8c3ae156fab69a5f8f4c4e09d101a314"
+      },
+      "threadleafVersion": "0.1.0",
+      "lastTested": "2026-08-20",
+      "compatibilityLevel": 3,
+      "summary": "The exact Obsidian-installed Omnisearch 1.30.1 bundle passed reviewed authority, built its own index over the disposable vault, opened its own visible search modal, returned the expected Unicode-scene result, and handed that result back to Threadleaf's native note navigation while four installed plugins remained loaded together.",
+      "evidenceMode": "direct",
+      "requiredCapabilities": [
+        "vault-read",
+        "network",
+        "workspace-ui",
+        "filesystem",
+        "subprocess",
+        "host-environment"
+      ],
+      "platforms": [
+        {
+          "id": "linux-x64-electron",
+          "status": "verified",
+          "limits": [
+            "Verified under Xvfb Electron with the exact installed bundle, isolated plugin renderer, disposable vault, and private state.",
+            "The runtime is trusted same-user desktop code, not a sandbox."
+          ]
+        },
+        {
+          "id": "macos-electron",
+          "status": "unverified",
+          "limits": ["This exact package workflow is not verified on macOS."]
+        },
+        {
+          "id": "windows-x64-electron",
+          "status": "unverified",
+          "limits": ["This exact package workflow is not verified on Windows."]
+        }
+      ],
+      "workflows": [
+        {
+          "id": "omnisearch.index-query-native-open.v1",
+          "name": "Index the vault, query the plugin modal, and open the selected native note",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "scripts/check-excalidraw-roundtrip.mjs",
+              "command": "THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT=$PLUGIN_ROOT THREADLEAF_INSTALLED_THEME_MATRIX_ROOT=$MINIMAL_THEME pnpm test:excalidraw-roundtrip"
+            },
+            {
+              "path": "src/runtime/plugin-host.test.ts",
+              "command": "pnpm exec vitest run src/runtime/plugin-host.test.ts"
+            }
+          ]
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "Mutation reindexing, cache reuse, in-file search, PDF and image indexing, HTTP APIs, non-default settings, reload, and restart remain outside this claim.",
         "This is supporting behavior evidence, not Level 4 evidence.",
         "No controller-finalized signed production receipt exists for this tuple."
       ]
@@ -631,5 +893,5 @@
       ]
     }
   ],
-  "generationId": "904a30a008c29797f228daffbc4240173d3d71e135a59d494751983e5ec93ba1"
+  "generationId": "d904fbcae3fa2d3565ce9ed0e81e96f33cfc75c8346860a8f064026351098615"
 }

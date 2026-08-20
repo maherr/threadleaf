@@ -271,3 +271,18 @@ link and a closed suggestion session. The visible menu is screenshot-checked in 
 eight commands and one editor suggest registration must remain present. The exact release is
 byte-identical to the package installed in the acceptance vault. Date Picker, daily-note creation,
 URI handling, non-default settings, and the other commands remain outside this claim.
+
+## Native explorer and appearance projections
+
+Isolated plugins see a bounded compatibility file-explorer tree instead of direct access to
+Threadleaf's renderer DOM. Text decorations added to projected file and folder rows return as
+path-bound snapshot data and replace the corresponding native Files icon. Empty or overlong output
+is discarded. The exact Iconize 2.14.7 gate assigns an emoji through the plugin's real picker,
+requires persistence, reveals the native virtualized row, and screenshot-checks it in both themes.
+
+Plugin-added body classes and inline custom properties also return as bounded snapshot data. The
+main renderer applies only safe class and custom-property names, tracks its prior values, and
+restores them when the projection disappears. Minimal Theme Settings 8.2.3 proves this path beside
+Minimal 8.2.0 by changing `--font-text-size`, requiring the native editor to compute to 16.5px, and
+capturing light and dark pixels. A non-default Threadleaf accessibility editor-font preference wins
+over that compatibility alias.

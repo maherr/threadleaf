@@ -4,19 +4,52 @@ This document is generated from the versioned receipt-aware source [`compatibili
 Discovery in the external community package directory is separate from Threadleaf compatibility evidence.
 A row applies only to the exact plugin and Threadleaf versions shown.
 
-Registry schema: 2. Threadleaf version: 0.1.0. Generation: 904a30a008c29797f228daffbc4240173d3d71e135a59d494751983e5ec93ba1.
+Registry schema: 2. Threadleaf version: 0.1.0. Generation: d904fbcae3fa2d3565ce9ed0e81e96f33cfc75c8346860a8f064026351098615.
 
 | Plugin | Plugin version | Threadleaf | Level | Evidence | Last tested |
 | --- | --- | --- | ---: | --- | --- |
+| [Data Files Editor](https://github.com/zuktol/obsidian-data-files-editor) | 1.3.0 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Natural Language Dates](https://github.com/argenos/nldates-obsidian) | 0.6.2 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Auto Link Title](https://github.com/zolrath/obsidian-auto-link-title) | 1.5.5 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Auto Link Title](https://github.com/zolrath/obsidian-auto-link-title) | 1.5.5 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) | 2.25.3 | 0.1.0 | 0 | composed | 2026-08-16 |
 | [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) | 2.26.4 | 0.1.0 | 2 | direct | 2026-08-16 |
+| [Iconize](https://github.com/florianwoelki/obsidian-iconize) | 2.14.7 | 0.1.0 | 3 | direct | 2026-08-20 |
+| [Minimal Theme Settings](https://github.com/kepano/obsidian-minimal-settings) | 8.2.3 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Style Settings](https://github.com/mgmeyers/obsidian-style-settings) | 1.0.9 | 0.1.0 | 3 | direct | 2026-08-17 |
+| [Omnisearch](https://github.com/scambier/obsidian-omnisearch) | 1.30.1 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Threadleaf Compatibility Fixture](https://github.com/maherr/threadleaf) | 0.1.0 | 0.1.0 | 0 | direct | 2026-08-15 |
 | [Paste URL into Selection](https://github.com/denolehov/obsidian-url-into-selection) | 1.11.4 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Paste URL into Selection](https://github.com/denolehov/obsidian-url-into-selection) | 1.11.4 | 0.1.0 | 3 | direct | 2026-08-20 |
+
+## Data Files Editor 1.3.0
+
+The exact Obsidian-installed Data Files Editor 1.3.0 bundle passed reviewed authority, opened its registered JSON file view, accepted real CodeMirror input, autosaved the changed JSON bytes, and exposed its settings surface while four installed plugins remained loaded together.
+
+Bundle SHA-256: `1f962a44845adad7ea3de6792bbf536f111ee131b0fcd16fa9cf4d18ff0d0676`. License: MIT.
+
+Required static authority review: `editor-extension`, `workspace-ui`, `network`, `filesystem`, `subprocess`, `host-environment`.
+
+### Supported workflows
+
+- **Open, edit, and autosave JSON through the plugin-owned file view** (passed)
+  - `THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT=$PLUGIN_ROOT THREADLEAF_INSTALLED_THEME_MATRIX_ROOT=$MINIMAL_THEME pnpm test:excalidraw-roundtrip` via [scripts/check-excalidraw-roundtrip.mjs](../../scripts/check-excalidraw-roundtrip.mjs)
+
+### Platform limits
+
+- **linux-x64-electron**: verified. Verified under Xvfb Electron with the exact installed bundle, isolated plugin renderer, disposable vault, and private state. The runtime is trusted same-user desktop code, not a sandbox.
+- **macos-electron**: unverified. This exact package workflow is not verified on macOS.
+- **windows-x64-electron**: unverified. This exact package workflow is not verified on Windows.
+
+### Known failures
+
+- No reproducible failure is recorded for the supported workflows above.
+
+### Limitations
+
+- YAML, TXT, XML, non-default settings, rename, reload, and restart remain outside this exact workflow claim.
+- This is supporting behavior evidence, not Level 4 evidence.
+- No controller-finalized signed production receipt exists for this tuple.
 
 ## Natural Language Dates 0.6.2
 
@@ -184,6 +217,67 @@ Required static authority review: `vault-read`, `vault-write`, `network`, `clipb
 - The optional compatibility-renderer crash probe was not safely inducible by CDP on the tested Electron build; mandatory pop-out crash recovery passed.
 - This is trusted same-user desktop construction evidence, not a sandbox or hostile-plugin attestation.
 
+## Iconize 2.14.7
+
+The exact Obsidian-installed Iconize 2.14.7 bundle passed reviewed authority, opened its ordinary icon picker, persisted the selected star for a note, projected it into Threadleaf's native virtualized Files row, and rendered it in light and dark while four installed plugins remained loaded together.
+
+Bundle SHA-256: `b68bcfd318d678892f671736e54396fd72414180736e58f164fb17a3f72a22e1`. License: MIT.
+
+Required static authority review: `vault-read`, `network`, `editor-extension`, `workspace-ui`, `dynamic-code`, `filesystem`, `subprocess`, `host-environment`.
+
+### Supported workflows
+
+- **Assign a star from the picker, persist it, and render it in the native Files tree** (passed)
+  - `THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT=$PLUGIN_ROOT THREADLEAF_INSTALLED_THEME_MATRIX_ROOT=$MINIMAL_THEME pnpm test:excalidraw-roundtrip` via [scripts/check-excalidraw-roundtrip.mjs](../../scripts/check-excalidraw-roundtrip.mjs)
+  - `pnpm exec vitest run src/runtime/plugin-host.test.ts src/runtime/isolated-plugin-runtime.test.ts` via [src/runtime/plugin-host.test.ts](../../src/runtime/plugin-host.test.ts)
+
+### Platform limits
+
+- **linux-x64-electron**: verified. Verified under Xvfb Electron with the exact installed bundle, isolated plugin renderer, disposable vault, private state, and visible light and dark navigator screenshots. The runtime is trusted same-user desktop code, not a sandbox.
+- **macos-electron**: unverified. This exact package workflow is not verified on macOS.
+- **windows-x64-electron**: unverified. This exact package workflow is not verified on Windows.
+
+### Known failures
+
+- No reproducible failure is recorded for the supported workflows above.
+
+### Limitations
+
+- This workflow proves one emoji decoration. SVG icon packs, custom rules, folder and tab icons, color controls, remove, rename, reload, and restart remain outside this claim.
+- This is supporting behavior evidence, not Level 4 evidence.
+- No controller-finalized signed production receipt exists for this tuple.
+
+## Minimal Theme Settings 8.2.3
+
+The exact Obsidian-installed Minimal Theme Settings 8.2.3 bundle passed reviewed authority beside the exact Minimal 8.2.0 theme, registered 51 owned commands, increased the native editor font to a measured 16.5px, persisted the value through both plugin and app APIs, and rendered in light and dark.
+
+Bundle SHA-256: `70573512ec859fad644e79ca9883d0b6d7dfb5369cde66e366884638317efdf3`. License: MIT.
+
+Required static authority review: `workspace-ui`, `network`, `filesystem`, `subprocess`, `host-environment`.
+
+### Supported workflows
+
+- **Change, project, measure, and persist the Minimal native editor font size** (passed)
+  - `THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT=$PLUGIN_ROOT THREADLEAF_INSTALLED_THEME_MATRIX_ROOT=$MINIMAL_THEME pnpm test:excalidraw-roundtrip` via [scripts/check-excalidraw-roundtrip.mjs](../../scripts/check-excalidraw-roundtrip.mjs)
+  - `pnpm community-theme:check` via [scripts/check-community-theme-matrix.mjs](../../scripts/check-community-theme-matrix.mjs)
+
+### Platform limits
+
+- **linux-x64-electron**: verified. Verified under Xvfb Electron with the exact installed plugin and official-matching Minimal 8.2.0 theme, isolated plugin renderer, disposable vault, private state, computed style, and light and dark screenshots. The runtime is trusted same-user desktop code, not a sandbox.
+- **macos-electron**: unverified. This exact package workflow is not verified on macOS.
+- **windows-x64-electron**: unverified. This exact package workflow is not verified on Windows.
+
+### Known failures
+
+- No reproducible failure is recorded for the supported workflows above.
+
+### Limitations
+
+- This workflow proves one of 51 commands and the paired theme's existing visual matrix. The remaining commands, settings controls, non-default schemes, reload, and restart remain outside this claim.
+- A non-default Threadleaf accessibility editor-font preference takes precedence over the plugin's body-font projection.
+- This is supporting behavior evidence, not Level 4 evidence.
+- No controller-finalized signed production receipt exists for this tuple.
+
 ## Style Settings 1.0.9
 
 The exact reviewed obsidian-style-settings 1.0.9 package passed direct Linux Electron evidence for source-bearing appearance discovery, the immutable isolated activeWindow, the real Community plugins Options route, live class and variable controls, snippet disable and re-enable, computed-style changes, renderer replacement, application restart reconstruction, realm locality, and dark and light visual capture. This is supporting behavior evidence at Level 3 (Integrated), not Level 4.
@@ -213,6 +307,36 @@ Required static authority review: `workspace-ui`, `dynamic-code`.
 - The controls style only the isolated plugin surface.
 - Threadleaf native editor, file tree, settings shell, and unrelated plugin views are outside the claim.
 - The runtime is a trusted same-user Node renderer, not a sandbox.
+- This is supporting behavior evidence, not Level 4 evidence.
+- No controller-finalized signed production receipt exists for this tuple.
+
+## Omnisearch 1.30.1
+
+The exact Obsidian-installed Omnisearch 1.30.1 bundle passed reviewed authority, built its own index over the disposable vault, opened its own visible search modal, returned the expected Unicode-scene result, and handed that result back to Threadleaf's native note navigation while four installed plugins remained loaded together.
+
+Bundle SHA-256: `4ea4d51f5ce283ea0f83ceb1f1db8e8f8c3ae156fab69a5f8f4c4e09d101a314`. License: GPL-3.0.
+
+Required static authority review: `vault-read`, `network`, `workspace-ui`, `filesystem`, `subprocess`, `host-environment`.
+
+### Supported workflows
+
+- **Index the vault, query the plugin modal, and open the selected native note** (passed)
+  - `THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT=$PLUGIN_ROOT THREADLEAF_INSTALLED_THEME_MATRIX_ROOT=$MINIMAL_THEME pnpm test:excalidraw-roundtrip` via [scripts/check-excalidraw-roundtrip.mjs](../../scripts/check-excalidraw-roundtrip.mjs)
+  - `pnpm exec vitest run src/runtime/plugin-host.test.ts` via [src/runtime/plugin-host.test.ts](../../src/runtime/plugin-host.test.ts)
+
+### Platform limits
+
+- **linux-x64-electron**: verified. Verified under Xvfb Electron with the exact installed bundle, isolated plugin renderer, disposable vault, and private state. The runtime is trusted same-user desktop code, not a sandbox.
+- **macos-electron**: unverified. This exact package workflow is not verified on macOS.
+- **windows-x64-electron**: unverified. This exact package workflow is not verified on Windows.
+
+### Known failures
+
+- No reproducible failure is recorded for the supported workflows above.
+
+### Limitations
+
+- Mutation reindexing, cache reuse, in-file search, PDF and image indexing, HTTP APIs, non-default settings, reload, and restart remain outside this claim.
 - This is supporting behavior evidence, not Level 4 evidence.
 - No controller-finalized signed production receipt exists for this tuple.
 

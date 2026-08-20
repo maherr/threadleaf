@@ -49,6 +49,10 @@ The plugin registers `TextFileView` subclasses for JSON, YAML, TXT, and XML, bin
 
 Disposition: **Adapt** the existing file-view and editor bridge, then **Benchmark** exact JSON and YAML persistence. Do not build a separate data editor.
 
+Result on 2026-08-20: the exact installed bundle passed reviewed activation, its registered JSON
+view accepted real CodeMirror input, and the changed bytes autosaved exactly. YAML, TXT, XML,
+reload, and restart remain outside this workflow claim.
+
 ### Excalidraw 2.25.3
 
 The package uses file views, workspace layout readiness, editor extensions, settings, vault reads and writes, external navigation, clipboard, network assets, and dynamic module selection. Threadleaf's existing 2.26.4 workflow already exercised the broad surface, but the installed 2.25.3 identity and its recovery path had not been proven.
@@ -67,17 +71,30 @@ The plugin uses workspace and vault events, file menus, modals, metadata cache, 
 
 Disposition: **Adapt** navigator decoration and context-menu projection. **Benchmark** assignment, removal, rename, reload, restart, and both themes. Reject an activation-only claim.
 
+Result on 2026-08-20: the exact installed bundle's ordinary picker assigned and persisted a star,
+and Threadleaf projected the plugin-authored decoration into the native virtualized Files row in
+light and dark. SVG packs, rules, remove, rename, reload, and restart remain outside this claim.
+
 ### Minimal Theme Settings 8.2.3
 
 The plugin reads vault configuration, listens for configuration and CSS changes, adds a settings tab and commands, writes classes and CSS variables, and persists settings. Threadleaf already exposes settings components, `loadData` and `saveData`, `vault.getConfig`, CSS-change events, and theme/snippet controls. Its value depends on the paired Minimal theme, so plugin-only evidence would be misleading.
 
 Disposition: **Depend** on the unchanged public plugin and theme assets. **Adapt** any missing configuration or CSS-event semantics. **Benchmark** paired computed styles and pixels in light and dark.
 
+Result on 2026-08-20: the exact installed plugin loaded beside official-matching Minimal 8.2.0,
+registered 51 owned commands, changed and persisted the body font through both APIs, and projected
+the result into the native editor at a measured 16.5px in light and dark. Other controls, reload,
+and restart remain outside this claim.
+
 ### Omnisearch 1.30.1
 
 The plugin uses vault create, delete, modify, and rename events, metadata-cache ignore rules, modals, ribbon and command surfaces, vault adapter cache files under `.obsidian/plugins/omnisearch`, and optional HTTP features. Threadleaf already provides the core modal, ribbon, command, event, metadata, and adapter surfaces. Search-index storage and the bundled Svelte modal lifecycle are the highest-risk seams.
 
 Disposition: **Depend** on the plugin's own index and UI. **Adapt** missing metadata and modal semantics. **Benchmark** initial index, query ranking, result open, mutation reindex, reload, and restart. Do not substitute Threadleaf's native search and call it plugin parity.
+
+Result on 2026-08-20: the exact installed bundle built its own index, returned the expected result
+through its own modal, and opened that result in Threadleaf's native workspace. Mutation reindex,
+cache reuse, reload, and restart remain outside this claim.
 
 ## Saturation and stop gate
 

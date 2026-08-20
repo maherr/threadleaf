@@ -52,12 +52,12 @@ Threadleaf does not claim broad plugin compatibility as a single number. Its
 fail another." The [generated compatibility registry](../compatibility/registry.md) is produced
 from [`compatibility/plugin-evidence.v1.json`](../../compatibility/plugin-evidence.v1.json) by
 `pnpm compatibility:generate`, and `pnpm compatibility:check` verifies it has not drifted from that
-source. Today the registry lists four entries, each bound to an exact plugin version and an exact
-Threadleaf version, each with a bundle SHA-256 digest and named test files per workflow: Excalidraw
-2.25.3 at Level 0 with historical composed evidence pending a current receipt, Excalidraw 2.26.4 at
-Level 2 with direct sealed-construction evidence, Style Settings 1.0.9 at Level 3 with direct
-integrated evidence, and Threadleaf's own compatibility fixture at Level 0 pending its exact
-authority gate. The registry is intentionally short right now; the discipline is that nothing
+source. Today the registry lists 13 exact-package entries, each bound to an exact plugin version
+and an exact Threadleaf version, with a bundle SHA-256 digest and named test files per workflow.
+The verified Level 3 set includes Style Settings, Paste URL into Selection, Auto Link Title,
+Natural Language Dates, Data Files Editor, Iconize, Minimal Theme Settings, and Omnisearch; the
+Excalidraw and fixture rows retain their narrower recorded levels. The registry is intentionally
+short right now; the discipline is that nothing
 enters it without a named, executable workflow behind it; see the contract's evidence-sources
 section, which excludes "third-party directories, feature tables, stars, and README claims" as
 compatibility evidence on their own.
@@ -123,7 +123,7 @@ uploaded."
 
 Obsidian's community plugin ecosystem has been growing since 2020 and today covers thousands of
 workflows: task managers, spaced repetition, citation tools, calendars, database-style views, and
-more. Threadleaf's generated registry currently lists exactly four evidence-backed entries (see
+more. Threadleaf's generated registry currently lists 13 exact-package evidence entries (see
 [`docs/compatibility/registry.md`](../compatibility/registry.md)), by design: a plugin is added
 only after a named workflow passes against a real fixture, not merely because it is discovered in a
 vault. That discipline, not a lack of effort, is why the number is small today.

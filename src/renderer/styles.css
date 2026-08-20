@@ -11398,6 +11398,16 @@ a.tag.property-tag {
   stroke-width: 1.65;
 }
 
+.navigator-plugin-decoration {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  font-family: var(--font-interface);
+  font-size: 14px;
+  line-height: 1;
+}
+
 .navigator-tree-row[data-kind="folder"] .navigator-tree-icon {
   color: var(--ink-soft);
 }

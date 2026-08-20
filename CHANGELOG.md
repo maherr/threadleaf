@@ -31,6 +31,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Added a bounded two-phase native editor-suggestion bridge with keyboard and pointer navigation,
   revision-bound selection, isolated-plugin ownership, and visible light and dark evidence for the
   exact Natural Language Dates 0.6.2 `@to` workflow.
+- Added exact installed-package workflows for Data Files Editor 1.3.0, Iconize 2.14.7, Minimal
+  Theme Settings 8.2.3 with Minimal 8.2.0, and Omnisearch 1.30.1 in one isolated-renderer matrix.
+- Added bounded reverse projections for plugin-authored native Files decorations, body classes, and
+  CSS variables, including visible Iconize stars and Minimal's measured editor font setting.
 
 ### Changed
 
@@ -110,6 +114,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Kept plugin editor suggestion context alive across consecutive keystrokes and placed active-menu
   navigation ahead of CodeMirror's ordinary Enter binding without changing Enter when no menu is
   open.
+- Scoped callback-editor navigation suppression to host context construction so an Omnisearch
+  result opened later on the same compatibility leaf reaches Threadleaf's native workspace.
 
 ## [0.1.0]
 

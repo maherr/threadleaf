@@ -1036,6 +1036,11 @@ const shortcutTargets: readonly ShortcutTargetDefinition[] = [
 
 const isMac = navigator.platform.toLocaleLowerCase("en-US").includes("mac");
 let currentSnapshot: RuntimeSnapshot | null = null;
+const appliedPluginBodyClasses = new Set<string>();
+const appliedPluginVariables = new Map<
+  string,
+  { body: string; bodyPriority: string; root: string; rootPriority: string }
+>();
 let workspaceLayoutSnapshot: WorkspaceLayoutSnapshot | null = null;
 let currentTabDrag: TabDragState | null = null;
 let pointerTabGesture: {
@@ -2024,6 +2029,54 @@ function vaultOpening(): boolean {
 
 function readOnlyVault(): boolean {
   return currentSnapshot?.vault.mode === "synthetic-read-only";
+}
+
+function applyPluginAppearance(snapshot: RuntimeSnapshot): void {
+  const appearance = snapshot.pluginAppearance ?? { bodyClasses: [], variables: {} };
+  const effectiveVariables = { ...appearance.variables };
+  const pluginTextSize = appearance.variables["--font-text-size"];
+  if (
+    pluginTextSize &&
+    currentAccessibilityPreferences().editorFontSize ===
+      createDefaultAccessibilityPreferences().editorFontSize
+  ) {
+    effectiveVariables["--threadleaf-editor-font-size"] = pluginTextSize;
+  }
+  const nextClasses = new Set(appearance.bodyClasses);
+  for (const className of [...appliedPluginBodyClasses]) {
+    if (nextClasses.has(className)) continue;
+    document.body.classList.remove(className);
+    appliedPluginBodyClasses.delete(className);
+  }
+  for (const className of nextClasses) {
+    if (document.body.classList.contains(className)) continue;
+    document.body.classList.add(className);
+    appliedPluginBodyClasses.add(className);
+  }
+
+  const nextVariables = new Set(Object.keys(effectiveVariables));
+  for (const [name, previous] of [...appliedPluginVariables]) {
+    if (nextVariables.has(name)) continue;
+    if (previous.root)
+      document.documentElement.style.setProperty(name, previous.root, previous.rootPriority);
+    else document.documentElement.style.removeProperty(name);
+    if (previous.body) document.body.style.setProperty(name, previous.body, previous.bodyPriority);
+    else document.body.style.removeProperty(name);
+    appliedPluginVariables.delete(name);
+  }
+  for (const [name, value] of Object.entries(effectiveVariables)) {
+    if (!appliedPluginVariables.has(name)) {
+      appliedPluginVariables.set(name, {
+        body: document.body.style.getPropertyValue(name),
+        bodyPriority: document.body.style.getPropertyPriority(name),
+        root: document.documentElement.style.getPropertyValue(name),
+        rootPriority: document.documentElement.style.getPropertyPriority(name),
+      });
+    }
+    const priority = name === "--threadleaf-editor-font-size" ? "important" : "";
+    document.documentElement.style.setProperty(name, value, priority);
+    document.body.style.setProperty(name, value, priority);
+  }
 }
 
 function propertyEditBlockReason(): string | null {
@@ -11663,6 +11716,7 @@ function render(snapshot: RuntimeSnapshot): void {
   const previousVaultId = currentSnapshot?.vault.id ?? null;
   const previousStartupOpening = currentSnapshot?.startup?.phase === "opening";
   currentSnapshot = snapshot;
+  applyPluginAppearance(snapshot);
   reconcileWorkspaceFilePages(snapshot);
   reconcileNavigatorTree(snapshot);
   reconcileNavigatorTagCatalog(snapshot);
@@ -13217,7 +13271,19 @@ function renderNavigatorTree(
     const entryIcon = document.createElement("span");
     entryIcon.className = "navigator-tree-icon";
     entryIcon.ariaHidden = "true";
-    entryIcon.append(navigatorEntryIcon(entry, row.expanded, pluginFileViewType));
+    const pluginDecoration = currentSnapshot?.navigatorDecorations?.find(
+      ({ path }) => path === entry.path,
+    );
+    if (pluginDecoration) {
+      const decoration = document.createElement("span");
+      decoration.className = "navigator-plugin-decoration";
+      decoration.textContent = pluginDecoration.text;
+      if (pluginDecoration.title) decoration.title = pluginDecoration.title;
+      entryIcon.append(decoration);
+      button.dataset.pluginDecorated = "true";
+    } else {
+      entryIcon.append(navigatorEntryIcon(entry, row.expanded, pluginFileViewType));
+    }
     const copy = document.createElement("span");
     copy.className = "navigator-tree-copy";
     const title = document.createElement("strong");

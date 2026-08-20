@@ -1440,6 +1440,147 @@ module.exports = class EditorFixture extends Plugin {
     }
   });
 
+  it("forwards a plugin command's later file navigation from the host-created editor leaf", async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-navigation-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    const dom = new JSDOM("<!doctype html><body></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    const previousWindow = globalThis.window;
+    const previousDocument = globalThis.document;
+    try {
+      installObsidianDomCompatibility(dom.window);
+      Object.assign(globalThis, {
+        window: dom.window,
+        document: dom.window.document,
+      });
+      await fs.mkdir(vaultPath, { recursive: true });
+      await fs.writeFile(path.join(vaultPath, "Welcome.md"), "origin", "utf8");
+      await fs.writeFile(path.join(vaultPath, "Result.md"), "destination", "utf8");
+      const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "navigation-fixture");
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "navigation-fixture",
+          name: "Navigation fixture",
+          version: "0.1.0",
+        }),
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        `const { Plugin } = require("obsidian");
+module.exports = class NavigationFixture extends Plugin {
+  async onload() {
+    this.addCommand({
+      id: "open-result",
+      name: "Open result",
+      callback: async () => {
+        const result = this.app.vault.getFileByPath("Result.md");
+        await this.app.workspace.getLeaf(false).openFile(result);
+      },
+    });
+  }
+};
+`,
+        "utf8",
+      );
+      const openedPaths: string[] = [];
+      const host = new PluginHost(vaultPath, undefined, undefined, undefined, undefined, {
+        onOpenFile: (filePath) => {
+          openedPaths.push(filePath);
+        },
+      });
+      await loadPlugin(host, pluginPath);
+      await host.runCommand("navigation-fixture:open-result", {
+        path: "Welcome.md",
+        content: "origin",
+        revision: "f".repeat(64),
+        selection: { anchor: 0, head: 0 },
+      });
+
+      expect(openedPaths).toEqual(["Result.md"]);
+      await host.close();
+    } finally {
+      if (previousWindow === undefined) Reflect.deleteProperty(globalThis, "window");
+      else globalThis.window = previousWindow;
+      if (previousDocument === undefined) Reflect.deleteProperty(globalThis, "document");
+      else globalThis.document = previousDocument;
+      dom.window.close();
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
+  it("projects plugin-authored file explorer text decorations into the runtime snapshot", async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-navigator-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    const dom = new JSDOM("<!doctype html><body></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    const previousWindow = globalThis.window;
+    const previousDocument = globalThis.document;
+    try {
+      installObsidianDomCompatibility(dom.window);
+      Object.assign(globalThis, {
+        window: dom.window,
+        document: dom.window.document,
+      });
+      await fs.mkdir(vaultPath, { recursive: true });
+      await fs.writeFile(path.join(vaultPath, "Decorated.md"), "decorated", "utf8");
+      const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "navigator-fixture");
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({ id: "navigator-fixture", name: "Navigator fixture", version: "0.1.0" }),
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        `const { Plugin } = require("obsidian");
+module.exports = class NavigatorFixture extends Plugin {
+  async onload() {
+    document.body.classList.add("minimal-theme");
+    document.body.style.setProperty("--font-text-size", "16.5px");
+    this.app.workspace.onLayoutReady(() => {
+      const explorer = this.app.workspace.getLeavesOfType("file-explorer")[0];
+      const item = explorer?.view?.fileItems?.["Decorated.md"];
+      if (!item) throw new Error("Projected file explorer item missing");
+      const icon = document.createElement("span");
+      icon.className = "iconize-icon";
+      icon.dataset.icon = "star";
+      icon.title = "star";
+      icon.textContent = "🌟";
+      item.titleEl.insertBefore(icon, item.titleInnerEl);
+    });
+  }
+};
+`,
+        "utf8",
+      );
+
+      const host = new PluginHost(vaultPath);
+      await loadPlugin(host, pluginPath);
+      await host.markLayoutReady();
+      const snapshot = await host.getSnapshot();
+      expect(snapshot.navigatorDecorations).toEqual([
+        { path: "Decorated.md", text: "🌟", title: "star" },
+      ]);
+      expect(snapshot.pluginAppearance).toEqual({
+        bodyClasses: ["minimal-theme"],
+        variables: { "--font-text-size": "16.5px" },
+      });
+      await host.close();
+    } finally {
+      if (previousWindow === undefined) Reflect.deleteProperty(globalThis, "window");
+      else globalThis.window = previousWindow;
+      if (previousDocument === undefined) Reflect.deleteProperty(globalThis, "document");
+      else globalThis.document = previousDocument;
+      dom.window.close();
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   it("delivers revision-bound editor paste events and reports whether a plugin handled them", async () => {
     const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-paste-"));
     const vaultPath = path.join(sandboxPath, "vault");

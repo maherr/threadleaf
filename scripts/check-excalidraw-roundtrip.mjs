@@ -860,6 +860,25 @@ async function runInstalledPluginMatrix(vaultId, port) {
   for (const registration of registrationSummary) {
     assert(registration.hasSettings, `${registration.id} did not expose its settings surface.`);
   }
+  if (installedThemeMatrixRoot) {
+    await clickSelector(cdp, "#settings-nav-appearance");
+    const minimalThemeId = await waitFor(
+      cdp,
+      `(() => { const select = document.querySelector('#appearance-theme'); if (!(select instanceof HTMLSelectElement) || select.disabled) return null; return [...select.options].find((option) => option.textContent?.startsWith('Minimal'))?.value ?? null; })()`,
+      "installed Minimal theme option",
+      20_000,
+    );
+    await evaluate(
+      cdp,
+      `(() => { const select = document.querySelector('#appearance-theme'); if (!(select instanceof HTMLSelectElement)) return false; select.value = ${JSON.stringify(minimalThemeId)}; select.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`,
+    );
+    await waitFor(
+      cdp,
+      `document.querySelector('#appearance-theme')?.value === ${JSON.stringify(minimalThemeId)} && document.body.classList.contains('minimal-theme')`,
+      "installed Minimal theme activation",
+      20_000,
+    );
+  }
   await waitFor(
     cdp,
     "document.querySelector('#settings-close')?.disabled === false",
@@ -1031,11 +1050,33 @@ async function verifyIconizeWorkflow(vaultId, port) {
     await exists(path.join(vaultPath, ".obsidian", "icons")),
     "Iconize did not create its clean-install .obsidian/icons directory.",
   );
+  await waitFor(
+    cdp,
+    `(async () => (await window.threadleaf.getSnapshot()).navigatorDecorations?.some((decoration) => decoration.path === ${JSON.stringify(filePath)} && decoration.text === ${JSON.stringify(iconName)}) === true)()`,
+    "Iconize navigator decoration projection",
+    20_000,
+  );
+  await clickSelector(cdp, "#reveal-active-note");
+  await waitFor(
+    cdp,
+    `(() => { const row = document.querySelector(${JSON.stringify(`.navigator-tree-row[data-tree-path="${filePath}"]`)}); return row?.getAttribute('data-plugin-decorated') === 'true' && row.querySelector('.navigator-plugin-decoration')?.textContent === ${JSON.stringify(iconName)}; })()`,
+    "Iconize visible native navigator decoration",
+    20_000,
+  );
+  const navigatorShots = [
+    await capture(cdp, "iconize-navigator", "dark"),
+    await capture(cdp, "iconize-navigator", "light"),
+  ];
+  assert(
+    navigatorShots[0].digest !== navigatorShots[1].digest,
+    "Iconize navigator theme screenshots are identical.",
+  );
   return {
     pluginId: "obsidian-icon-folder",
-    workflow: "command-picker-select-persist",
+    workflow: "command-picker-select-persist-render",
     filePath,
     iconName,
+    screenshots: navigatorShots.map(({ filePath: screenshotPath }) => screenshotPath),
   };
 }
 
@@ -1060,6 +1101,12 @@ async function verifyMinimalSettingsWorkflow(vaultId, port) {
   } finally {
     surface.connection.close();
   }
+  const nativeAppearance = await waitFor(
+    cdp,
+    `(() => { const value = getComputedStyle(document.body).getPropertyValue('--font-text-size').trim(); const editorFontSize = getComputedStyle(document.querySelector('.cm-content')).fontSize; return document.body.classList.contains('minimal-theme') && value === '16.5px' && editorFontSize === '16.5px' ? { value, editorFontSize } : null; })()`,
+    "Minimal native appearance projection",
+    20_000,
+  );
   const appSettingsPath = path.join(vaultPath, ".obsidian", "app.json");
   const pluginSettingsPath = path.join(
     vaultPath,
@@ -1082,11 +1129,21 @@ async function verifyMinimalSettingsWorkflow(vaultId, port) {
     await delay(80);
   }
   assert(persisted, "Minimal Settings did not persist its body font setting through both APIs.");
+  const appearanceShots = [
+    await capture(cdp, "minimal-settings-native", "dark"),
+    await capture(cdp, "minimal-settings-native", "light"),
+  ];
+  assert(
+    appearanceShots[0].digest !== appearanceShots[1].digest,
+    "Minimal Settings native theme screenshots are identical.",
+  );
   return {
     pluginId: "obsidian-minimal-settings",
     workflow: "command-config-css-persist",
     vaultId,
     fontSize: 16.5,
+    nativeEditorFontSize: nativeAppearance.editorFontSize,
+    screenshots: appearanceShots.map(({ filePath }) => filePath),
   };
 }
 
