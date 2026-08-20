@@ -9,6 +9,7 @@ describe("integrated desktop window chrome", () => {
   it("provides a titlebar host for the active pane and a directly reachable new-note control", () => {
     expect(html).toContain('id="titlebar-tabs-host"');
     expect(html).toContain('id="titlebar-new-note"');
+    expect(html).toContain('id="titlebar-left-dock"');
     expect(html.indexOf('id="titlebar-tabs-host"')).toBeLessThan(
       html.indexOf('class="topbar-actions"'),
     );
@@ -19,6 +20,15 @@ describe("integrated desktop window chrome", () => {
     expect(renderer).toContain("previousPane.workspacePane.prepend(previousShell)");
     expect(renderer).toContain("elements.titlebarTabsHost.append(nextShell)");
     expect(renderer).toContain('nextPane.workspacePane.dataset.tabsInTitlebar = "true"');
+  });
+
+  it("keeps the titlebar dock control synchronized with the real workspace dock", () => {
+    expect(renderer).toContain(
+      'elements.titlebarLeftDock.addEventListener("click", () => void toggleWorkspaceDock("left"))',
+    );
+    expect(renderer).toContain(
+      'elements.titlebarLeftDock.setAttribute("aria-expanded", String(!leftCollapsed))',
+    );
   });
 
   it("keeps the docked tab shell and editor body in explicit layout states", () => {

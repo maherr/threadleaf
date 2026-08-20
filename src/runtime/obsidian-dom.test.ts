@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { installObsidianDomCompatibility } from "./obsidian-dom";
 
 interface TestElement extends HTMLDivElement {
+  appendText(value: string): void;
   addClass(...classes: string[]): void;
   addClasses(classes: string[]): void;
   removeClass(...classes: string[]): void;
@@ -45,7 +46,7 @@ describe("Obsidian DOM compatibility", () => {
       createFragment(
         callback?: (
           fragment: DocumentFragment & {
-            appendText(value: string): Text;
+            appendText(value: string): void;
             createEl(tagName: "strong", options?: { text?: string }): HTMLElement;
           },
         ) => void,
@@ -80,10 +81,14 @@ describe("Obsidian DOM compatibility", () => {
     stopWatching();
 
     root?.setText("existing");
+    const childCountBeforeText = root?.childNodes.length ?? 0;
+    root?.appendText("");
+    root?.appendText(" appended");
+    expect(root?.childNodes.length).toBe(childCountBeforeText + 2);
     const appended = root?.createDiv({ cls: ["card", "active"], text: "card" });
     const prepended = root?.createSpan({ text: "first" });
     root?.prepend(prepended ?? "");
-    expect(root?.getText()).toBe("firstexistingcard");
+    expect(root?.getText()).toBe("firstexisting appendedcard");
     expect(appended?.className).toBe("card active");
     expect(globals.createDiv({ text: "global" }).textContent).toBe("global");
     const fragment = globals.createFragment((value) => {

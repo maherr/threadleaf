@@ -52,9 +52,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Applied workspace controls directly to both editor panes and the visible workbench, including
   attachment insertion defaults, without requiring an application restart or rewriting vault
   metadata.
-- Replaced the stacked desktop chrome with one uninterrupted 44-pixel Longstitch workbench rail
-  that aligns the file dock, active vault, compact global actions, and native window controls above
-  a quieter document-tab and toolbar tier in both themes and at the minimum supported width.
+- Refined the desktop chrome into one uninterrupted 48-pixel workbench rail with a real dock
+  toggle, vault action group, full-width tab labels, overlaid tab actions, compact global controls,
+  and native window controls in both themes and at the minimum supported width.
 - Rebuilt Longstitch around neutral Paper and Graphite themes, compact 30-pixel explorer rows,
   coherent Hanken Grotesk interface and document typography, restrained violet interaction state,
   and less ornamental workspace chrome.
@@ -90,6 +90,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Exposed the public `Node.appendText()` DOM helper to compatibility plugins, allowing Advanced
+  Tables 0.22.1 to render and persist its complete four-control Options surface.
 - Kept one visible compatibility leaf per workspace region so a right-sidebar plugin no longer
   disappears when the Markdown editor has focus, and reasserted visible Electron surfaces after
   their host bounds become available.

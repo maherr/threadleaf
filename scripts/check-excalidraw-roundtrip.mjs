@@ -371,6 +371,52 @@ async function clickSelector(connection, selector) {
   }
 }
 
+async function closeVisibleSettingsSurface(label) {
+  const state = await evaluate(
+    cdp,
+    `(() => {
+      const dialog = document.querySelector('#shortcut-settings');
+      const close = document.querySelector('#settings-close');
+      const pluginHost = document.querySelector('#plugin-surface-host');
+      return {
+        threadleafSettings:
+          dialog instanceof HTMLDialogElement &&
+          dialog.open &&
+          close instanceof HTMLButtonElement &&
+          !close.hidden,
+        pluginSettings:
+          pluginHost instanceof HTMLElement &&
+          !pluginHost.hidden &&
+          Boolean(pluginHost.querySelector('.threadleaf-plugin-settings-surface')),
+      };
+    })()`,
+  );
+  if (state.threadleafSettings) {
+    await clickSelector(cdp, "#settings-close");
+    await waitFor(
+      cdp,
+      "document.querySelector('#shortcut-settings')?.open !== true",
+      `${label} Threadleaf settings close`,
+    );
+    return "threadleaf-settings";
+  }
+  if (state.pluginSettings) {
+    await waitFor(
+      cdp,
+      "document.querySelector('#edit-view')?.disabled === false",
+      `${label} native note return`,
+    );
+    await clickSelector(cdp, "#edit-view");
+    await waitFor(
+      cdp,
+      "document.querySelector('#plugin-surface-host')?.hidden === true",
+      `${label} plugin settings close`,
+    );
+    return "plugin-settings";
+  }
+  return "already-closed";
+}
+
 async function clickRowAction(connection, containerSelector, label) {
   const selector = await evaluate(
     connection,
@@ -1027,12 +1073,7 @@ async function runInstalledPluginMatrix(vaultId, port, pluginState) {
     "document.querySelector('#settings-close')?.disabled === false",
     "installed plugin matrix settings completion",
   );
-  await clickSelector(cdp, "#settings-close");
-  await waitFor(
-    cdp,
-    "document.querySelector('#shortcut-settings')?.open !== true",
-    "installed plugin matrix settings close",
-  );
+  await closeVisibleSettingsSurface("installed plugin matrix");
   const workflowSummary = [
     await verifyCalendarWorkflow(vaultId, port),
     await verifyDataFilesEditorWorkflow(vaultId, port),
@@ -1220,10 +1261,48 @@ async function runAdvancedTablesFormat(vaultId, notePath) {
   };
 }
 
+async function verifyAdvancedTablesOptions(captureThemes) {
+  await clickSelector(cdp, "#settings-trigger");
+  await waitFor(
+    cdp,
+    "document.querySelector('#shortcut-settings')?.open === true",
+    "Advanced Tables settings window",
+  );
+  await clickSelector(cdp, "#settings-nav-plugins");
+  await clickRowAction(cdp, '.plugin-row[data-plugin-id="table-editor-obsidian"]', "Options");
+  const names = await waitFor(
+    cdp,
+    `(() => {
+      const names = [...document.querySelectorAll('.setting-item-name')].map((item) => item.textContent?.trim() ?? '');
+      const expected = ${JSON.stringify([
+        "Bind enter to table navigation",
+        "Bind tab to table navigation",
+        "Pad cell width using spaces",
+        "Show icon in sidebar",
+      ])};
+      return expected.every((name) => names.includes(name)) ? names : null;
+    })()`,
+    "Advanced Tables four-control settings surface",
+    30_000,
+  );
+  const settingsScreenshots = captureThemes
+    ? [
+        await capture(cdp, "advanced-tables-settings", "dark"),
+        await capture(cdp, "advanced-tables-settings", "light"),
+      ]
+    : [];
+  await closeVisibleSettingsSurface("Advanced Tables");
+  return {
+    names,
+    screenshots: settingsScreenshots.map(({ filePath }) => filePath),
+  };
+}
+
 async function verifyAdvancedTablesWorkflow(vaultId) {
   return {
     pluginId: "table-editor-obsidian",
     workflow: "format-table-through-command-palette",
+    settings: await verifyAdvancedTablesOptions(true),
     note: await runAdvancedTablesFormat(vaultId, "Notes/Advanced Tables.md"),
   };
 }
@@ -1232,6 +1311,7 @@ async function verifyAdvancedTablesRestartWorkflow(vaultId) {
   return {
     pluginId: "table-editor-obsidian",
     workflow: "format-table-after-application-restart",
+    settings: await verifyAdvancedTablesOptions(false),
     note: await runAdvancedTablesFormat(vaultId, "Notes/Advanced Tables Restart.md"),
   };
 }

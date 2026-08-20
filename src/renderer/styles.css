@@ -11383,19 +11383,20 @@ a.tag.property-tag {
    so the top of the window reads as one work surface instead of a brand banner
    stacked above a second tab bar. */
 .app-frame {
-  grid-template-rows: 44px minmax(0, 1fr) 26px;
+  grid-template-rows: 48px minmax(0, 1fr) 26px;
 }
 
 .topbar {
-  grid-template-columns: 42px 226px minmax(0, 1fr) 34px auto;
+  grid-template-columns: 38px 38px 192px minmax(0, 1fr) 34px auto;
   align-items: stretch;
-  min-height: 44px;
-  background: var(--surface-sunken);
+  min-height: 48px;
+  border-bottom-color: color-mix(in srgb, var(--line) 82%, transparent);
+  background: color-mix(in srgb, var(--surface-sunken) 96%, var(--surface));
 }
 
 .brand {
   justify-content: center;
-  width: 42px;
+  width: 38px;
   padding: 0;
   border-right: 0;
 }
@@ -11414,17 +11415,17 @@ a.tag.property-tag {
 
 .brand-mark,
 :root[data-theme="dark"] .brand-mark {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   color: var(--ink-muted);
   background: transparent;
 }
 
 .brand-mark svg {
-  width: 19px;
-  height: 19px;
+  width: 18px;
+  height: 18px;
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
@@ -11438,10 +11439,36 @@ a.tag.property-tag {
   background: var(--background-modifier-hover);
 }
 
+.titlebar-dock-toggle {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  align-self: center;
+  justify-self: center;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: var(--ink-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.titlebar-dock-toggle:hover,
+.titlebar-dock-toggle:focus-visible,
+.titlebar-dock-toggle[aria-expanded="false"] {
+  color: var(--ink);
+  background: var(--background-modifier-hover);
+}
+
 .vault-switcher {
-  width: 226px;
-  padding: 0 8px 0 4px;
+  width: 192px;
+  padding: 0 7px 0 3px;
   border-right: 1px solid var(--line);
+}
+
+.vault-switcher .vault-open {
+  order: -1;
 }
 
 .vault-identity {
@@ -11449,9 +11476,9 @@ a.tag.property-tag {
 }
 
 .vault-identity strong {
-  max-width: 154px;
+  max-width: 122px;
   font-size: 13px;
-  font-weight: 640;
+  font-weight: 620;
 }
 
 .state-word[data-state="ready"] {
@@ -11485,15 +11512,15 @@ a.tag.property-tag {
 
 .titlebar-tabs-host > .note-tabs-shell {
   width: 100%;
-  height: 44px;
+  height: 48px;
   border: 0;
   background: transparent;
 }
 
 .titlebar-tabs-host .note-tabs {
-  align-items: end;
-  gap: 2px;
-  padding: 6px 4px 0;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 4px;
   scrollbar-width: none;
 }
 
@@ -11503,36 +11530,36 @@ a.tag.property-tag {
 
 .titlebar-tabs-host .note-tab {
   height: 38px;
-  min-width: 112px;
+  min-width: 96px;
   max-width: 220px;
   flex: 0 1 220px;
-  grid-template-columns: minmax(0, 1fr) 26px 26px;
+  grid-template-columns: minmax(0, 1fr);
   border: 1px solid transparent;
-  border-bottom: 0;
-  border-radius: 7px 7px 0 0;
+  border-radius: 7px;
   background: transparent;
   box-shadow: none;
 }
 
 .titlebar-tabs-host .note-tab:hover {
-  background: color-mix(in srgb, var(--background-modifier-hover) 74%, transparent);
+  background: color-mix(in srgb, var(--background-modifier-hover) 88%, transparent);
 }
 
 .titlebar-tabs-host .note-tab[data-active="true"] {
-  border-color: var(--line);
-  border-bottom-color: var(--surface-raised);
-  background: var(--surface-raised);
-  box-shadow: 0 -1px 0 rgb(255 255 255 / 4%);
+  border-color: color-mix(in srgb, var(--line-strong) 78%, transparent);
+  background: var(--surface);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 8%),
+    inset 0 1px 0 rgb(255 255 255 / 5%);
 }
 
 .titlebar-tabs-host .note-tab[data-pinned="true"] {
-  border-top-color: var(--accent);
+  border-left-color: var(--accent);
 }
 
 .titlebar-tabs-host .note-tab-activate {
-  padding-left: 11px;
+  padding: 0 31px 0 11px;
   font-size: 13px;
-  font-weight: 530;
+  font-weight: 520;
 }
 
 .titlebar-tabs-host .note-tab[data-active="true"] .note-tab-activate {
@@ -11546,8 +11573,29 @@ a.tag.property-tag {
 
 .titlebar-tabs-host .note-tab-pin,
 .titlebar-tabs-host .note-tab-close {
+  position: absolute;
+  top: 6px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
   opacity: 0;
   pointer-events: none;
+}
+
+.titlebar-tabs-host .note-tab-pin {
+  right: 25px;
+}
+
+.titlebar-tabs-host .note-tab-close {
+  right: 3px;
+}
+
+.titlebar-tabs-host .note-tab-pin:hover,
+.titlebar-tabs-host .note-tab-close:hover {
+  background: var(--background-modifier-hover);
 }
 
 .titlebar-tabs-host .note-tab:hover .note-tab-pin,
@@ -11563,6 +11611,7 @@ a.tag.property-tag {
 .titlebar-tabs-host .pane-layout-actions {
   align-self: center;
   height: 30px;
+  margin-left: 2px;
   border-left: 0;
 }
 
@@ -11597,8 +11646,13 @@ a.tag.property-tag {
 
 .topbar-actions {
   width: auto;
-  padding-left: 4px;
+  gap: 1px;
+  padding: 0 146px 0 3px;
   border-left: 0;
+}
+
+:root[data-platform="darwin"] .topbar-actions {
+  padding-right: 4px;
 }
 
 .workspace-pane[data-tabs-in-titlebar="true"] {
@@ -11611,15 +11665,15 @@ a.tag.property-tag {
 
 @media (max-width: 980px) {
   .topbar {
-    grid-template-columns: 42px 196px minmax(0, 1fr) 34px auto;
+    grid-template-columns: 38px 38px 150px minmax(0, 1fr) 34px auto;
   }
 
   .vault-switcher {
-    width: 196px;
+    width: 150px;
   }
 
   .vault-identity strong {
-    max-width: 124px;
+    max-width: 80px;
   }
 
   .titlebar-tabs-host .pane-layout-actions button:nth-of-type(n + 3) {
@@ -11628,7 +11682,7 @@ a.tag.property-tag {
 }
 
 :root[data-platform="darwin"] .topbar {
-  grid-template-columns: 78px 190px minmax(0, 1fr) 34px auto;
+  grid-template-columns: 78px 38px 152px minmax(0, 1fr) 34px auto;
 }
 
 :root[data-platform="darwin"] .brand {
@@ -11641,7 +11695,7 @@ a.tag.property-tag {
 }
 
 :root[data-platform="darwin"] .vault-switcher {
-  width: 190px;
+  width: 152px;
 }
 
 /* Semantic interface scale and Files tree polish. UI text scaling changes the
@@ -11745,7 +11799,7 @@ a.tag.property-tag {
   gap: 3px;
   height: var(--threadleaf-navigator-tree-row-height, 30px);
   padding: 2px 7px 2px calc(6px + (var(--tree-depth) - 1) * 14px);
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 4px;
 }
 
@@ -11756,6 +11810,7 @@ a.tag.property-tag {
 }
 
 .navigator-tree-row[aria-current="page"] {
+  border-color: var(--accent-strong);
   background: color-mix(in srgb, var(--accent) 18%, var(--background-secondary));
 }
 

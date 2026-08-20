@@ -492,7 +492,7 @@ async function applyPluginSurfaceTheme(theme: "dark" | "light"): Promise<void> {
     mainWindow.setTitleBarOverlay({
       color: theme === "dark" ? "#1c1c1e" : "#f1f1f3",
       symbolColor: theme === "dark" ? "#dedee3" : "#2f3035",
-      height: 44,
+      height: 48,
     });
   }
   await publishPluginSurfaceEnvironment({ theme });
@@ -4662,7 +4662,7 @@ async function createWindow(trustedWorkspace = false): Promise<void> {
         : {
             color: pluginSurfaceTheme === "dark" ? "#1c1c1e" : "#f1f1f3",
             symbolColor: pluginSurfaceTheme === "dark" ? "#dedee3" : "#2f3035",
-            height: 44,
+            height: 48,
           },
     show: false,
     webPreferences: {

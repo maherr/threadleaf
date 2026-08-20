@@ -298,6 +298,7 @@ const elements = {
   fileCount: getElement("file-count"),
   newNote: getButton("new-note"),
   titlebarNewNote: getButton("titlebar-new-note"),
+  titlebarLeftDock: getButton("titlebar-left-dock"),
   titlebarTabsHost: getElement("titlebar-tabs-host"),
   navigatorViewToggle: getButton("navigator-view-toggle"),
   navigatorTagToggle: getButton("navigator-tag-toggle"),
@@ -11793,6 +11794,12 @@ function renderWorkspaceLayout(layout: WorkspaceLayoutSnapshot | null | undefine
   elements.collapseLeftDock.replaceChildren(
     interfaceIcon(leftCollapsed ? PanelLeftOpen : PanelLeftClose, "navigator-control-icon"),
   );
+  elements.titlebarLeftDock.setAttribute("aria-expanded", String(!leftCollapsed));
+  elements.titlebarLeftDock.setAttribute(
+    "aria-label",
+    `${leftCollapsed ? "Expand" : "Collapse"} notes dock`,
+  );
+  elements.titlebarLeftDock.title = leftCollapsed ? "Expand notes dock" : "Collapse notes dock";
   const rightCollapsed = layout.docks.right.collapsed;
   elements.collapseRightDock.setAttribute("aria-expanded", String(!rightCollapsed));
   elements.collapseRightDock.setAttribute(
@@ -13415,6 +13422,8 @@ function renderNavigatorTree(
       disclosure.append(
         interfaceIcon(row.expanded ? ChevronDown : ChevronRight, "navigator-tree-chevron"),
       );
+    } else if (entry.path === activePath) {
+      disclosure.textContent = "•";
     }
     const entryIcon = document.createElement("span");
     entryIcon.className = "navigator-tree-icon";
@@ -15934,6 +15943,7 @@ for (const [paneId, pane] of paneElements) {
 }
 
 elements.collapseLeftDock.addEventListener("click", () => void toggleWorkspaceDock("left"));
+elements.titlebarLeftDock.addEventListener("click", () => void toggleWorkspaceDock("left"));
 elements.collapseRightDock.addEventListener("click", () => void toggleWorkspaceDock("right"));
 for (const [button, dockId] of [
   [elements.collapseLeftDock, "left"],

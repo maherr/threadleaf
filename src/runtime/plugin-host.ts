@@ -996,6 +996,9 @@ export class PluginHost implements PluginRuntimePort {
       this.activeSettingTabPluginId = null;
       await Promise.resolve(settingTab.hide()).catch(() => undefined);
       container.remove();
+      if (process.env.THREADLEAF_PLUGIN_E2E_DIAGNOSTICS === "1") {
+        console.error(`Compatibility plugin settings failed: ${pluginId}`, error);
+      }
       throw pluginDiagnosticError("runtime-settings-failed", { pluginId }, error);
     }
   }

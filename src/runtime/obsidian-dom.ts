@@ -12,6 +12,7 @@ interface DomElementOptions {
 }
 
 interface ObsidianDomElement extends Element {
+  appendText(value: string): void;
   addClass(...classes: string[]): void;
   addClasses(classes: string[]): void;
   removeClass(...classes: string[]): void;
@@ -66,7 +67,7 @@ interface ObsidianDomElement extends Element {
 }
 
 interface ObsidianDomFragment extends DocumentFragment {
-  appendText(value: string): Text;
+  appendText(value: string): void;
   createEl<K extends keyof HTMLElementTagNameMap>(
     tagName: K,
     options?: DomElementOptions | string | null,
@@ -85,6 +86,7 @@ interface ObsidianDomFragment extends DocumentFragment {
 interface DomCompatibilityWindow {
   Element: typeof Element;
   DocumentFragment: typeof DocumentFragment;
+  Node: typeof Node;
   document: Document;
 }
 
@@ -247,17 +249,19 @@ export function installObsidianDomCompatibility(
 ): void {
   installJavaScriptCompatibility(targetWindow);
   installJavaScriptCompatibility(executionGlobal);
+  const nodePrototype = targetWindow.Node.prototype as Node & {
+    appendText?(value: string): void;
+  };
   const prototype = targetWindow.Element.prototype as unknown as ObsidianDomElement;
   const fragmentPrototype = targetWindow.DocumentFragment.prototype as ObsidianDomFragment;
 
-  if (typeof fragmentPrototype.appendText !== "function") {
-    Object.defineProperty(fragmentPrototype, "appendText", {
+  if (typeof nodePrototype.appendText !== "function") {
+    Object.defineProperty(nodePrototype, "appendText", {
       configurable: true,
       writable: true,
       value(value: string) {
-        const text = this.ownerDocument.createTextNode(value);
-        this.append(text);
-        return text;
+        const ownerDocument = this.ownerDocument ?? targetWindow.document;
+        this.appendChild(ownerDocument.createTextNode(value));
       },
     });
   }
