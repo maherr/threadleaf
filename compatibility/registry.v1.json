@@ -5,6 +5,78 @@
   "entries": [
     {
       "plugin": {
+        "id": "calendar-beta",
+        "name": "Calendar (Beta)",
+        "version": "2.0.0",
+        "repository": "https://github.com/liamcain/obsidian-calendar-plugin",
+        "license": "MIT",
+        "bundleSha256": "64d1c6c620803246724bc922c5c2e0a17c406ffc23f6bbcfbfb14c643958fbb7"
+      },
+      "threadleafVersion": "0.1.0",
+      "lastTested": "2026-08-20",
+      "compatibilityLevel": 3,
+      "summary": "The exact official Calendar 2.0.0-beta.2 release passed reviewed authority, mounted its unchanged month grid in Threadleaf's physical right dock beside an active note, consumed Threadleaf's daily-note folder, format, and template settings, created and opened a templated daily note through its ordinary confirmation flow, updated the day marker, rendered in light and dark, and reconstructed the dock and marker after a full application restart while four other plugins remained loaded.",
+      "evidenceMode": "direct",
+      "requiredCapabilities": [
+        "vault-read",
+        "network",
+        "filesystem",
+        "subprocess",
+        "host-environment",
+        "workspace-ui",
+        "dynamic-code"
+      ],
+      "platforms": [
+        {
+          "id": "linux-x64-electron",
+          "status": "verified",
+          "limits": [
+            "Verified under Xvfb Electron with the exact official release, isolated plugin renderer, disposable vault, private settings, a physical 299 by 715 pixel dock, and visible light and dark screenshots.",
+            "The runtime is trusted same-user desktop code, not a sandbox."
+          ]
+        },
+        {
+          "id": "macos-electron",
+          "status": "unverified",
+          "limits": [
+            "This exact package workflow is not verified on macOS."
+          ]
+        },
+        {
+          "id": "windows-x64-electron",
+          "status": "unverified",
+          "limits": [
+            "This exact package workflow is not verified on Windows."
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "id": "calendar.right-dock-daily-note-restart.v1",
+          "name": "Mount the calendar in the right dock, create a templated daily note, update its marker, and reconstruct after restart",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "scripts/check-excalidraw-roundtrip.mjs",
+              "command": "THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT=$PLUGIN_ROOT THREADLEAF_INSTALLED_THEME_MATRIX_ROOT=$MINIMAL_THEME pnpm test:excalidraw-roundtrip"
+            },
+            {
+              "path": "src/runtime/obsidian-workspace-filemanager-compat.test.ts",
+              "command": "pnpm exec vitest run src/runtime/obsidian-workspace-filemanager-compat.test.ts src/runtime/obsidian-internal-plugins.test.ts"
+            }
+          ]
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "Weekly and monthly Periodic Notes integration, drag-and-drop placement, right-dock pop-outs, mutation from external filesystem events, and explicit plugin reload remain outside this exact workflow claim.",
+        "Fold payloads are preserved for the live workflow but native editor fold rendering is not claimed.",
+        "This is supporting behavior evidence, not Level 4 evidence.",
+        "No controller-finalized signed production receipt exists for this tuple."
+      ]
+    },
+    {
+      "plugin": {
         "id": "data-files-editor",
         "name": "Data Files Editor",
         "version": "1.3.0",
@@ -959,5 +1031,5 @@
       ]
     }
   ],
-  "generationId": "2e2af03ea286e840bedb8b9acbab1c416cbf194a5fdf5c8f2cf7293c764a3688"
+  "generationId": "1cbc033b6ff48ab52638c68fac04dcb50af5032228e1deee49656813a52fea0a"
 }

@@ -63,6 +63,7 @@ const pickerLink = path.join(testRoot, "picker-target");
 const userDataPath = path.join(testRoot, "user-data");
 const pluginPath = path.join(vaultPath, ".obsidian", "plugins", pluginId);
 const installedMatrixPlugins = [
+  { id: "calendar-beta", version: "2.0.0" },
   { id: "data-files-editor", version: "1.3.0" },
   { id: "obsidian-icon-folder", version: "2.14.7" },
   { id: "obsidian-minimal-settings", version: "8.2.3" },
@@ -714,6 +715,12 @@ async function prepareInstalledPluginMatrix() {
     path.join(vaultPath, "Data", "sample.yaml"),
     "project: Threadleaf\nstatus: matrix\ncount: 3\n",
   );
+  await fs.mkdir(path.join(vaultPath, "Journal"), { recursive: true });
+  await fs.mkdir(path.join(vaultPath, "Templates"), { recursive: true });
+  await fs.writeFile(
+    path.join(vaultPath, "Templates", "Daily.md"),
+    "# {{date:dddd, MMMM D, YYYY}}\n\nCalendar fixture.\n",
+  );
 }
 
 async function grantAndEnableInstalledPlugin(candidate) {
@@ -847,6 +854,31 @@ async function verifyInstalledPluginMatrixRestart(vaultId, port) {
     );
   }
 
+  const calendarSurface = await connectPluginSurfaceBySelector(
+    port,
+    "#calendar-container .calendar",
+    "restarted Calendar right-dock view",
+    45_000,
+  );
+  let calendar;
+  try {
+    calendar = await waitFor(
+      calendarSurface.connection,
+      `(() => { const today = document.querySelector('#calendar-container .today'); return today && today.querySelectorAll('.dot').length > 0 ? { today: today.textContent?.trim() ?? '', dots: today.querySelectorAll('.dot').length } : null; })()`,
+      "restarted Calendar daily-note marker",
+      30_000,
+    );
+    const dock = await waitFor(
+      cdp,
+      `(() => { const host = document.querySelector('#plugin-dock-surface-host'); const note = document.querySelector('#note-view'); if (!(host instanceof HTMLElement) || !(note instanceof HTMLElement)) return null; const bounds = host.getBoundingClientRect(); return !host.hidden && !note.hidden && bounds.width >= 240 && bounds.height >= 400 ? { width: bounds.width, height: bounds.height } : null; })()`,
+      "restarted Calendar physical dock",
+      20_000,
+    );
+    calendar = { ...calendar, dock };
+  } finally {
+    calendarSurface.connection.close();
+  }
+
   await openNavigatorPluginDocument("Data/sample.json");
   const dataSurface = await connectPluginSurfaceBySelector(
     port,
@@ -902,6 +934,7 @@ async function verifyInstalledPluginMatrixRestart(vaultId, port) {
       id,
       state: snapshot.plugins.find((plugin) => plugin.id === id)?.state ?? "missing",
     })),
+    calendar,
     dataFile: "Data/sample.json",
     icon: "🌟",
     minimal,
@@ -972,6 +1005,7 @@ async function runInstalledPluginMatrix(vaultId, port, pluginState) {
     "installed plugin matrix settings close",
   );
   const workflowSummary = [
+    await verifyCalendarWorkflow(vaultId, port),
     await verifyDataFilesEditorWorkflow(vaultId, port),
     await verifyIconizeWorkflow(vaultId, port),
     await verifyMinimalSettingsWorkflow(vaultId, port),
@@ -1031,6 +1065,148 @@ async function connectPluginSurfaceBySelector(
     await delay(80);
   }
   throw new Error(`${label} did not expose ${selector} in an isolated plugin renderer.`);
+}
+
+async function verifyCalendarWorkflow(vaultId, port) {
+  const commandId = "calendar-beta:show-calendar-view";
+  await runPaletteCommand(commandId, "show calendar view", `plugin.command.${commandId}`);
+  const surface = await connectPluginSurfaceBySelector(
+    port,
+    "#calendar-container .calendar",
+    "Calendar right-dock view",
+    45_000,
+  ).catch(async (error) => {
+    const snapshot = await evaluate(cdp, "window.threadleaf.getSnapshot()").catch(() => null);
+    const mainSurface = await evaluate(
+      cdp,
+      `(() => {
+        const main = document.querySelector('#plugin-surface-host');
+        const dock = document.querySelector('#plugin-dock-surface-host');
+        const describe = (element) => {
+          if (!(element instanceof HTMLElement)) return null;
+          const bounds = element.getBoundingClientRect();
+          return { hidden: element.hidden, bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }, display: getComputedStyle(element).display };
+        };
+        return { main: describe(main), dock: describe(dock), right: document.querySelector('#workspace-root')?.getAttribute('data-right-plugin-surface') };
+      })()`,
+    ).catch(() => null);
+    const targets = await cdpTargets(port).catch(() => []);
+    const pluginTargets = [];
+    for (const target of targets.filter(
+      (candidate) => candidate.type === "page" && candidate.url.includes("plugin-host.html"),
+    )) {
+      const connection = connectCdp(target.webSocketDebuggerUrl);
+      try {
+        pluginTargets.push({
+          id: target.id,
+          state: await evaluate(
+            connection,
+            `(() => { const calendar = document.querySelector('#calendar-container .calendar'); const bounds = calendar?.getBoundingClientRect(); return { calendar: Boolean(calendar), calendarBounds: bounds ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } : null, hit: bounds ? document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2)?.className ?? null : null }; })()`,
+          ),
+        });
+      } catch {
+        pluginTargets.push({ id: target.id, state: null });
+      } finally {
+        connection.close();
+      }
+    }
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}: ${JSON.stringify({ pluginSurface: snapshot?.pluginSurface, mainSurface, events: snapshot?.events?.slice(-30), pluginTargets })}`,
+    );
+  });
+  try {
+    const rendered = await waitFor(
+      surface.connection,
+      `(() => {
+        const calendar = document.querySelector('#calendar-container .calendar');
+        const days = [...document.querySelectorAll('#calendar-container .day')];
+        const today = document.querySelector('#calendar-container .today');
+        return calendar instanceof HTMLElement && days.length >= 28 && today instanceof HTMLElement
+          ? { dayCount: days.length, todayText: today.textContent?.trim() ?? '' }
+          : null;
+      })()`,
+      "Calendar visible month grid",
+      30_000,
+    );
+    const snapshot = await evaluate(cdp, "window.threadleaf.getSnapshot()");
+    assert(
+      snapshot.vault.id === vaultId && snapshot.pluginSurface?.viewType === "calendar",
+      `Calendar did not project a physical compatibility surface: ${JSON.stringify(snapshot.pluginSurface)}`,
+    );
+    const dock = await waitFor(
+      cdp,
+      `(() => {
+        const host = document.querySelector('#plugin-dock-surface-host');
+        const note = document.querySelector('#note-view');
+        if (!(host instanceof HTMLElement) || !(note instanceof HTMLElement)) return null;
+        const bounds = host.getBoundingClientRect();
+        return !host.hidden && !note.hidden && bounds.width >= 240 && bounds.height >= 400
+          ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }
+          : null;
+      })()`,
+      "Calendar physical right dock beside the active note",
+      20_000,
+    );
+    const calendarShots = [
+      await capture(surface.connection, "calendar-right-dock", "dark"),
+      await capture(surface.connection, "calendar-right-dock", "light"),
+    ];
+    assert(
+      calendarShots[0].digest !== calendarShots[1].digest,
+      "Calendar light and dark screenshots are identical.",
+    );
+    await clickSelector(surface.connection, "#calendar-container .today");
+    await waitFor(
+      surface.connection,
+      `document.querySelector('.modal-container .modal') instanceof HTMLElement`,
+      "Calendar daily-note confirmation",
+      20_000,
+    );
+    const createSelector = await evaluate(
+      surface.connection,
+      `(() => {
+        document.querySelector('#threadleaf-calendar-create')?.removeAttribute('id');
+        const button = [...document.querySelectorAll('.modal-button-container button')]
+          .find((candidate) => candidate.textContent?.trim() === 'Create');
+        if (!(button instanceof HTMLButtonElement) || button.disabled) return null;
+        button.id = 'threadleaf-calendar-create';
+        return '#threadleaf-calendar-create';
+      })()`,
+    );
+    assert(createSelector, "Calendar confirmation did not expose its Create action.");
+    await clickSelector(surface.connection, createSelector);
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const dailyPath = `Journal/${today}.md`;
+    const dailyFile = path.join(vaultPath, dailyPath);
+    let dailyBytes = null;
+    const dailyDeadline = Date.now() + 20_000;
+    while (Date.now() < dailyDeadline) {
+      dailyBytes = await fs.readFile(dailyFile, "utf8").catch(() => null);
+      if (dailyBytes?.includes("Calendar fixture.") && !dailyBytes.includes("{{")) break;
+      await delay(80);
+    }
+    assert(
+      dailyBytes?.includes("Calendar fixture.") && !dailyBytes.includes("{{"),
+      `Calendar did not create the configured daily note from its template: ${dailyPath}`,
+    );
+    await waitFor(
+      surface.connection,
+      `document.querySelectorAll('#calendar-container .today .dot').length > 0`,
+      "Calendar created-note marker",
+      20_000,
+    );
+    return {
+      pluginId: "calendar-beta",
+      workflow: "right-dock-create-templated-daily-note",
+      rendered,
+      dock,
+      dailyPath,
+      screenshots: calendarShots.map(({ filePath }) => filePath),
+    };
+  } finally {
+    surface.connection.close();
+  }
 }
 
 async function verifyDataFilesEditorWorkflow(vaultId, port) {
@@ -1334,7 +1510,16 @@ async function startApp(port, pluginState, { prepareAuthority = true } = {}) {
         capabilityGrantsByPlugin: {},
       },
     },
-    noteWorkflowsByVault: {},
+    noteWorkflowsByVault: {
+      [sha256(Buffer.from(vaultPath))]: {
+        templateFolder: "Templates",
+        templateDateFormat: "YYYY-MM-DD",
+        templateTimeFormat: "HH:mm",
+        dailyNoteFolder: "Journal",
+        dailyNoteDateFormat: "YYYY-MM-DD",
+        dailyNoteTemplate: "Templates/Daily.md",
+      },
+    },
   };
   await fs.mkdir(userDataPath, { recursive: true });
   const settingsPath = path.join(userDataPath, "settings.json");

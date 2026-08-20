@@ -38,6 +38,14 @@ describe("plugin renderer protocol", () => {
     reducedMotion: false,
     reducedTransparency: false,
   };
+  const noteWorkflows = {
+    templateFolder: "Templates",
+    templateDateFormat: "YYYY-MM-DD",
+    templateTimeFormat: "HH:mm",
+    dailyNoteFolder: "Journal",
+    dailyNoteDateFormat: "YYYY-MM-DD",
+    dailyNoteTemplate: "Templates/Daily.md",
+  };
 
   it("parses a bounded full environment replacement and rejects malformed bounds", () => {
     const environment = parsePluginRendererEnvironment({
@@ -49,6 +57,7 @@ describe("plugin renderer protocol", () => {
       pluginCss: ".plugin { --plugin: 1; }",
       accessibilityCss: ":root { --accessibility: 1; }",
       accessibility,
+      noteWorkflows,
     });
 
     expect(environment).toEqual({
@@ -60,6 +69,7 @@ describe("plugin renderer protocol", () => {
       pluginCss: ".plugin { --plugin: 1; }",
       accessibilityCss: ":root { --accessibility: 1; }",
       accessibility,
+      noteWorkflows,
     });
     expect(
       parsePluginRendererEnvironment({

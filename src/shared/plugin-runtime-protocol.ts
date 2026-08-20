@@ -3,6 +3,7 @@ import {
   type EffectiveAccessibilityPreferences,
 } from "./accessibility-preferences";
 import type { PluginEditorContext, RuntimeSnapshot } from "./contracts";
+import { parseVaultNoteWorkflowSettings, type VaultNoteWorkflowSettings } from "./note-workflows";
 import type { PluginConstructionDispatch } from "./plugins";
 
 export interface PluginMutationWaitOptions {
@@ -23,6 +24,7 @@ export interface PluginRendererEnvironment {
   pluginCss: string;
   accessibilityCss: string;
   accessibility: EffectiveAccessibilityPreferences;
+  noteWorkflows: VaultNoteWorkflowSettings;
 }
 
 export const pluginRendererEnvironmentLimits = {
@@ -130,6 +132,7 @@ export function parsePluginRendererEnvironment(value: unknown): PluginRendererEn
     "pluginCss",
     "accessibilityCss",
     "accessibility",
+    "noteWorkflows",
   ]);
   if (Object.keys(value).some((key) => !expected.has(key))) {
     throw new Error("Plugin renderer environment has unknown fields.");
@@ -169,10 +172,14 @@ export function parsePluginRendererEnvironment(value: unknown): PluginRendererEn
     pluginRendererEnvironmentLimits.maxAccessibilityCssBytes,
   );
   const accessibility = parseEffectiveAccessibility(value.accessibility);
-  const totalBytes = [vaultId, appearanceCss, pluginCss, accessibilityCss].reduce(
-    (total, item) => total + new TextEncoder().encode(item).byteLength,
-    0,
-  );
+  const noteWorkflows = parseVaultNoteWorkflowSettings(value.noteWorkflows);
+  const totalBytes = [
+    vaultId,
+    appearanceCss,
+    pluginCss,
+    accessibilityCss,
+    JSON.stringify(noteWorkflows),
+  ].reduce((total, item) => total + new TextEncoder().encode(item).byteLength, 0);
   if (totalBytes > pluginRendererEnvironmentLimits.maxTotalBytes) {
     throw new Error("Plugin renderer environment exceeds its total byte limit.");
   }
@@ -185,6 +192,7 @@ export function parsePluginRendererEnvironment(value: unknown): PluginRendererEn
     pluginCss,
     accessibilityCss,
     accessibility,
+    noteWorkflows,
   };
 }
 

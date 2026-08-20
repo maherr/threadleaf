@@ -443,13 +443,14 @@ function pluginAccessibilityCss(): string {
   `;
 }
 
-function createPluginSurfaceEnvironmentBridge(): PluginSurfaceEnvironmentBridge {
+function createPluginSurfaceEnvironmentBridge(vaultId: string): PluginSurfaceEnvironmentBridge {
   return new PluginSurfaceEnvironmentBridge({
     theme: pluginSurfaceTheme,
     appearanceCss: pluginSurfaceAppearanceCss,
     pluginCss: pluginSurfaceCss,
     accessibilityCss: pluginAccessibilityCss(),
     accessibility: pluginSurfaceAccessibility,
+    noteWorkflows: settingsController.getVaultNoteWorkflows(vaultId),
   });
 }
 
@@ -517,6 +518,16 @@ function detachPluginView(): void {
 }
 
 function updatePluginViewBounds(): void {
+  if (!attachedPluginView && pluginSurfacePresentationVisible) {
+    const visibleView = [...visiblePluginViews].findLast(
+      (view) => compatibilityPluginViews.has(view) && !view.webContents.isDestroyed(),
+    );
+    const targetWindow = pluginPopoutWindow ?? mainWindow;
+    if (visibleView && targetWindow && !targetWindow.isDestroyed()) {
+      attachPluginViewToWindow(visibleView, targetWindow);
+      return;
+    }
+  }
   if (!attachedPluginView || pluginSurfaceBounds.width <= 0 || pluginSurfaceBounds.height <= 0) {
     return;
   }
@@ -1961,7 +1972,7 @@ async function createWorkspaceController(): Promise<WorkspaceController> {
       });
       pluginSurfaceAppearanceCss = appearance.css;
       pluginSurfaceCss = surfaceCatalog.css;
-      const pluginSurfaceEnvironmentBridge = createPluginSurfaceEnvironmentBridge();
+      const pluginSurfaceEnvironmentBridge = createPluginSurfaceEnvironmentBridge(vaultId);
       pluginSurfaceEnvironmentBridge.setSources({
         appearanceCss: appearance.css,
         pluginCss: surfaceCatalog.css,
@@ -4513,6 +4524,12 @@ function registerIpcHandlers(): void {
     installApplicationMenu(snapshot.settings);
     for (const window of BrowserWindow.getAllWindows()) {
       window.webContents.send(ipcChannels.settingsChanged, snapshot);
+    }
+    const vaultId = workspaceController.vaultId;
+    if (vaultId) {
+      void publishPluginSurfaceEnvironment({
+        noteWorkflows: settingsController.getVaultNoteWorkflows(vaultId),
+      }).catch((error) => console.error("Could not publish plugin note workflow settings:", error));
     }
   });
   appUpdateController.onSnapshot((snapshot) => {

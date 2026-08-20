@@ -18,6 +18,14 @@ const sources = {
     reducedMotion: false,
     reducedTransparency: false,
   },
+  noteWorkflows: {
+    templateFolder: "Templates",
+    templateDateFormat: "YYYY-MM-DD",
+    templateTimeFormat: "HH:mm",
+    dailyNoteFolder: "",
+    dailyNoteDateFormat: "YYYY-MM-DD",
+    dailyNoteTemplate: null,
+  },
 };
 
 const baseSnapshot: RuntimeSnapshot = {

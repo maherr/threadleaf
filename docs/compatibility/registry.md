@@ -4,10 +4,11 @@ This document is generated from the versioned receipt-aware source [`compatibili
 Discovery in the external community package directory is separate from Threadleaf compatibility evidence.
 A row applies only to the exact plugin and Threadleaf versions shown.
 
-Registry schema: 2. Threadleaf version: 0.1.0. Generation: 2e2af03ea286e840bedb8b9acbab1c416cbf194a5fdf5c8f2cf7293c764a3688.
+Registry schema: 2. Threadleaf version: 0.1.0. Generation: 1cbc033b6ff48ab52638c68fac04dcb50af5032228e1deee49656813a52fea0a.
 
 | Plugin | Plugin version | Threadleaf | Level | Evidence | Last tested |
 | --- | --- | --- | ---: | --- | --- |
+| [Calendar (Beta)](https://github.com/liamcain/obsidian-calendar-plugin) | 2.0.0 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Data Files Editor](https://github.com/zuktol/obsidian-data-files-editor) | 1.3.0 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Natural Language Dates](https://github.com/argenos/nldates-obsidian) | 0.6.2 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Auto Link Title](https://github.com/zolrath/obsidian-auto-link-title) | 1.5.5 | 0.1.0 | 3 | direct | 2026-08-20 |
@@ -21,6 +22,37 @@ Registry schema: 2. Threadleaf version: 0.1.0. Generation: 2e2af03ea286e840bedb8
 | [Threadleaf Compatibility Fixture](https://github.com/maherr/threadleaf) | 0.1.0 | 0.1.0 | 0 | direct | 2026-08-15 |
 | [Paste URL into Selection](https://github.com/denolehov/obsidian-url-into-selection) | 1.11.4 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Paste URL into Selection](https://github.com/denolehov/obsidian-url-into-selection) | 1.11.4 | 0.1.0 | 3 | direct | 2026-08-20 |
+
+## Calendar (Beta) 2.0.0
+
+The exact official Calendar 2.0.0-beta.2 release passed reviewed authority, mounted its unchanged month grid in Threadleaf's physical right dock beside an active note, consumed Threadleaf's daily-note folder, format, and template settings, created and opened a templated daily note through its ordinary confirmation flow, updated the day marker, rendered in light and dark, and reconstructed the dock and marker after a full application restart while four other plugins remained loaded.
+
+Bundle SHA-256: `64d1c6c620803246724bc922c5c2e0a17c406ffc23f6bbcfbfb14c643958fbb7`. License: MIT.
+
+Required static authority review: `vault-read`, `network`, `filesystem`, `subprocess`, `host-environment`, `workspace-ui`, `dynamic-code`.
+
+### Supported workflows
+
+- **Mount the calendar in the right dock, create a templated daily note, update its marker, and reconstruct after restart** (passed)
+  - `THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT=$PLUGIN_ROOT THREADLEAF_INSTALLED_THEME_MATRIX_ROOT=$MINIMAL_THEME pnpm test:excalidraw-roundtrip` via [scripts/check-excalidraw-roundtrip.mjs](../../scripts/check-excalidraw-roundtrip.mjs)
+  - `pnpm exec vitest run src/runtime/obsidian-workspace-filemanager-compat.test.ts src/runtime/obsidian-internal-plugins.test.ts` via [src/runtime/obsidian-workspace-filemanager-compat.test.ts](../../src/runtime/obsidian-workspace-filemanager-compat.test.ts)
+
+### Platform limits
+
+- **linux-x64-electron**: verified. Verified under Xvfb Electron with the exact official release, isolated plugin renderer, disposable vault, private settings, a physical 299 by 715 pixel dock, and visible light and dark screenshots. The runtime is trusted same-user desktop code, not a sandbox.
+- **macos-electron**: unverified. This exact package workflow is not verified on macOS.
+- **windows-x64-electron**: unverified. This exact package workflow is not verified on Windows.
+
+### Known failures
+
+- No reproducible failure is recorded for the supported workflows above.
+
+### Limitations
+
+- Weekly and monthly Periodic Notes integration, drag-and-drop placement, right-dock pop-outs, mutation from external filesystem events, and explicit plugin reload remain outside this exact workflow claim.
+- Fold payloads are preserved for the live workflow but native editor fold rendering is not claimed.
+- This is supporting behavior evidence, not Level 4 evidence.
+- No controller-finalized signed production receipt exists for this tuple.
 
 ## Data Files Editor 1.3.0
 

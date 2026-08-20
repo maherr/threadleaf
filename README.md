@@ -237,6 +237,10 @@ retains historical composed workflow evidence at Level 0 pending a current recei
 reports direct Level 2 sealed-construction evidence plus a current packaged drawing workflow as
 supporting evidence, and an unknown plugin starts at discovered Level 0. The 2.26.4 row remains
 below Level 4 until that workflow has a controller-finalized, verifier-accepted exact-build receipt.
+The Level 3 set also includes the exact Calendar 2.0.0-beta.2 release: its unchanged month grid
+occupies the physical right dock beside an active note, consumes Threadleaf's real Daily Notes
+preferences, creates a templated note through its ordinary confirmation flow, and reconstructs
+the marker and dock after restart.
 Each valid package also gets a conservative static authority report over the exact package.
 Construction additionally requires a checked-in reviewed profile for the complete package identity.
 Granting captures the executable package closure once through no-follow file handles, hashes and

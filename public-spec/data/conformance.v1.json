@@ -375,6 +375,12 @@
   ],
   "registryEntries": [
     {
+      "id": "calendar-beta",
+      "version": "2.0.0",
+      "threadleafVersion": "0.1.0",
+      "compatibilityLevel": 3
+    },
+    {
       "id": "data-files-editor",
       "version": "1.3.0",
       "threadleafVersion": "0.1.0",

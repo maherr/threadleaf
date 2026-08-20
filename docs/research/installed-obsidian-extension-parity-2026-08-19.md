@@ -6,7 +6,7 @@
 
 Threadleaf must treat an Obsidian-installed plugin bundle as a distinct exact distribution identity when its bytes differ from the publisher's release asset. It must not weaken exact-package authority or silently rewrite a user's installed plugin. Reviewed identities may cover both the publisher asset and the deterministic Obsidian-installed form, but compatibility still requires a named executable workflow for each exact version.
 
-This study covers the five community plugins and one community theme present in the acceptance vault on 2026-08-19. It is a bounded first compatibility corpus, not evidence of universal plugin or theme parity.
+This study covers the five community plugins and one community theme present in the acceptance vault on 2026-08-19, plus the exact official Calendar release selected as the next sidebar compatibility proof. It is a bounded first compatibility corpus, not evidence of universal plugin or theme parity.
 
 ## Rights and evidence boundary
 
@@ -20,6 +20,7 @@ This study covers the five community plugins and one community theme present in 
 | Package | Version | Upstream | License | Installed `main.js` SHA-256 | Initial workflow target |
 |---|---:|---|---|---|---|
 | Data Files Editor | 1.3.0 | [zuktol/obsidian-data-files-editor](https://github.com/zuktol/obsidian-data-files-editor/tree/1.3.0) | MIT | `1f962a44845adad7ea3de6792bbf536f111ee131b0fcd16fa9cf4d18ff0d0676` | Open, edit, save, reopen JSON and YAML through registered file views |
+| Calendar (Beta) | 2.0.0 manifest, `2.0.0-beta.2` release | [liamcain/obsidian-calendar-plugin](https://github.com/liamcain/obsidian-calendar-plugin/releases/tag/2.0.0-beta.2) | MIT | `64d1c6c620803246724bc922c5c2e0a17c406ffc23f6bbcfbfb14c643958fbb7` | Mount in the physical right dock, create a templated daily note, update its marker, and reconstruct after restart |
 | Excalidraw | 2.25.3 | [zsviczian/obsidian-excalidraw-plugin](https://github.com/zsviczian/obsidian-excalidraw-plugin/tree/2.25.3) | AGPL-3.0 | `3baa63e288992c910fa5ac10e3811aaea4210211b29781446c07259b6df96391` | Create, draw, embed, export, detach, crash-recover, switch vault, reload, and restart |
 | Excalidraw | 2.26.4 | [zsviczian/obsidian-excalidraw-plugin](https://github.com/zsviczian/obsidian-excalidraw-plugin/tree/2.26.4) | AGPL-3.0 | `b26f3fc8cfa39cfefe8c11c82e43f80afdc642d8ca4d4ece3bdd817f72d4cf5a` | Repeat the full workflow against the exact package in the user's active Threadleaf vault |
 | Iconize | 2.14.7 | [florianwoelki/obsidian-iconize](https://github.com/florianwoelki/obsidian-iconize/tree/2.14.7) | MIT | `b68bcfd318d678892f671736e54396fd72414180736e58f164fb17a3f72a22e1` | Assign and remove file and folder icons, rename, reload, and restart |
@@ -42,6 +43,23 @@ The package-directory inspector also initially treated mutable `data.json` as an
 ## Pass 2, plugin-owned API seams
 
 The second pass inspected the public tagged source and existing Threadleaf runtime ledger independently of the bundle hash pass.
+
+### Calendar 2.0.0-beta.2
+
+The official release tag is `2.0.0-beta.2` while its manifest version is `2.0.0`; Threadleaf keeps
+both values in the reviewed identity rather than treating one as an alias. Calendar registers a
+right-sidebar view, traverses the vault for date markers, reads Daily Notes folder, format, and
+template settings from the core-plugin facade, creates notes through ordinary vault and leaf APIs,
+and copies template fold information.
+
+Disposition: **Depend** on the unchanged MIT package. **Adapt** per-region workspace visibility,
+the physical right-dock host, Daily Notes settings transport, and bounded fold compatibility.
+**Benchmark** the ordinary confirmation, template creation, marker update, both themes, and a full
+application restart. Result on 2026-08-20: the exact release rendered a 42-day month grid in a
+299 by 715 pixel right dock beside the active note, created `Journal/2026-08-20.md` from the
+configured template with tokens expanded, added one marker, and reconstructed the same dock and
+marker after restart while Data Files Editor, Iconize, Minimal Theme Settings, and Omnisearch also
+remained loaded and repeated their accepted workflows.
 
 ### Data Files Editor 1.3.0
 

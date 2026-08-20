@@ -336,6 +336,14 @@ describe("IsolatedPluginRuntime", () => {
         reducedMotion: false,
         reducedTransparency: false,
       },
+      noteWorkflows: {
+        templateFolder: "Templates",
+        templateDateFormat: "YYYY-MM-DD",
+        templateTimeFormat: "HH:mm",
+        dailyNoteFolder: "",
+        dailyNoteDateFormat: "YYYY-MM-DD",
+        dailyNoteTemplate: null,
+      },
     };
     const created: FakeIsolatedRuntime[] = [];
     const runtime = await IsolatedPluginRuntime.open({

@@ -71,6 +71,33 @@ describe("internal plugin compatibility", () => {
     expect(internalPlugins.getEnabledPluginById("not-a-core-plugin")).toBeNull();
   });
 
+  it("projects Threadleaf daily-note settings through the enabled core-plugin facade", () => {
+    const app = createApp();
+    app.setDailyNoteOptions({
+      folder: "Journal",
+      format: "YYYY/MM/YYYY-MM-DD",
+      template: "Templates/Daily.md",
+    });
+
+    expect(app.internalPlugins.getPluginById("daily-notes")).toEqual({
+      enabled: true,
+      instance: {
+        options: {
+          folder: "Journal",
+          format: "YYYY/MM/YYYY-MM-DD",
+          template: "Templates/Daily.md",
+        },
+      },
+    });
+    expect(app.internalPlugins.getEnabledPluginById("daily-notes")).toEqual({
+      options: {
+        folder: "Journal",
+        format: "YYYY/MM/YYYY-MM-DD",
+        template: "Templates/Daily.md",
+      },
+    });
+  });
+
   it("keeps the direct Canvas view adapter out of the enabled-instance lookup", () => {
     const dom = new JSDOM("<!doctype html><body></body>");
     installObsidianDomCompatibility(dom.window);

@@ -7,6 +7,7 @@ export interface PluginSurfaceEnvironmentSources {
   pluginCss: string;
   accessibilityCss: string;
   accessibility: PluginRendererEnvironment["accessibility"];
+  noteWorkflows: PluginRendererEnvironment["noteWorkflows"];
 }
 
 export interface PluginSurfaceEnvironmentIdentity {
@@ -131,6 +132,7 @@ export class PluginSurfaceEnvironmentBridge {
         sourcePatch.accessibilityCss = patch.accessibilityCss;
       }
       if (patch.accessibility !== undefined) sourcePatch.accessibility = patch.accessibility;
+      if (patch.noteWorkflows !== undefined) sourcePatch.noteWorkflows = patch.noteWorkflows;
       this.setSources(sourcePatch);
       const currentIdentity = this.environment
         ? {

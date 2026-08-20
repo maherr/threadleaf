@@ -188,6 +188,14 @@ describe("RecoveringPluginRuntime", () => {
       reducedMotion: false,
       reducedTransparency: false,
     },
+    noteWorkflows: {
+      templateFolder: "Templates",
+      templateDateFormat: "YYYY-MM-DD",
+      templateTimeFormat: "HH:mm",
+      dailyNoteFolder: "",
+      dailyNoteDateFormat: "YYYY-MM-DD",
+      dailyNoteTemplate: null,
+    },
   };
 
   it("restores the authoritative vault census before the environment and plugin replay", async () => {

@@ -122,6 +122,14 @@ describe("PluginRendererService", () => {
         reducedMotion: false,
         reducedTransparency: false,
       },
+      noteWorkflows: {
+        templateFolder: "Templates",
+        templateDateFormat: "YYYY-MM-DD",
+        templateTimeFormat: "HH:mm",
+        dailyNoteFolder: "Journal",
+        dailyNoteDateFormat: "YYYY-MM-DD",
+        dailyNoteTemplate: "Templates/Daily.md",
+      },
     });
     try {
       await fs.mkdir(vaultPath, { recursive: true });
@@ -535,6 +543,7 @@ module.exports = class RendererFixture extends Plugin {
       expect(opened?.pluginSurface).toEqual({
         displayText: "Canvas",
         filePath: "Canvas.drawing",
+        region: "main-document",
         viewType: "renderer-view",
       });
       expect(dom.window.document.querySelector(".view-content")?.textContent).toBe(
@@ -596,6 +605,7 @@ module.exports = class RendererFixture extends Plugin {
       expect(created?.pluginSurface).toEqual({
         displayText: "New",
         filePath: "Drawings/New.drawing",
+        region: "main-document",
         viewType: "renderer-view",
       });
       expect(createdFolders).toEqual(["Drawings"]);

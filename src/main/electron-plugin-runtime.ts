@@ -350,7 +350,7 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
   }
 
   private setSurfaceVisible(visible: boolean): void {
-    if (this.surfaceVisible === visible) {
+    if (this.surfaceVisible === visible && !visible) {
       return;
     }
     this.surfaceVisible = visible;

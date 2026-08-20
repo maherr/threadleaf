@@ -346,6 +346,8 @@ const elements = {
   pluginView: getButton("plugin-view"),
   pluginSurfaceHost: getElement("plugin-surface-host"),
   pluginSurfaceStatus: getElement("plugin-surface-status"),
+  pluginDockSurfaceHost: getElement("plugin-dock-surface-host"),
+  pluginDockSurfaceStatus: getElement("plugin-dock-surface-status"),
   noteEditorShell: getElement("note-editor-shell"),
   noteEditor: getElement("note-editor"),
   notePreview: getElement("note-preview"),
@@ -3112,6 +3114,8 @@ function renderDocumentView(): void {
     currentPluginPreference().compatibilityTopology !== "trusted-workspace";
   const hasPluginSurface =
     currentSnapshot?.pluginSurface !== null && currentSnapshot?.pluginSurface !== undefined;
+  const rightDockPlugin =
+    hasPluginSurface && currentSnapshot?.pluginSurface?.region === "right-dock";
   const pluginViewType = preferredPluginViewType();
   const visiblePluginViewType = pluginSettings
     ? "threadleaf-plugin-settings"
@@ -3123,7 +3127,9 @@ function renderDocumentView(): void {
   elements.noteView.hidden = !hasNote || plugin;
   elements.baseView.hidden = !hasBase;
   elements.canvasView.hidden = !hasCanvas;
-  elements.pluginSurfaceHost.hidden = !plugin;
+  elements.pluginSurfaceHost.hidden = !plugin || rightDockPlugin;
+  elements.pluginDockSurfaceHost.hidden = !rightDockPlugin;
+  elements.workspaceRoot.dataset.rightPluginSurface = String(rightDockPlugin);
   elements.pluginSurfaceHost.dataset.popoutState = popoutState;
   elements.pluginSurfaceStatus.textContent = !hasPluginSurface
     ? "Opening plugin view…"
@@ -3133,6 +3139,10 @@ function renderDocumentView(): void {
         ? "Plugin pop-out unavailable; plugin view is open in the main window."
         : "Plugin view is open in the main window.";
   elements.pluginSurfaceStatus.hidden = hasPluginSurface && !popoutOpen;
+  elements.pluginDockSurfaceStatus.textContent = hasPluginSurface
+    ? "Plugin sidebar view is open."
+    : "Opening sidebar view…";
+  elements.pluginDockSurfaceStatus.hidden = hasPluginSurface;
   elements.noteView.dataset.view = reading ? "reading" : documentViewMode;
   elements.noteEditorShell.dataset.editorMode = editingViewMode;
   elements.noteEditorShell.classList.toggle("is-live-preview", editingViewMode === "live");
@@ -3181,7 +3191,7 @@ function renderDocumentView(): void {
   if (reading) {
     renderReadingView();
   }
-  if (plugin) {
+  if (plugin || rightDockPlugin) {
     void waitForVisualFrameOrTimeout().then(() => updatePluginSurfaceBounds());
   }
 }
@@ -3238,10 +3248,14 @@ function waitForVisualFrameOrTimeout(timeoutMs = 100): Promise<void> {
 }
 
 async function updatePluginSurfaceBounds(): Promise<void> {
-  if (elements.pluginSurfaceHost.hidden) {
+  const host =
+    currentSnapshot?.pluginSurface?.region === "right-dock"
+      ? elements.pluginDockSurfaceHost
+      : elements.pluginSurfaceHost;
+  if (host.hidden) {
     return;
   }
-  const bounds = elements.pluginSurfaceHost.getBoundingClientRect();
+  const bounds = host.getBoundingClientRect();
   await window.threadleaf.setPluginSurfaceBounds({
     x: bounds.x,
     y: bounds.y,
@@ -5043,7 +5057,9 @@ async function runCompatibilityCommand(commandId: string): Promise<void> {
   await runAction(async () => {
     const snapshot = await window.threadleaf.runCommand(commandId, pluginEditorContext());
     if (snapshot.pluginSurface) {
-      documentViewMode = "plugin";
+      if (snapshot.pluginSurface.region !== "right-dock") {
+        documentViewMode = "plugin";
+      }
       renderDocumentView();
       void waitForVisualFrameOrTimeout().then(() => updatePluginSurfaceBounds());
     }
@@ -16566,13 +16582,14 @@ const unsubscribeMenuCommand = window.threadleaf.onMenuCommand((commandId) => {
   void executeRendererCommand(commandId);
 });
 const pluginSurfaceResizeObserver = new ResizeObserver(() => {
-  if (documentViewMode === "plugin") {
+  if (documentViewMode === "plugin" || currentSnapshot?.pluginSurface?.region === "right-dock") {
     void updatePluginSurfaceBounds();
   }
 });
 for (const pane of paneElements.values()) {
   pluginSurfaceResizeObserver.observe(pane.pluginSurfaceHost);
 }
+pluginSurfaceResizeObserver.observe(elements.pluginDockSurfaceHost);
 window.addEventListener(
   "unload",
   () => {

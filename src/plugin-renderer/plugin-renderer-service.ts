@@ -459,6 +459,11 @@ export class PluginRendererService {
     accessibility.textContent = environment.accessibilityCss;
     applyThemeState(documentRef, environment.theme);
     applyAccessibilityState(documentRef, environment.accessibility);
+    host.app.setDailyNoteOptions({
+      folder: environment.noteWorkflows.dailyNoteFolder,
+      format: environment.noteWorkflows.dailyNoteDateFormat,
+      template: environment.noteWorkflows.dailyNoteTemplate,
+    });
     this.placeSourceNodes(documentRef, appearance, plugin, accessibility);
     this.installAccessibilityOrderObserver(documentRef);
     realizeEnvironmentStyles(documentRef);
@@ -467,6 +472,7 @@ export class PluginRendererService {
     const cssChangeTriggered = !initial;
     if (cssChangeTriggered) {
       host.app.workspace.trigger("css-change");
+      host.app.workspace.trigger("periodic-notes:settings-updated");
     }
     this.environment = structuredClone(environment);
     this.environmentAcknowledgement = {

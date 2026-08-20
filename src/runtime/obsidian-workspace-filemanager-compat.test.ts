@@ -125,15 +125,18 @@ describe("Obsidian workspace compatibility wedge", () => {
       expect(app.workspace.rootSplit.children).toContain(parentLeaf);
       expect(app.workspace.getUnpinnedLeaf()).toBe(first);
 
+      app.workspace.setActiveLeaf(rightLeaf);
       app.workspace.setActiveLeaf(tab);
       expect(first.containerEl.hidden).toBe(true);
       expect(tab.containerEl.hidden).toBe(false);
       expect(split.containerEl.hidden).toBe(true);
       expect(secondSplit.containerEl.hidden).toBe(true);
+      expect(rightLeaf.containerEl.hidden).toBe(false);
       app.workspace.setActiveLeaf(split);
       expect(first.containerEl.hidden).toBe(true);
       expect(tab.containerEl.hidden).toBe(true);
       expect(split.containerEl.hidden).toBe(false);
+      expect(rightLeaf.containerEl.hidden).toBe(false);
       expect(() => app.workspace.getLeaf("window")).toThrow("popout leaves are not supported");
     });
   });

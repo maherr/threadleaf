@@ -3177,7 +3177,10 @@ function createInternalPlugins() {
     load: async () => undefined,
     views: canvasViews,
   };
-  const dailyNotes = { enabled: false };
+  const dailyNotes: {
+    enabled: boolean;
+    instance?: { options: { folder: string; format: string; template: string } };
+  } = { enabled: false };
   const bookmarks = { enabled: false };
   const fileExplorer = { enabled: false };
   const outline = { enabled: false };
@@ -3255,6 +3258,7 @@ export class SecretStorage extends Events {
 }
 
 export class App {
+  private readonly foldStates = new Map<string, unknown>();
   readonly vault: Vault;
   readonly fileManager: FileManager;
   readonly metadataCache: MetadataCache;
@@ -3263,6 +3267,16 @@ export class App {
   readonly workspace = new Workspace();
   readonly compatibility = new CompatibilityIntegrationRegistry();
   readonly internalPlugins = createInternalPlugins();
+  readonly foldManager = {
+    load: (file: TFile): unknown | null => this.foldStates.get(file.path) ?? null,
+    save: (file: TFile, value: unknown): void => {
+      if (value === null || value === undefined) {
+        this.foldStates.delete(file.path);
+      } else {
+        this.foldStates.set(file.path, structuredClone(value));
+      }
+    },
+  };
   readonly keymap: Keymap;
   readonly scope: Scope;
   readonly hotkeyManager: HotkeyManager;
@@ -3302,6 +3316,18 @@ export class App {
         this.metadataCache.trigger("changed", file, "", this.metadataCache.getFileCache(file));
       }
     });
+  }
+
+  setDailyNoteOptions(options: { folder: string; format: string; template: string | null }): void {
+    const dailyNotes = this.internalPlugins.plugins["daily-notes"];
+    dailyNotes.enabled = true;
+    dailyNotes.instance = {
+      options: {
+        folder: options.folder,
+        format: options.format,
+        template: options.template ?? "",
+      },
+    };
   }
 
   async loadPluginData(pluginId: string): Promise<unknown | null> {

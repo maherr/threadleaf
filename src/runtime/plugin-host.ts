@@ -1155,12 +1155,16 @@ export class PluginHost implements PluginRuntimePort {
     const workspaceActiveLeaf =
       this.app.workspace.activeLeaf instanceof WorkspaceLeaf ? this.app.workspace.activeLeaf : null;
     const workspaceActiveViewType = workspaceActiveLeaf?.view?.getViewType() ?? "empty";
-    const activePluginLeaf =
+    const activeDocumentPluginLeaf =
       workspaceActiveLeaf === this.nativeMarkdownLeaf
         ? null
         : workspaceActiveLeaf && workspaceActiveViewType !== "empty"
           ? workspaceActiveLeaf
           : this.activePluginLeaf;
+    const activeRightPluginLeaf = this.app.workspace
+      .getLeavesInRegion("right-dock")
+      .findLast((leaf) => leaf.view !== null);
+    const activePluginLeaf = activeDocumentPluginLeaf ?? activeRightPluginLeaf ?? null;
     const activePluginViewState = activePluginLeaf?.getViewState().state;
     const activePluginFilePath =
       activePluginLeaf?.view instanceof FileView && activePluginLeaf.view.file
@@ -1211,6 +1215,10 @@ export class PluginHost implements PluginRuntimePort {
               ? {
                   displayText: activePluginLeaf.view.getDisplayText(),
                   filePath: activePluginFilePath,
+                  region:
+                    this.app.workspace.getLeafRegion(activePluginLeaf) === "right-dock"
+                      ? "right-dock"
+                      : "main-document",
                   viewType: activePluginLeaf.view.getViewType(),
                 }
               : null,

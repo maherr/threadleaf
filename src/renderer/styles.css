@@ -2523,6 +2523,24 @@ h2 {
   overflow: auto;
 }
 
+.workspace[data-right-plugin-surface="true"] > .inspector {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.workspace[data-right-plugin-surface="true"]
+  > .inspector
+  > :not(.dock-collapse-button, .plugin-dock-surface-host) {
+  display: none;
+}
+
+.plugin-dock-surface-host {
+  width: 100%;
+  min-height: 0;
+  border-top: 1px solid var(--line);
+}
+
 body.app-container > .modal-container {
   position: fixed;
   z-index: 1000;

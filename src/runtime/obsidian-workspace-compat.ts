@@ -374,8 +374,23 @@ export class Workspace extends Events {
       this.recentLeaves.splice(recentLeafIndex, 1);
     }
     this.recentLeaves.unshift(leaf);
+    const activeRegion = this.getLeafRegion(leaf);
+    const visibleByRegion = new Map<"left-dock" | "main-document" | "right-dock", WorkspaceLeaf>([
+      [activeRegion, leaf],
+    ]);
+    for (const candidate of this.recentLeaves) {
+      const region = this.getLeafRegion(candidate);
+      if (!visibleByRegion.has(region)) visibleByRegion.set(region, candidate);
+    }
     for (const candidate of this.leaves) {
-      this.setLeafVisibility(candidate, candidate === leaf);
+      const region = this.getLeafRegion(candidate);
+      if (!visibleByRegion.has(region)) visibleByRegion.set(region, candidate);
+    }
+    for (const candidate of this.leaves) {
+      this.setLeafVisibility(
+        candidate,
+        visibleByRegion.get(this.getLeafRegion(candidate)) === candidate,
+      );
     }
   }
 
@@ -635,6 +650,20 @@ export class Workspace extends Events {
     const leaf = this.createLeafBySplit(this.activeLeaf ?? this.getLeaf(false));
     this.rightLeaves.add(leaf);
     return leaf;
+  }
+
+  getLeafRegion(leaf: WorkspaceLeaf): "left-dock" | "main-document" | "right-dock" {
+    if (this.leftLeaves.has(leaf)) return "left-dock";
+    if (this.rightLeaves.has(leaf)) return "right-dock";
+    return "main-document";
+  }
+
+  getLeavesInRegion(region: "left-dock" | "main-document" | "right-dock"): WorkspaceLeaf[] {
+    if (region === "left-dock") return [...this.leftLeaves];
+    if (region === "right-dock") return [...this.rightLeaves];
+    return [...this.leaves].filter(
+      (leaf) => !this.leftLeaves.has(leaf) && !this.rightLeaves.has(leaf),
+    );
   }
 
   ensureSideLeaf(

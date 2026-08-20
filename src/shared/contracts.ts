@@ -232,6 +232,8 @@ export interface PluginMarkdownProjectionSnapshot {
 export interface PluginSurfaceSnapshot {
   displayText: string;
   filePath: string | null;
+  /** Physical host selected by the compatibility workspace leaf. */
+  region?: "main-document" | "right-dock";
   viewType: string;
 }
 

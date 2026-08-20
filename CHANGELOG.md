@@ -33,6 +33,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   exact Natural Language Dates 0.6.2 `@to` workflow.
 - Added exact installed-package workflows for Data Files Editor 1.3.0, Iconize 2.14.7, Minimal
   Theme Settings 8.2.3 with Minimal 8.2.0, and Omnisearch 1.30.1 in one isolated-renderer matrix.
+- Added exact Calendar 2.0.0-beta.2 compatibility with a physical right-dock month grid, native
+  Daily Notes settings, templated note creation, marker updates, both themes, and restart recovery.
 - Added bounded reverse projections for plugin-authored native Files decorations, body classes, and
   CSS variables, including visible Iconize stars and Minimal's measured editor font setting.
 - Added first-class `.base` files with native property tables, multiple views, bounded filtering,
@@ -80,6 +82,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   loading before capture, and kept the captured projection behind the native Reading sanitizer.
 
 ### Fixed
+
+- Kept one visible compatibility leaf per workspace region so a right-sidebar plugin no longer
+  disappears when the Markdown editor has focus, and reasserted visible Electron surfaces after
+  their host bounds become available.
 
 - Preserved a plugin view's requested file path when an unchanged plugin implements it as an
   `ItemView` rather than a `FileView`, preventing successful automatic view opens from entering a
