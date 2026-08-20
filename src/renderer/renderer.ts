@@ -226,6 +226,7 @@ import {
   type MigrationReviewIdentityState,
   migrationReviewOperationIsCurrent,
 } from "./migration-review-identity";
+import { commandsOwnedByPlugin } from "./plugin-command-attribution";
 import { pluginViewTypeForPath, workspacePluginViewTypeForPath } from "./plugin-view-model";
 import { createStandalonePublishedNoteHtml } from "./publish-export";
 import {
@@ -11705,8 +11706,9 @@ function render(snapshot: RuntimeSnapshot): void {
     ? "Trusted compatibility plugin"
     : "Plugins stay off by default";
   elements.compatibilityLevel.textContent = `Level ${plugin?.compatibilityLevel ?? 0}`;
-  elements.commandCount.textContent = String(snapshot.commands.length);
-  renderCommands(snapshot);
+  const displayedPluginCommands = commandsOwnedByPlugin(snapshot.commands, plugin?.id);
+  elements.commandCount.textContent = String(displayedPluginCommands.length);
+  renderCommands(displayedPluginCommands);
   renderEvents(snapshot);
   setActionState(busy);
   elements.fileSearch.disabled = opening;
@@ -14456,9 +14458,9 @@ function renderConnections(container: HTMLElement, links: WorkspaceLinkSummary[]
   }
 }
 
-function renderCommands(snapshot: RuntimeSnapshot): void {
+function renderCommands(commands: RuntimeSnapshot["commands"]): void {
   elements.commandList.replaceChildren();
-  for (const command of snapshot.commands) {
+  for (const command of commands) {
     const row = document.createElement("div");
     row.className = "command-row";
     const name = document.createElement("strong");
@@ -14468,7 +14470,7 @@ function renderCommands(snapshot: RuntimeSnapshot): void {
     row.append(name, id);
     elements.commandList.append(row);
   }
-  if (snapshot.commands.length === 0) {
+  if (commands.length === 0) {
     renderEmpty(elements.commandList, "No plugin commands registered.");
   }
 }
@@ -15076,7 +15078,11 @@ function setActionState(nextBusy: boolean): void {
     pluginBusy ||
     pluginSafeModeActive() ||
     currentPluginPreference().compatibilityMode === "restricted";
-  elements.runCommand.disabled = opening || busy || (currentSnapshot?.commands.length ?? 0) === 0;
+  elements.runCommand.disabled =
+    opening ||
+    busy ||
+    commandsOwnedByPlugin(currentSnapshot?.commands ?? [], currentSnapshot?.plugin?.id).length ===
+      0;
   for (const pane of paneElements.values()) {
     for (const activate of pane.noteTabs.querySelectorAll<HTMLButtonElement>(
       ".note-tab-activate",
@@ -15541,7 +15547,10 @@ elements.propertyAdd.addEventListener("click", () => {
 });
 
 elements.runCommand.addEventListener("click", () => {
-  const command = currentSnapshot?.commands[0];
+  const command = commandsOwnedByPlugin(
+    currentSnapshot?.commands ?? [],
+    currentSnapshot?.plugin?.id,
+  )[0];
   if (!command) {
     return;
   }
