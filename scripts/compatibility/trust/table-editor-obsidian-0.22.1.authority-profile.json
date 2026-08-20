@@ -1,0 +1,35 @@
+{
+  "$schema": "./reviewed-authority-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profileId": "table-editor-obsidian-0.22.1",
+  "profileRevision": 1,
+  "packageIdentity": {
+    "pluginId": "table-editor-obsidian",
+    "manifestVersion": "0.22.1",
+    "distributionTag": "0.22.1",
+    "manifestSha256": "63fe4aa89f17b846ad7f3985212cbf2be3f5043991d122ff45578921295f628c",
+    "mainSha256": "bf394e1058d2f5bc2bf8acce6bd46eca355b211f9cae62c11cef8d6575989420",
+    "stylesSha256": "c47e8c5e66e6bc76c05ba608135ad7beb8577c102ad47fc6d0ba553e7dcd81af",
+    "packageTreeSha256": "becba250c710da28e5adbd6c67463b34203a44a34756152c36fa36739f1d9d11"
+  },
+  "packageIdentityDigest": "8a23f9e4fed85016f015f656dd66f341547a51be9c0d1c2dffde70e55b20e289",
+  "expectedStaticCapabilities": [
+    "external-navigation",
+    "editor-extension",
+    "workspace-ui",
+    "dynamic-code"
+  ],
+  "requiredAuthorities": [
+    "network",
+    "filesystem",
+    "subprocess",
+    "host-environment",
+    "external-navigation",
+    "editor-extension",
+    "workspace-ui",
+    "dynamic-code"
+  ],
+  "executionProfile": "trusted-node-renderer",
+  "allowedPlatforms": ["linux", "darwin", "win32"],
+  "authorityDigest": "43df0b1b27072a8ccc2f90be39b19a16e1413b336d54d8509b26839dbafffa9c"
+}

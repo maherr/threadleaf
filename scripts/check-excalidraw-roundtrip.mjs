@@ -16,6 +16,7 @@ const sourceVault = sourceVaultOverride ? path.resolve(sourceVaultOverride) : fi
 const installedPluginMatrixRoot = process.env.THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT?.trim();
 const installedThemeMatrixRoot = process.env.THREADLEAF_INSTALLED_THEME_MATRIX_ROOT?.trim();
 const templaterPluginPath = process.env.THREADLEAF_TEMPLATER_PLUGIN_PATH?.trim();
+const advancedTablesPluginPath = process.env.THREADLEAF_ADVANCED_TABLES_PLUGIN_PATH?.trim();
 const installedPluginMatrixClean = process.env.THREADLEAF_INSTALLED_PLUGIN_MATRIX_CLEAN === "1";
 const pluginId = "obsidian-excalidraw-plugin";
 const pluginVersion = process.env.THREADLEAF_EXCALIDRAW_VERSION?.trim() || "2.26.4";
@@ -69,6 +70,7 @@ const installedMatrixPlugins = [
   { id: "obsidian-icon-folder", version: "2.14.7" },
   { id: "obsidian-minimal-settings", version: "8.2.3" },
   { id: "omnisearch", version: "1.30.1" },
+  ...(advancedTablesPluginPath ? [{ id: "table-editor-obsidian", version: "0.22.1" }] : []),
   ...(templaterPluginPath ? [{ id: "templater-obsidian", version: "2.25.0" }] : []),
 ];
 const screenshotDirectory = screenshotDirectoryOverride ?? path.join(testRoot, "screenshots");
@@ -392,7 +394,7 @@ async function pressKey(connection, key, code, modifiers = 0) {
   const windowsVirtualKeyCode =
     eventKey.length === 1
       ? eventKey.charCodeAt(0)
-      : { Enter: 13, Escape: 27, End: 35, ArrowLeft: 37, ArrowRight: 39 }[key];
+      : { Enter: 13, Escape: 27, Home: 36, End: 35, ArrowLeft: 37, ArrowRight: 39 }[key];
   assert(windowsVirtualKeyCode, `Unsupported CDP key: ${key}`);
   await connection.send("Input.dispatchKeyEvent", {
     type: key.length === 1 && modifiers === 0 ? "keyDown" : "rawKeyDown",
@@ -692,7 +694,9 @@ async function prepareInstalledPluginMatrix() {
     const source =
       plugin.id === "templater-obsidian" && templaterPluginPath
         ? path.resolve(templaterPluginPath)
-        : path.join(path.resolve(installedPluginMatrixRoot), plugin.id);
+        : plugin.id === "table-editor-obsidian" && advancedTablesPluginPath
+          ? path.resolve(advancedTablesPluginPath)
+          : path.join(path.resolve(installedPluginMatrixRoot), plugin.id);
     const target = path.join(vaultPath, ".obsidian", "plugins", plugin.id);
     assert(await exists(source), `Installed matrix source is missing: ${plugin.id}`);
     await fs.cp(source, target, { recursive: true });
@@ -734,6 +738,11 @@ async function prepareInstalledPluginMatrix() {
     );
     await fs.writeFile(path.join(vaultPath, "Notes", "Templater Target.md"), "Before\n");
     await fs.writeFile(path.join(vaultPath, "Notes", "Templater Restart.md"), "Restart\n");
+  }
+  if (advancedTablesPluginPath) {
+    const malformedTable = "| Name|Count |\n|---|---|\n| Alpha|1|\n| Longer name|22|\n";
+    await fs.writeFile(path.join(vaultPath, "Notes", "Advanced Tables.md"), malformedTable);
+    await fs.writeFile(path.join(vaultPath, "Notes", "Advanced Tables Restart.md"), malformedTable);
   }
 }
 
@@ -943,6 +952,9 @@ async function verifyInstalledPluginMatrixRestart(vaultId, port) {
     );
   }
   const omnisearch = await verifyOmnisearchWorkflow(vaultId, port);
+  const advancedTables = advancedTablesPluginPath
+    ? await verifyAdvancedTablesRestartWorkflow(vaultId)
+    : undefined;
   const templater = templaterPluginPath ? await verifyTemplaterRestartWorkflow(vaultId) : undefined;
   return {
     pluginStates: installedMatrixPlugins.map(({ id }) => ({
@@ -954,6 +966,7 @@ async function verifyInstalledPluginMatrixRestart(vaultId, port) {
     icon: "🌟",
     minimal,
     omnisearch,
+    ...(advancedTables ? { advancedTables } : {}),
     ...(templater ? { templater } : {}),
   };
 }
@@ -1026,6 +1039,7 @@ async function runInstalledPluginMatrix(vaultId, port, pluginState) {
     await verifyIconizeWorkflow(vaultId, port),
     await verifyMinimalSettingsWorkflow(vaultId, port),
     await verifyOmnisearchWorkflow(vaultId, port),
+    ...(advancedTablesPluginPath ? [await verifyAdvancedTablesWorkflow(vaultId)] : []),
     ...(templaterPluginPath ? [await verifyTemplaterWorkflow(vaultId)] : []),
   ];
   await closeApp();
@@ -1136,6 +1150,90 @@ async function waitForTemplaterData(predicate, label, timeout = 20_000) {
     await delay(80);
   }
   throw new Error(`${label} did not settle: ${JSON.stringify(observed)}`);
+}
+
+const advancedTablesInitial = "| Name|Count |\n|---|---|\n| Alpha|1|\n| Longer name|22|\n";
+const advancedTablesExpected =
+  "| Name        | Count |\n| ----------- | ----- |\n| Alpha       | 1     |\n| Longer name | 22    |\n";
+
+async function runAdvancedTablesFormat(vaultId, notePath) {
+  const filePath = path.join(vaultPath, notePath);
+  assert(
+    (await fs.readFile(filePath, "utf8")) === advancedTablesInitial,
+    `Advanced Tables fixture was not pristine before formatting: ${notePath}`,
+  );
+  await evaluate(
+    cdp,
+    `(async () => { await window.threadleaf.closePluginView(); return window.threadleaf.openNote(${JSON.stringify(notePath)}); })()`,
+  );
+  await waitFor(
+    cdp,
+    `(async () => { const snapshot = await window.threadleaf.getSnapshot(); return snapshot.vault.id === ${JSON.stringify(vaultId)} && snapshot.workspace?.activeNote?.path === ${JSON.stringify(notePath)}; })()`,
+    `Advanced Tables target note ${notePath}`,
+  );
+  await waitFor(
+    cdp,
+    "(() => { const editor = document.querySelector('.workspace-pane[data-active=\"true\"] .cm-content'); if (!(editor instanceof HTMLElement)) return false; const bounds = editor.getBoundingClientRect(); return bounds.width > 100 && bounds.height > 20; })()",
+    `Advanced Tables native editor ${notePath}`,
+  );
+  await clickSelector(cdp, '.workspace-pane[data-active="true"] .cm-content');
+  await pressKey(cdp, "Home", "Home", 2);
+  const commandId = "table-editor-obsidian:format-table";
+  await waitFor(
+    cdp,
+    `(async () => (await window.threadleaf.getSnapshot()).commands.some((command) => command.id === ${JSON.stringify(commandId)}))()`,
+    "Advanced Tables format command",
+  );
+  await runPaletteCommand(commandId, "format table", `plugin.command.${commandId}`);
+  const content = await waitForExactFileText(filePath, advancedTablesExpected, 30_000);
+  await evaluate(cdp, `window.threadleaf.openNote(${JSON.stringify(notePath)})`);
+  await waitFor(
+    cdp,
+    `(async () => {
+      const snapshot = await window.threadleaf.getSnapshot();
+      const editor = document.querySelector('.workspace-pane[data-active="true"] .cm-content');
+      if (!(editor instanceof HTMLElement)) return false;
+      const bounds = editor.getBoundingClientRect();
+      const text = editor.textContent ?? '';
+      return snapshot.workspace?.activeNote?.path === ${JSON.stringify(notePath)} &&
+        snapshot.workspace.activeNote.content === ${JSON.stringify(advancedTablesExpected)} &&
+        document.querySelector('#note-path')?.textContent === ${JSON.stringify(notePath)} &&
+        bounds.width > 100 && bounds.height > 20 &&
+        text.includes('Name        | Count') &&
+        text.includes('Longer name | 22');
+    })()`,
+    `Advanced Tables persisted editor surface ${notePath}`,
+    20_000,
+  );
+  const snapshot = await evaluate(cdp, "window.threadleaf.getSnapshot()");
+  assert(
+    !snapshot.events.some(
+      (event) => event.kind === "error" && event.message.toLowerCase().includes("advanced tables"),
+    ),
+    `Advanced Tables emitted a runtime error: ${JSON.stringify(snapshot.events.slice(-30))}`,
+  );
+  return {
+    notePath,
+    commandId,
+    content,
+    revision: sha256(Buffer.from(content)),
+  };
+}
+
+async function verifyAdvancedTablesWorkflow(vaultId) {
+  return {
+    pluginId: "table-editor-obsidian",
+    workflow: "format-table-through-command-palette",
+    note: await runAdvancedTablesFormat(vaultId, "Notes/Advanced Tables.md"),
+  };
+}
+
+async function verifyAdvancedTablesRestartWorkflow(vaultId) {
+  return {
+    pluginId: "table-editor-obsidian",
+    workflow: "format-table-after-application-restart",
+    note: await runAdvancedTablesFormat(vaultId, "Notes/Advanced Tables Restart.md"),
+  };
 }
 
 async function runTemplaterHotkeyOnNote(vaultId, notePath, initialText) {

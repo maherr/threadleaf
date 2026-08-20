@@ -989,6 +989,43 @@ module.exports = class HostModulePlugin extends Plugin {
     }
   });
 
+  it("does not expose arbitrary application dependencies through the host module resolver", async () => {
+    const sandboxPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "threadleaf-plugin-module-denial-"),
+    );
+    const vaultPath = path.join(sandboxPath, "vault");
+    try {
+      const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "host-module-denial");
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({
+          id: "host-module-denial",
+          name: "Host module denial fixture",
+          version: "0.1.0",
+        }),
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        'require("vitest"); module.exports = class extends require("obsidian").Plugin {};\n',
+        "utf8",
+      );
+      const host = new PluginHost(
+        vaultPath,
+        undefined,
+        undefined,
+        createRequire(path.resolve("package.json")),
+      );
+
+      await expect(loadPlugin(host, pluginPath)).rejects.toSatisfy(
+        (error: unknown) => attachedPluginDiagnosticCode(error) === "package-path-escape",
+      );
+    } finally {
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   it("provides UI base classes and releases registered integrations on unload", async () => {
     const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-ui-api-"));
     const vaultPath = path.join(sandboxPath, "vault");

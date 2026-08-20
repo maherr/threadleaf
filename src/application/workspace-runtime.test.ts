@@ -2143,6 +2143,87 @@ describe("WorkspaceRuntime", () => {
     expect(closed).toBe(true);
   });
 
+  it("commits revision-bound plugin editor updates before publishing the command snapshot", async () => {
+    const pluginSnapshot = (
+      editorUpdate: RuntimeSnapshot["editorUpdate"] = null,
+    ): RuntimeSnapshot => ({
+      vault: {
+        id: null,
+        name: "vault",
+        path: vaultPath,
+        markdownFileCount: 2,
+        mode: "synthetic-read-only",
+        source: "direct",
+        warning: null,
+      },
+      plugin: {
+        id: "editor-fixture",
+        name: "Editor fixture",
+        version: "0.1.0",
+        state: "loaded",
+        compatibilityLevel: 3,
+        stylesheetDiscovered: false,
+        error: null,
+      },
+      plugins: [],
+      commands: [{ id: "edit-note", name: "Edit note", ownerId: "editor-fixture" }],
+      actions: [{ id: "edit-note", name: "Edit note", source: "plugin" }],
+      notices: [],
+      events: [],
+      editorUpdate,
+    });
+    const externalRuntime: PluginRuntimePort = {
+      close: async () => undefined,
+      closePluginView: async () => pluginSnapshot(),
+      getSnapshot: async () => pluginSnapshot(),
+      loadPlugin: async () => pluginSnapshot(),
+      markLayoutReady: async () => pluginSnapshot(),
+      openPluginSettings: async () => pluginSnapshot(),
+      openPluginView: async () => pluginSnapshot(),
+      reloadPlugin: async () => pluginSnapshot(),
+      runCommand: async (_commandId, context) => {
+        if (!context) throw new Error("Expected an editor context.");
+        return pluginSnapshot({
+          baseContent: context.content,
+          content: `${context.content}\nPlugin edit.`,
+          focused: true,
+          id: "editor-update-1",
+          path: context.path,
+          revision: context.revision,
+          selection: { anchor: context.content.length + 13, head: context.content.length + 13 },
+        });
+      },
+      waitForPluginMutations: async () => pluginSnapshot(),
+      unloadAllPlugins: async () => pluginSnapshot(),
+      unloadPlugin: async () => pluginSnapshot(),
+    };
+    runtime = await WorkspaceRuntime.open({
+      vaultRoot: vaultPath,
+      stateRoot: new FixedStateRoot(statePath),
+      pluginRuntimeFactory: async () => externalRuntime,
+    });
+    const opened = await runtime.openNote("Welcome.md");
+    const note = opened.workspace?.activeNote;
+    if (!note) throw new Error("Expected Welcome.md to be active.");
+
+    const commanded = await runtime.runPluginCommand("edit-note", {
+      path: note.path,
+      content: note.content,
+      revision: note.revision,
+      selection: { anchor: note.content.length, head: note.content.length },
+    });
+
+    const expected = `${note.content}\nPlugin edit.`;
+    await expect(fs.readFile(path.join(vaultPath, note.path), "utf8")).resolves.toBe(expected);
+    expect(commanded.workspace?.activeNote).toMatchObject({ content: expected });
+    expect(commanded.editorUpdate).toMatchObject({
+      baseContent: expected,
+      content: expected,
+      path: note.path,
+    });
+    expect(commanded.editorUpdate?.revision).not.toBe(note.revision);
+  });
+
   it("settles queued watcher and snapshot work when close wins an inventory invalidation race", async () => {
     const workspace = await openRuntime();
     await workspace.getSnapshot();

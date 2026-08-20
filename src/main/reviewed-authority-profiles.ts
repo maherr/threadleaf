@@ -49,6 +49,9 @@ import styleSettingsProfileJson from "../../scripts/compatibility/trust/obsidian
 import omnisearch1301ObsidianInstalledProfileJson from "../../scripts/compatibility/trust/omnisearch-1.30.1-obsidian-installed.authority-profile.json" with {
   type: "json",
 };
+import advancedTablesProfileJson from "../../scripts/compatibility/trust/table-editor-obsidian-0.22.1.authority-profile.json" with {
+  type: "json",
+};
 import templaterProfileJson from "../../scripts/compatibility/trust/templater-obsidian-2.25.0.authority-profile.json" with {
   type: "json",
 };
@@ -299,6 +302,7 @@ const parsedProfiles = [
   parseReviewedAuthorityProfile(citeFixtureProfileJson),
   parseReviewedAuthorityProfile(dataviewProfileJson),
   parseReviewedAuthorityProfile(dataFilesEditor130ObsidianInstalledProfileJson),
+  parseReviewedAuthorityProfile(advancedTablesProfileJson),
   parseReviewedAuthorityProfile(templaterProfileJson),
   parseReviewedAuthorityProfile(inspectionSafeProfileJson),
   parseReviewedAuthorityProfile(inspectionRunawayProfileJson),

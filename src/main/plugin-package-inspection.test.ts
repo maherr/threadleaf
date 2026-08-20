@@ -528,6 +528,57 @@ describe("exact plugin package inspection", () => {
     expect(JSON.stringify(malformedProvenance)).not.toContain("password");
   });
 
+  it("ignores dependency-like text outside executable code while retaining real requires", async () => {
+    const input = withMain(
+      await fixtureInput("inspection-safe"),
+      [
+        'const obsidian = require("obsidian");',
+        'const message = `require("/private/not-a-module") $' + "{obsidian}`;",
+        'const quoted = "require(dynamicSecret)";',
+        'const matcher = /require\\("/private/also-not-a-module"\\)/u;',
+        '// require("/private/comment")',
+        "module.exports = class Fixture extends obsidian.Plugin {};",
+      ].join("\n"),
+    );
+    const report = await inspectPluginPackage(input, { runActivation: false });
+
+    expect(report.dependencies).toEqual([{ module: "obsidian", kind: "obsidian-api" }]);
+    expect(report.stages.find((stage) => stage.id === "dependency-model")).toMatchObject({
+      status: "pass",
+      diagnostics: [],
+    });
+  });
+
+  it("allows only the fixed global-object probe while blocking arbitrary dynamic evaluation", async () => {
+    const fixedLookup = await inspectPluginPackage(
+      withMain(
+        await fixtureInput("inspection-safe"),
+        'const root = Function("return this")(); module.exports = class Fixture { value = root; };',
+      ),
+      { runActivation: false },
+    );
+    const arbitrary = await inspectPluginPackage(
+      withMain(
+        await fixtureInput("inspection-safe"),
+        'const root = Function("return process")(); module.exports = class Fixture { value = root; };',
+      ),
+      { runActivation: false },
+    );
+
+    expect(
+      fixedLookup.stages.find((stage) => stage.id === "banned-private-primitives"),
+    ).toMatchObject({ status: "pass" });
+    expect(fixedLookup.primitives).toContainEqual(
+      expect.objectContaining({ id: "global-object-discovery", severity: "warning" }),
+    );
+    expect(
+      arbitrary.stages.find((stage) => stage.id === "banned-private-primitives"),
+    ).toMatchObject({ status: "fail" });
+    expect(arbitrary.primitives).toContainEqual(
+      expect.objectContaining({ id: "dynamic-evaluation", severity: "blocked" }),
+    );
+  });
+
   it("detects undeclared host authority and escape-shaped package entries before activation", async () => {
     const input = await fixtureInput("inspection-escape");
     const report = await inspectPluginPackage(input);

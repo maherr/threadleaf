@@ -3460,7 +3460,38 @@ export class WorkspaceRuntime {
     commandId: string,
     editorContext?: PluginEditorContext,
   ): Promise<RuntimeSnapshot> {
-    const pluginSnapshot = await this.pluginHost.runCommand(commandId, editorContext);
+    let pluginSnapshot = await this.pluginHost.runCommand(commandId, editorContext);
+    const editorUpdate = pluginSnapshot.editorUpdate;
+    if (editorUpdate) {
+      if (
+        !editorContext ||
+        editorUpdate.path !== editorContext.path ||
+        editorUpdate.revision !== editorContext.revision ||
+        editorUpdate.baseContent !== editorContext.content
+      ) {
+        throw new Error("Plugin editor update does not match the initiating note revision.");
+      }
+      if (editorUpdate.content !== editorUpdate.baseContent) {
+        const outcome = await this.saveNoteThroughKernel({
+          path: editorUpdate.path,
+          content: editorUpdate.content,
+          expectedRevision: editorUpdate.revision,
+          expectedVaultId: this.kernel.vaultId,
+          paneId: this.#activePaneId,
+        });
+        if (outcome.status !== "committed") {
+          throw new Error("Plugin editor update conflicted with a newer note revision.");
+        }
+        pluginSnapshot = {
+          ...pluginSnapshot,
+          editorUpdate: {
+            ...editorUpdate,
+            baseContent: editorUpdate.content,
+            revision: outcome.revision,
+          },
+        };
+      }
+    }
     const surfacedPath = pluginSnapshot.pluginSurface?.filePath;
     if (surfacedPath) {
       await this.selectNote({ path: surfacedPath });

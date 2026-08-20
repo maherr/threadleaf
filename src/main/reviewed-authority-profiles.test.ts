@@ -8,7 +8,7 @@ import {
 } from "./reviewed-authority-profiles";
 
 describe("reviewed authority profiles", () => {
-  it("loads the twenty-three exact identity-bound records", () => {
+  it("loads the twenty-four exact identity-bound records", () => {
     const profiles = reviewedAuthorityProfiles();
     expect(profiles.map(({ packageIdentity }) => packageIdentity.pluginId).sort()).toEqual([
       "calendar-beta",
@@ -28,6 +28,7 @@ describe("reviewed authority profiles", () => {
       "obsidian-minimal-settings",
       "obsidian-style-settings",
       "omnisearch",
+      "table-editor-obsidian",
       "templater-obsidian",
       "threadleaf-trusted-state-fixture",
       "threadleaf-trusted-view-fixture",
@@ -61,6 +62,24 @@ describe("reviewed authority profiles", () => {
       expectedStaticCapabilities: [
         "vault-read",
         "network",
+        "editor-extension",
+        "workspace-ui",
+        "dynamic-code",
+      ],
+      executionProfile: "trusted-node-renderer",
+    });
+    const advancedTables = profiles.find(
+      ({ packageIdentity }) => packageIdentity.pluginId === "table-editor-obsidian",
+    );
+    expect(advancedTables).toMatchObject({
+      packageIdentity: {
+        manifestVersion: "0.22.1",
+        distributionTag: "0.22.1",
+        packageTreeSha256: "becba250c710da28e5adbd6c67463b34203a44a34756152c36fa36739f1d9d11",
+      },
+      packageIdentityDigest: "8a23f9e4fed85016f015f656dd66f341547a51be9c0d1c2dffde70e55b20e289",
+      expectedStaticCapabilities: [
+        "external-navigation",
         "editor-extension",
         "workspace-ui",
         "dynamic-code",

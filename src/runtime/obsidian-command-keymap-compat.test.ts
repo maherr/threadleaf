@@ -118,6 +118,51 @@ describe("Obsidian command registry compatibility", () => {
     expect(calls).toEqual([false, true]);
   });
 
+  it("treats void check-callback execution as success while preserving explicit false", async () => {
+    const registry = new CommandRegistry();
+    const editorExecution = vi.fn();
+    const globalExecution = vi.fn();
+    registry.register("fixture", {
+      id: "fixture:void-global-check",
+      name: "Void global check",
+      checkCallback: (checking) => {
+        if (checking) return true;
+        globalExecution();
+      },
+    });
+    registry.register("fixture", {
+      id: "fixture:false-global-check",
+      name: "False global check",
+      checkCallback: () => false,
+    });
+
+    expect(await registry.run("fixture:void-global-check")).toBe(true);
+    expect(globalExecution).toHaveBeenCalledOnce();
+    expect(await registry.run("fixture:false-global-check")).toBe(false);
+
+    const { restore } = installDom();
+    let leaf: WorkspaceLeaf | null = null;
+    try {
+      const app = createApp();
+      leaf = new WorkspaceLeaf(app, document.createElement("div"));
+      await leaf.setViewState({ type: "markdown", state: { file: "Welcome.md" } });
+      app.commands.register("fixture", {
+        id: "fixture:void-editor-check",
+        name: "Void editor check",
+        editorCheckCallback: (checking) => {
+          if (checking) return true;
+          editorExecution();
+        },
+      });
+
+      expect(await app.commands.run("fixture:void-editor-check")).toBe(true);
+      expect(editorExecution).toHaveBeenCalledOnce();
+    } finally {
+      await leaf?.detach();
+      restore();
+    }
+  });
+
   it("propagates callback false and synchronous errors while accepting async invocation", async () => {
     const registry = new CommandRegistry();
     let asyncRan = false;

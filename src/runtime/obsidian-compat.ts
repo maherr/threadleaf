@@ -1700,6 +1700,7 @@ export interface CachedMetadata {
   footnotes?: FootnoteCache[];
   blocks?: Record<string, BlockCache>;
   listItems?: ListItemCache[];
+  sections?: SectionCache[];
 }
 
 export interface Reference {
@@ -1762,6 +1763,26 @@ export interface ListItemCache {
   id?: string;
   parent: number;
   position: CachePosition;
+}
+
+export interface SectionCache {
+  id?: string;
+  position: CachePosition;
+  type:
+    | "blockquote"
+    | "callout"
+    | "code"
+    | "element"
+    | "footnoteDefinition"
+    | "heading"
+    | "html"
+    | "list"
+    | "paragraph"
+    | "table"
+    | "text"
+    | "thematicBreak"
+    | "yaml"
+    | string;
 }
 
 export interface SubpathResult {
@@ -2082,6 +2103,100 @@ function inlineTagCaches(content: string): TagCache[] {
   return tags;
 }
 
+function markdownTableSectionCaches(content: string): SectionCache[] {
+  const lines: Array<{ end: number; start: number; text: string }> = [];
+  let offset = 0;
+  for (const sourceLine of content.split("\n")) {
+    const text = sourceLine.endsWith("\r") ? sourceLine.slice(0, -1) : sourceLine;
+    lines.push({ start: offset, end: offset + text.length, text });
+    offset += sourceLine.length + 1;
+  }
+  const sections: SectionCache[] = [];
+  const frontmatter = getFrontMatterInfo(content);
+  let fence: { character: "`" | "~"; length: number } | null = null;
+  let mathFence = false;
+  const excluded = new Set<number>();
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]?.text ?? "";
+    if (frontmatter.exists && (lines[index]?.start ?? 0) < frontmatter.contentStart) {
+      excluded.add(index);
+      continue;
+    }
+    const trimmed = line.trimStart();
+    const codeFence = /^(`{3,}|~{3,})/u.exec(trimmed)?.[1];
+    if (codeFence) {
+      excluded.add(index);
+      const character = codeFence[0] as "`" | "~";
+      if (!fence) {
+        fence = { character, length: codeFence.length };
+      } else if (fence.character === character && codeFence.length >= fence.length) {
+        fence = null;
+      }
+      continue;
+    }
+    if (fence) {
+      excluded.add(index);
+      continue;
+    }
+    if (/^\$\$\s*$/u.test(trimmed)) {
+      excluded.add(index);
+      mathFence = !mathFence;
+      continue;
+    }
+    if (mathFence) {
+      excluded.add(index);
+    }
+  }
+
+  const cells = (line: string): string[] => {
+    const parts = line.split(/(?<!\\)\|/u).map((part) => part.trim());
+    if (parts[0] === "") parts.shift();
+    if (parts.at(-1) === "") parts.pop();
+    return parts;
+  };
+  const isTableRow = (line: string): boolean => cells(line).length > 0 && /(?<!\\)\|/u.test(line);
+  const isDelimiterRow = (line: string): boolean => {
+    const parts = cells(line);
+    return parts.length > 0 && parts.every((part) => /^:?-{3,}:?$/u.test(part));
+  };
+
+  for (let index = 0; index + 1 < lines.length; index += 1) {
+    if (excluded.has(index) || excluded.has(index + 1)) continue;
+    const header = lines[index]?.text ?? "";
+    const delimiter = lines[index + 1]?.text ?? "";
+    const headerCells = cells(header);
+    const delimiterCells = cells(delimiter);
+    if (
+      !isTableRow(header) ||
+      !isDelimiterRow(delimiter) ||
+      headerCells.length !== delimiterCells.length
+    ) {
+      continue;
+    }
+    let endIndex = index + 1;
+    while (
+      endIndex + 1 < lines.length &&
+      !excluded.has(endIndex + 1) &&
+      isTableRow(lines[endIndex + 1]?.text ?? "")
+    ) {
+      endIndex += 1;
+    }
+    const start = lines[index];
+    const end = lines[endIndex];
+    if (start && end) {
+      sections.push({
+        type: "table",
+        position: {
+          start: cacheLocation(content, start.start),
+          end: cacheLocation(content, end.end),
+        },
+      });
+    }
+    index = endIndex;
+  }
+  return sections;
+}
+
 function cleanLinkpath(linkpath: string): string {
   const withoutReference = linkpath.split("#", 1)[0]?.split("|", 1)[0] ?? "";
   try {
@@ -2144,9 +2259,11 @@ export class MetadataCache extends Events {
         const content = readFileSync(this.vault.resolveVaultPath(file.path), "utf8");
         const frontmatter = parseFrontmatter(content);
         const tags = inlineTagCaches(content);
+        const sections = markdownTableSectionCaches(content);
         value = {
           ...(frontmatter ? { frontmatter } : {}),
           ...(tags.length > 0 ? { tags } : {}),
+          ...(sections.length > 0 ? { sections } : {}),
         };
       } catch {
         value = {};
@@ -2500,14 +2617,14 @@ export class CommandRegistry {
 
     const context = this.editorContextProvider();
     if (context?.editor && command.editorCheckCallback) {
-      return command.editorCheckCallback(false, context.editor, context.view) === true;
+      return command.editorCheckCallback(false, context.editor, context.view) !== false;
     }
     if (context?.editor && command.editorCallback) {
       const result = command.editorCallback(context.editor, context.view);
       return isPromiseLike(result) || result !== false;
     }
     if (command.checkCallback) {
-      return command.checkCallback(false) === true;
+      return command.checkCallback(false) !== false;
     }
     if (command.callback) {
       const result = command.callback();
@@ -2566,13 +2683,13 @@ export class CommandRegistry {
     }
     const context = this.editorContextProvider();
     if (context?.editor && command.editorCheckCallback) {
-      return command.editorCheckCallback(false, context.editor, context.view) === true;
+      return command.editorCheckCallback(false, context.editor, context.view) !== false;
     }
     if (context?.editor && command.editorCallback) {
       return (await command.editorCallback(context.editor, context.view)) !== false;
     }
     if (command.checkCallback) {
-      return command.checkCallback(false) === true;
+      return command.checkCallback(false) !== false;
     }
     if (command.callback) {
       return (await command.callback()) !== false;

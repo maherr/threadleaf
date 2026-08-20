@@ -26,6 +26,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Added an exact-package workflow for the official Dataview 0.5.68 release, including reviewed Blob
   workers, the real CodeMirror 5 mode registry, frontmatter indexing, an in-place Reading-view
   table with contained native file links, both themes, and an explicit disabled-plugin fallback.
+- Added an exact reviewed profile and restart-tested command-palette workflow for Advanced Tables
+  0.22.1, including all 22 commands, its settings, toolbar view, ribbon action, and native editor
+  integration in the combined trusted-workspace plugin matrix.
 - Added exact reviewed profiles and a production editor-paste workflow for both the official and
   acceptance-vault Paste URL into Selection 1.11.4 package identities.
 - Added a bounded two-phase native editor-suggestion bridge with keyboard and pointer navigation,
@@ -134,6 +137,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Matched the current file-explorer deferred-leaf API used by Iconize and reapplied persisted vault
   font size during compatibility startup, allowing installed plugin data, navigator decoration,
   native appearance, and Omnisearch navigation to reconstruct cleanly after an application restart.
+- Matched Obsidian's check-callback execution semantics, exposed table ranges through the public
+  metadata-cache section contract, and committed revision-bound plugin editor updates through the
+  vault kernel before reporting command success.
+- Prevented package inspection from treating module-like text inside JavaScript strings, comments,
+  templates, or regular expressions as executable dependencies, while continuing to reject real
+  dynamic imports, absolute module paths, and arbitrary dynamic evaluation.
 
 ## [0.1.0]
 

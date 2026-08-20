@@ -194,6 +194,39 @@ describe("Obsidian metadata, link, and YAML compatibility", () => {
     });
   });
 
+  it("reports Markdown table sections while excluding code, math, and YAML lookalikes", async () => {
+    const { vault } = await createTemporaryVault({
+      "Tables.md": [
+        "---",
+        "example: | fake | table |",
+        "---",
+        "| Name | Count |",
+        "| --- | ---: |",
+        "| Alpha | 1 |",
+        "",
+        "```md",
+        "| Code | Fake |",
+        "| --- | --- |",
+        "```",
+        "$$",
+        "| Math | Fake |",
+        "| --- | --- |",
+        "$$",
+      ].join("\n"),
+    });
+    const cache = new MetadataCache(vault).getFileCache(vault.getFileByPath("Tables.md"));
+
+    expect(cache?.sections).toEqual([
+      {
+        type: "table",
+        position: {
+          start: { line: 3, col: 0, offset: 34 },
+          end: { line: 5, col: 13, offset: 79 },
+        },
+      },
+    ]);
+  });
+
   it("returns every visible folder, including empty folders, and includes root only on request", async () => {
     const { rootPath, vault } = await createTemporaryVault({
       "Boards/Kanban.md": "board\n",

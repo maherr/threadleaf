@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { promises as fs } from "node:fs";
-import { builtinModules } from "node:module";
+import { builtinModules, createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
@@ -57,6 +57,7 @@ const diagnosticGrantPluginIds = new Set([
   "inspection-runaway",
   "inspection-safe",
   "inspection-teardown",
+  "table-editor-obsidian",
 ]);
 
 export type InspectionStageStatus = "pass" | "fail" | "blocked" | "not-run";
@@ -731,6 +732,7 @@ function extractDependencies(source: string): {
   dependencies: PluginDependencyEvidence[];
   dynamic: boolean;
 } {
+  const codePositions = lexicalCodePositions(source);
   const dependencies = new Map<string, PluginDependencyEvidence["kind"]>();
   const literalPatterns = [
     /\brequire\s*\(\s*["']([^"']+)["']\s*\)/gu,
@@ -739,6 +741,9 @@ function extractDependencies(source: string): {
   ] as const;
   for (const pattern of literalPatterns) {
     for (const match of source.matchAll(pattern)) {
+      if (codePositions[match.index ?? 0] !== 1) {
+        continue;
+      }
       const moduleName = match[1];
       if (!moduleName) {
         continue;
@@ -772,15 +777,142 @@ function extractDependencies(source: string): {
       );
     }
   }
-  const dynamic =
-    /\b(?:require|import)\s*\(\s*(?!["'`])/u.test(source) ||
-    /\bimport\s*\(\s*`[^`]*\$\{/u.test(source);
+  const dynamicPatterns = [
+    /\b(?:require|import)\s*\(\s*(?!["'`])/gu,
+    /\bimport\s*\(\s*`[^`]*\$\{/gu,
+  ] as const;
+  const dynamic = dynamicPatterns.some((pattern) =>
+    [...source.matchAll(pattern)].some((match) => codePositions[match.index ?? 0] === 1),
+  );
   return {
     dependencies: [...dependencies.entries()]
       .map(([module, kind]) => ({ module, kind }))
       .sort((left, right) => left.module.localeCompare(right.module, "en-US")),
     dynamic,
   };
+}
+
+/**
+ * Mark JavaScript source positions that are executable code rather than string, template-raw,
+ * comment, or regular-expression content. Package inspection only needs this lexical boundary:
+ * dependency and primitive matches are still conservative once their first token is in code.
+ */
+function lexicalCodePositions(source: string): Uint8Array {
+  const positions = new Uint8Array(source.length);
+
+  function skipQuoted(from: number, quote: "'" | '"'): number {
+    for (let index = from + 1; index < source.length; index += 1) {
+      if (source[index] === "\\") {
+        index += 1;
+      } else if (source[index] === quote) {
+        return index + 1;
+      }
+    }
+    return source.length;
+  }
+
+  function regexMayStartAt(index: number): boolean {
+    let previous = index - 1;
+    while (previous >= 0 && (positions[previous] !== 1 || /\s/u.test(source[previous] ?? ""))) {
+      previous -= 1;
+    }
+    if (previous < 0) {
+      return true;
+    }
+    const character = source[previous] ?? "";
+    if (/[[({:;,=!?&|+*%^~<>-]/u.test(character)) {
+      return true;
+    }
+    if (!/[A-Za-z0-9_$]/u.test(character)) {
+      return false;
+    }
+    let start = previous;
+    while (start > 0 && /[A-Za-z0-9_$]/u.test(source[start - 1] ?? "")) {
+      start -= 1;
+    }
+    return /^(?:await|case|delete|in|instanceof|new|of|return|throw|typeof|void|yield)$/u.test(
+      source.slice(start, previous + 1),
+    );
+  }
+
+  function skipRegularExpression(from: number): number {
+    let inCharacterClass = false;
+    for (let index = from + 1; index < source.length; index += 1) {
+      const character = source[index];
+      if (character === "\\") {
+        index += 1;
+      } else if (character === "[") {
+        inCharacterClass = true;
+      } else if (character === "]") {
+        inCharacterClass = false;
+      } else if (character === "/" && !inCharacterClass) {
+        index += 1;
+        while (index < source.length && /[A-Za-z]/u.test(source[index] ?? "")) {
+          index += 1;
+        }
+        return index;
+      } else if (character === "\n" || character === "\r") {
+        return from + 1;
+      }
+    }
+    return from + 1;
+  }
+
+  function scanTemplate(from: number): number {
+    for (let index = from + 1; index < source.length; index += 1) {
+      if (source[index] === "\\") {
+        index += 1;
+      } else if (source[index] === "`") {
+        return index + 1;
+      } else if (source[index] === "$" && source[index + 1] === "{") {
+        index = scanCode(index + 2, true) - 1;
+      }
+    }
+    return source.length;
+  }
+
+  function scanCode(from: number, templateExpression: boolean): number {
+    let braceDepth = templateExpression ? 1 : 0;
+    for (let index = from; index < source.length; index += 1) {
+      const character = source[index];
+      const next = source[index + 1];
+      if (character === "'" || character === '"') {
+        index = skipQuoted(index, character) - 1;
+        continue;
+      }
+      if (character === "`") {
+        index = scanTemplate(index) - 1;
+        continue;
+      }
+      if (character === "/" && next === "/") {
+        const newline = source.indexOf("\n", index + 2);
+        index = newline < 0 ? source.length : newline;
+        continue;
+      }
+      if (character === "/" && next === "*") {
+        const end = source.indexOf("*/", index + 2);
+        index = end < 0 ? source.length : end + 1;
+        continue;
+      }
+      if (character === "/" && regexMayStartAt(index)) {
+        index = skipRegularExpression(index) - 1;
+        continue;
+      }
+      positions[index] = 1;
+      if (templateExpression && character === "{") {
+        braceDepth += 1;
+      } else if (templateExpression && character === "}") {
+        braceDepth -= 1;
+        if (braceDepth === 0) {
+          return index + 1;
+        }
+      }
+    }
+    return source.length;
+  }
+
+  scanCode(0, false);
+  return positions;
 }
 
 function dependencyStage(input: ExactPluginPackageInput): {
@@ -939,6 +1071,11 @@ const primitiveRules: readonly PrimitiveRule[] = [
     severity: "warning",
   },
   {
+    id: "global-object-discovery",
+    pattern: /\bFunction\s*\(\s*(["'])return this\1\s*\)\s*\(\s*\)/u,
+    severity: "warning",
+  },
+  {
     id: "dynamic-evaluation",
     pattern: /(?:^|[^.$\w])eval\s*\(|\bnew\s+Function\s*\(|\bFunction\s*\(\s*["'`]/u,
     severity: "blocked",
@@ -965,8 +1102,29 @@ function primitiveStage(input: ExactPluginPackageInput): {
     );
     return { stage: stage.finish("blocked"), primitives: [] };
   }
+  const codePositions = lexicalCodePositions(source);
   const primitives = primitiveRules
-    .filter((rule) => rule.pattern.test(source))
+    .filter((rule) => {
+      const flags = rule.pattern.flags.includes("g")
+        ? rule.pattern.flags
+        : `${rule.pattern.flags}g`;
+      const matches = source.matchAll(new RegExp(rule.pattern.source, flags));
+      return [...matches].some((match) => {
+        if (rule.id !== "path-traversal" && codePositions[match.index ?? 0] !== 1) {
+          return false;
+        }
+        if (rule.id !== "dynamic-evaluation") {
+          return true;
+        }
+        const functionOffset = match[0].indexOf("Function");
+        if (functionOffset < 0) {
+          return true;
+        }
+        return !/^Function\s*\(\s*(["'])return this\1\s*\)\s*\(\s*\)/u.test(
+          source.slice((match.index ?? 0) + functionOffset),
+        );
+      });
+    })
     .map((rule) => ({
       id: rule.id,
       severity: rule.severity,
@@ -979,7 +1137,9 @@ function primitiveStage(input: ExactPluginPackageInput): {
         primitive.severity === "blocked" ? "error" : "warning",
         primitive.severity === "blocked"
           ? "A banned or private primitive was observed; trusted activation is blocked."
-          : "A global mutation primitive was observed; runtime mutation checks remain required.",
+          : primitive.id === "global-object-discovery"
+            ? "A fixed global-object discovery expression was observed; arbitrary dynamic evaluation remains blocked."
+            : "A global mutation primitive was observed; runtime mutation checks remain required.",
         primitive.evidencePath,
       ),
     );
@@ -1227,7 +1387,16 @@ async function defaultRuntimeFactory(
     }),
   });
   return IsolatedPluginRuntime.open({
-    create: async () => new PolicyEnforcingPluginHost(new PluginHost(context.vaultPath), resolver),
+    create: async () =>
+      new PolicyEnforcingPluginHost(
+        new PluginHost(
+          context.vaultPath,
+          undefined,
+          undefined,
+          createRequire(path.join(__dirname, "package.json")),
+        ),
+        resolver,
+      ),
   });
 }
 
