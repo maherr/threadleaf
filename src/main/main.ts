@@ -4285,6 +4285,46 @@ function registerIpcHandlers(): void {
       );
     },
   );
+  handleMainRendererIpc(ipcChannels.queryPluginEditorSuggest, (event, editorContext: unknown) => {
+    assertMainRendererPluginIpcSender(
+      isMainRendererSender(event.sender),
+      "Plugin editor suggestion query",
+    );
+    return serializePluginCatalogOperation(
+      () => workspaceController.queryPluginEditorSuggest(parsePluginEditorContext(editorContext)),
+      "runtime-command-failed",
+    );
+  });
+  handleMainRendererIpc(
+    ipcChannels.selectPluginEditorSuggest,
+    (event, editorContext: unknown, sessionId: unknown, itemIndex: unknown, shiftKey: unknown) => {
+      assertMainRendererPluginIpcSender(
+        isMainRendererSender(event.sender),
+        "Plugin editor suggestion selection",
+      );
+      if (
+        typeof sessionId !== "string" ||
+        sessionId.length === 0 ||
+        sessionId.length > 128 ||
+        !Number.isSafeInteger(itemIndex) ||
+        (itemIndex as number) < 0 ||
+        (itemIndex as number) >= 20 ||
+        typeof shiftKey !== "boolean"
+      ) {
+        throw new Error("Plugin editor suggestion selection is invalid.");
+      }
+      return serializePluginCatalogOperation(
+        () =>
+          workspaceController.selectPluginEditorSuggest(
+            parsePluginEditorContext(editorContext),
+            sessionId,
+            itemIndex as number,
+            shiftKey,
+          ),
+        "runtime-command-failed",
+      );
+    },
+  );
   handleMainRendererIpc(ipcChannels.waitForPluginMutations, (event, optionsValue: unknown) => {
     assertMainRendererPluginIpcSender(
       isMainRendererSender(event.sender),

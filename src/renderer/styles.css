@@ -2635,6 +2635,55 @@ a.tag:focus-visible {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 44%, transparent);
 }
 
+.plugin-editor-suggest {
+  position: fixed;
+  z-index: 240;
+  display: grid;
+  width: min(320px, calc(100vw - 16px));
+  max-height: min(320px, 42vh);
+  overflow: auto;
+  padding: 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface-raised) 96%, transparent);
+  box-shadow: var(--shadow-large);
+  backdrop-filter: blur(12px);
+}
+
+.plugin-editor-suggest[hidden] {
+  display: none;
+}
+
+.plugin-editor-suggest-option {
+  min-height: 32px;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--ink-soft);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.plugin-editor-suggest-option:hover,
+.plugin-editor-suggest-option:focus-visible,
+.plugin-editor-suggest-option[data-active="true"] {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  color: var(--ink);
+  background: var(--accent-soft);
+  outline: 0;
+}
+
+.plugin-editor-suggest-instructions {
+  margin-top: 4px;
+  padding: 6px 8px 2px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-muted);
+  font: 600 10px / 1.35 var(--mono);
+}
+
 .note-editor .cm-scroller {
   overflow: auto;
   font-family: var(--mono);

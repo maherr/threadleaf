@@ -22,6 +22,9 @@ import {
   requirePayloadStringArray,
   requirePluginClipboardText,
   requirePluginEditorContext,
+  requirePluginEditorSuggestItemIndex,
+  requirePluginEditorSuggestSessionId,
+  requirePluginEditorSuggestShiftKey,
 } from "./plugin-runtime-protocol";
 
 describe("plugin renderer protocol", () => {
@@ -139,6 +142,53 @@ describe("plugin renderer protocol", () => {
         }),
       ),
     ).toThrow("exceeds its byte limit");
+  });
+
+  it("parses bounded two-phase plugin editor suggestion requests", () => {
+    const editorContext = {
+      path: "Welcome.md",
+      content: "@today",
+      revision: "b".repeat(64),
+      selection: { anchor: 6, head: 6 },
+    };
+    const query = parsePluginRendererRequest({
+      id: "request-suggest-query",
+      operation: "query-editor-suggest",
+      payload: { editorContext },
+    });
+    expect(requirePluginEditorContext(query)).toEqual(editorContext);
+
+    const selection = parsePluginRendererRequest({
+      id: "request-suggest-selection",
+      operation: "select-editor-suggest",
+      payload: {
+        editorContext,
+        itemIndex: 3,
+        sessionId: "threadleaf-plugin-suggest-1",
+        shiftKey: true,
+      },
+    });
+    expect(requirePluginEditorSuggestSessionId(selection)).toBe("threadleaf-plugin-suggest-1");
+    expect(requirePluginEditorSuggestItemIndex(selection)).toBe(3);
+    expect(requirePluginEditorSuggestShiftKey(selection)).toBe(true);
+    expect(() =>
+      requirePluginEditorSuggestItemIndex({
+        ...selection,
+        payload: { ...selection.payload, itemIndex: 20 },
+      }),
+    ).toThrow("item index from 0 through 19");
+    expect(() =>
+      requirePluginEditorSuggestSessionId({
+        ...selection,
+        payload: { ...selection.payload, sessionId: "x".repeat(129) },
+      }),
+    ).toThrow("sessionId");
+    expect(() =>
+      requirePluginEditorSuggestShiftKey({
+        ...selection,
+        payload: { ...selection.payload, shiftKey: "false" },
+      }),
+    ).toThrow("boolean shiftKey");
   });
 
   it("accepts bounded vault path inventories and rejects malformed entries", () => {

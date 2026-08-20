@@ -27,6 +27,9 @@ import {
   requirePluginClipboardText,
   requirePluginConstructionDispatch,
   requirePluginEditorContext,
+  requirePluginEditorSuggestItemIndex,
+  requirePluginEditorSuggestSessionId,
+  requirePluginEditorSuggestShiftKey,
 } from "../shared/plugin-runtime-protocol";
 import { type TrustedHostModuleTable, trustedHostModules } from "./trusted-host-modules";
 
@@ -71,6 +74,13 @@ interface PluginHostLike {
   renderMarkdownProjection(pluginId: string, sourcePath: string, content: string): Promise<unknown>;
   runCommand(commandId: string, editorContext?: unknown): Promise<unknown>;
   runPluginEditorPaste(editorContext: unknown, clipboardText: string): Promise<unknown>;
+  queryPluginEditorSuggest(editorContext: unknown): Promise<unknown>;
+  selectPluginEditorSuggest(
+    editorContext: unknown,
+    sessionId: string,
+    itemIndex: number,
+    shiftKey: boolean,
+  ): Promise<unknown>;
   unloadAllPlugins(): Promise<unknown>;
   unloadPlugin(pluginId?: string): Promise<unknown>;
   vault: { rootPath: string };
@@ -293,6 +303,15 @@ class TrustedPluginRendererService {
         return this.requireHost().runPluginEditorPaste(
           requirePluginEditorContext(request),
           requirePluginClipboardText(request),
+        );
+      case "query-editor-suggest":
+        return this.requireHost().queryPluginEditorSuggest(requirePluginEditorContext(request));
+      case "select-editor-suggest":
+        return this.requireHost().selectPluginEditorSuggest(
+          requirePluginEditorContext(request),
+          requirePluginEditorSuggestSessionId(request),
+          requirePluginEditorSuggestItemIndex(request),
+          requirePluginEditorSuggestShiftKey(request),
         );
       case "wait-for-mutations":
         return this.requireHost().waitForPluginMutations(

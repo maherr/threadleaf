@@ -269,6 +269,23 @@ export interface PluginEditorEventSnapshot {
   type: "paste";
 }
 
+export interface PluginEditorSuggestItem {
+  id: string;
+  label: string;
+}
+
+export interface PluginEditorSuggestInstruction {
+  command: string;
+  purpose: string;
+}
+
+export interface PluginEditorSuggestSnapshot {
+  id: string;
+  instructions: PluginEditorSuggestInstruction[];
+  items: PluginEditorSuggestItem[];
+  ownerId: string;
+}
+
 export type VaultSelectionSource = "bundled" | "direct" | "environment" | "picked" | "restored";
 
 export interface VaultStartupSnapshot {
@@ -298,6 +315,7 @@ export interface RuntimeSnapshot {
   integrations?: PluginIntegrationSnapshot;
   editorUpdate?: PluginEditorUpdate | null;
   editorEvent?: PluginEditorEventSnapshot | null;
+  editorSuggest?: PluginEditorSuggestSnapshot | null;
   markdownProjection?: PluginMarkdownProjectionSnapshot | null;
   pluginSurface?: PluginSurfaceSnapshot | null;
   resourcePolicy?: PluginResourcePolicySnapshot;
@@ -1876,6 +1894,13 @@ export interface ThreadleafBridge {
   runPluginEditorPaste(
     editorContext: PluginEditorContext,
     clipboardText: string,
+  ): Promise<RuntimeSnapshot>;
+  queryPluginEditorSuggest(editorContext: PluginEditorContext): Promise<RuntimeSnapshot>;
+  selectPluginEditorSuggest(
+    editorContext: PluginEditorContext,
+    sessionId: string,
+    itemIndex: number,
+    shiftKey: boolean,
   ): Promise<RuntimeSnapshot>;
   waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot>;
   reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;

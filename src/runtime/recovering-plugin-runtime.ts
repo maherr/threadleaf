@@ -247,6 +247,29 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
     });
   }
 
+  queryPluginEditorSuggest(editorContext: PluginEditorContext): Promise<RuntimeSnapshot> {
+    return this.runSnapshot({ operation: "query-editor-suggest" }, (runtime) => {
+      if (!runtime.queryPluginEditorSuggest) {
+        throw new Error("The active plugin runtime does not support editor suggestions.");
+      }
+      return runtime.queryPluginEditorSuggest(editorContext);
+    });
+  }
+
+  selectPluginEditorSuggest(
+    editorContext: PluginEditorContext,
+    sessionId: string,
+    itemIndex: number,
+    shiftKey: boolean,
+  ): Promise<RuntimeSnapshot> {
+    return this.runSnapshot({ operation: "select-editor-suggest" }, (runtime) => {
+      if (!runtime.selectPluginEditorSuggest) {
+        throw new Error("The active plugin runtime does not support editor suggestions.");
+      }
+      return runtime.selectPluginEditorSuggest(editorContext, sessionId, itemIndex, shiftKey);
+    });
+  }
+
   waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {
     return this.runSnapshot({ operation: "wait-for-mutations" }, (runtime) =>
       runtime.waitForPluginMutations(options),

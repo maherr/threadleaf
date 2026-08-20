@@ -130,6 +130,24 @@ export class TrustedWorkspacePluginRuntime implements PluginRuntimePort {
     return this.requestSnapshot("run-editor-paste", { editorContext, clipboardText });
   }
 
+  queryPluginEditorSuggest(editorContext: PluginEditorContext): Promise<RuntimeSnapshot> {
+    return this.requestSnapshot("query-editor-suggest", { editorContext });
+  }
+
+  selectPluginEditorSuggest(
+    editorContext: PluginEditorContext,
+    sessionId: string,
+    itemIndex: number,
+    shiftKey: boolean,
+  ): Promise<RuntimeSnapshot> {
+    return this.requestSnapshot("select-editor-suggest", {
+      editorContext,
+      sessionId,
+      itemIndex,
+      shiftKey,
+    });
+  }
+
   renderMarkdownProjection(
     pluginId: string,
     sourcePath: string,

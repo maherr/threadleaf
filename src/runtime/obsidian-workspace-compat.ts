@@ -1133,7 +1133,7 @@ interface CliRegistration extends OwnedRegistration {
 
 export class CompatibilityIntegrationRegistry {
   private readonly editorExtensions: EditorExtensionRegistration[] = [];
-  private readonly editorSuggests = new Set<unknown>();
+  private readonly editorSuggests = new Map<unknown, string>();
   private readonly extensions: ExtensionRegistration[] = [];
   private readonly markdownPostProcessors: MarkdownProcessorRegistration[] = [];
   private readonly ribbonItems = new Set<HTMLElement>();
@@ -1313,9 +1313,13 @@ export class CompatibilityIntegrationRegistry {
     );
   }
 
-  registerEditorSuggest(editorSuggest: unknown): () => void {
-    this.editorSuggests.add(editorSuggest);
+  registerEditorSuggest(ownerId: string, editorSuggest: unknown): () => void {
+    this.editorSuggests.set(editorSuggest, ownerId);
     return () => this.editorSuggests.delete(editorSuggest);
+  }
+
+  getEditorSuggests(): Array<{ ownerId: string; suggest: unknown }> {
+    return [...this.editorSuggests].map(([suggest, ownerId]) => ({ ownerId, suggest }));
   }
 
   setEditorExtensionChangeListener(

@@ -28,6 +28,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   table with contained native file links, both themes, and an explicit disabled-plugin fallback.
 - Added exact reviewed profiles and a production editor-paste workflow for both the official and
   acceptance-vault Paste URL into Selection 1.11.4 package identities.
+- Added a bounded two-phase native editor-suggestion bridge with keyboard and pointer navigation,
+  revision-bound selection, isolated-plugin ownership, and visible light and dark evidence for the
+  exact Natural Language Dates 0.6.2 `@to` workflow.
 
 ### Changed
 
@@ -104,6 +107,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Delivered registered compatibility `editor-paste` callbacks through revision-bound native editor
   context in isolated and trusted-workspace topologies, while preserving ordinary text paste when
   no plugin handles it or the compatibility call fails safely.
+- Kept plugin editor suggestion context alive across consecutive keystrokes and placed active-menu
+  navigation ahead of CodeMirror's ordinary Enter binding without changing Enter when no menu is
+  open.
 
 ## [0.1.0]
 

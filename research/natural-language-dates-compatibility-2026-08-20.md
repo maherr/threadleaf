@@ -4,9 +4,9 @@
 
 ## Decision gate
 
-Make one unchanged, installed Natural Language Dates workflow usable through Threadleaf's visible
-command palette while preserving plugin-owned views and keeping untested autosuggest and daily-note
-behavior outside the claim.
+Make the unchanged, installed Natural Language Dates command and signature `@today` editor-suggest
+workflows usable through Threadleaf's visible native surfaces while preserving plugin-owned views
+and keeping untested daily-note behavior outside the claim.
 
 ## Primary evidence
 
@@ -28,12 +28,13 @@ behavior outside the claim.
 | Exact package | Official GitHub release and installed bytes match | Depend on unchanged release | Reviewed authority profile and asset hashes |
 | Callback command routing | Public plugin source and Obsidian API types | Adapt native editor context routing when no plugin view is active | `src/runtime/plugin-host.test.ts` |
 | Visible parse command | Unchanged MIT plugin | Benchmark through Threadleaf's command palette | `pnpm test:natural-dates` |
-| Editor suggest | Registration is measurable; native suggestion UI is a separate process seam | Defer | Explicit evidence limitation |
+| Editor suggest | Public plugin source and Obsidian API types | Adapt a bounded revision-bound query/select bridge with native keyboard and pointer presentation | Host, isolated-runtime, protocol, light/dark Electron E2E |
 | Daily-note and protocol paths | Bundle probes private and cross-plugin state | Reject from this claim pending dedicated fixtures | Explicit evidence limitation |
 
 ## Rights and claim boundary
 
 Threadleaf uses the permissively licensed public plugin and independently authored fixtures. No
 proprietary application source, assets, or extracted implementation text enters the repository.
-The evidence proves one command workflow for one exact bundle on Linux Electron, not universal
-Natural Language Dates compatibility.
+The evidence proves the parse command plus visible `@to` query, navigation, and selection workflows
+for one exact bundle on Linux Electron. It does not establish universal Natural Language Dates or
+universal plugin compatibility.

@@ -65,7 +65,7 @@ import {
   createElectronCompatibilityModule,
   ElectronCompatibilityActivity,
 } from "./obsidian-electron-compat";
-import { FileView, MarkdownView, WorkspaceLeaf } from "./obsidian-ui-compat";
+import { EditorSuggest, FileView, MarkdownView, WorkspaceLeaf } from "./obsidian-ui-compat";
 import type { CompatibilitySettingTab } from "./obsidian-workspace-compat";
 import type { PluginRuntimePort } from "./plugin-runtime-port";
 
@@ -84,6 +84,14 @@ interface LoadedPluginRecord {
   directoryPath: string;
   instance: Plugin | null;
   summary: PluginSummary;
+}
+
+interface ActiveEditorSuggestSession {
+  context: PluginEditorContext;
+  id: string;
+  ownerId: string;
+  provider: EditorSuggest<unknown>;
+  values: unknown[];
 }
 
 /**
@@ -258,6 +266,9 @@ export class PluginHost implements PluginRuntimePort {
   private activeSettingTabPluginId: string | null = null;
   private editorUpdate: PluginEditorUpdate | null = null;
   private editorEvent: PluginEditorEventSnapshot | null = null;
+  private editorSuggest: RuntimeSnapshot["editorSuggest"] = null;
+  private activeEditorSuggestSession: ActiveEditorSuggestSession | null = null;
+  private editorSuggestSequence = 0;
   private editorUpdateSequence = 0;
   private lastPluginId: string | null = null;
   private nativeEditorContext: PluginEditorContext | null = null;
@@ -470,6 +481,7 @@ export class PluginHost implements PluginRuntimePort {
     editorContext?: PluginEditorContext,
   ): Promise<RuntimeSnapshot> {
     this.editorEvent = null;
+    this.clearEditorSuggestSession();
     const command = this.app.commands.list().find(({ id }) => id === commandId);
     const ownerId = this.app.commands.ownerIdFor(commandId);
     try {
@@ -531,6 +543,7 @@ export class PluginHost implements PluginRuntimePort {
     clipboardText: string,
   ): Promise<RuntimeSnapshot> {
     try {
+      this.clearEditorSuggestSession();
       await this.openNativeEditorContext(editorContext);
       const view = this.nativeMarkdownView;
       if (!view || typeof document === "undefined") {
@@ -569,6 +582,137 @@ export class PluginHost implements PluginRuntimePort {
     } catch (error) {
       throw pluginDiagnosticError("runtime-command-failed", {}, error);
     }
+  }
+
+  async queryPluginEditorSuggest(editorContext: PluginEditorContext): Promise<RuntimeSnapshot> {
+    const previousSession = this.activeEditorSuggestSession;
+    this.activeEditorSuggestSession = null;
+    this.editorSuggest = null;
+    if (
+      previousSession &&
+      (previousSession.context.path !== editorContext.path ||
+        previousSession.context.revision !== editorContext.revision)
+    ) {
+      previousSession.provider.close();
+    }
+    await this.openNativeEditorContext(editorContext);
+    const view = this.nativeMarkdownView;
+    const file = view?.file;
+    if (!view || !file || typeof document === "undefined") {
+      throw new Error("Plugin editor suggestions require an active native Markdown editor.");
+    }
+    const cursor = view.editor.getCursor("head");
+    for (const registration of this.app.compatibility.getEditorSuggests()) {
+      if (!(registration.suggest instanceof EditorSuggest)) continue;
+      const provider = registration.suggest;
+      const trigger = await Promise.resolve(provider.onTrigger(cursor, view.editor, file));
+      if (!trigger || typeof trigger !== "object") {
+        provider.close();
+        continue;
+      }
+      const candidate = trigger as Record<string, unknown>;
+      if (
+        !candidate.start ||
+        !candidate.end ||
+        typeof candidate.query !== "string" ||
+        new TextEncoder().encode(candidate.query).byteLength > 1_024
+      ) {
+        provider.close();
+        continue;
+      }
+      const context = {
+        editor: view.editor,
+        file,
+        query: candidate.query,
+        start: candidate.start,
+        end: candidate.end,
+      };
+      provider.context = context;
+      const values = await Promise.resolve(provider.getSuggestions(context));
+      if (!Array.isArray(values) || values.length === 0) {
+        provider.close();
+        continue;
+      }
+      const limitedValues = values.slice(0, Math.max(0, Math.min(20, provider.limit)));
+      if (limitedValues.length === 0) {
+        provider.close();
+        continue;
+      }
+      const sessionId = `threadleaf-plugin-suggest-${++this.editorSuggestSequence}`;
+      const items = limitedValues.map((value, index) => {
+        const element = document.createElement("div");
+        provider.renderSuggestion(value, element);
+        const label = (element.textContent ?? "")
+          .replace(/[\r\n\t]+/gu, " ")
+          .replace(/\s+/gu, " ")
+          .trim()
+          .slice(0, 200);
+        return { id: `${sessionId}:${index}`, label: label || `Suggestion ${index + 1}` };
+      });
+      this.activeEditorSuggestSession = {
+        context: structuredClone(editorContext),
+        id: sessionId,
+        ownerId: registration.ownerId,
+        provider,
+        values: limitedValues,
+      };
+      if (previousSession && previousSession.provider !== provider) {
+        previousSession.provider.close();
+      }
+      this.editorSuggest = {
+        id: sessionId,
+        instructions: provider
+          .getInstructions()
+          .slice(0, 8)
+          .map((instruction) => ({
+            command: instruction.command.slice(0, 80),
+            purpose: instruction.purpose.slice(0, 160),
+          })),
+        items,
+        ownerId: registration.ownerId,
+      };
+      provider.open();
+      return this.getSnapshot();
+    }
+    this.editorSuggest = null;
+    return this.getSnapshot();
+  }
+
+  async selectPluginEditorSuggest(
+    editorContext: PluginEditorContext,
+    sessionId: string,
+    itemIndex: number,
+    shiftKey: boolean,
+  ): Promise<RuntimeSnapshot> {
+    const session = this.activeEditorSuggestSession;
+    if (
+      !session ||
+      session.id !== sessionId ||
+      itemIndex < 0 ||
+      itemIndex >= session.values.length ||
+      authorityJsonSha256(session.context) !== authorityJsonSha256(editorContext)
+    ) {
+      throw new Error("Plugin editor suggestion selection is stale or invalid.");
+    }
+    const KeyboardEventConstructor = document.defaultView?.KeyboardEvent;
+    if (!KeyboardEventConstructor) {
+      throw new Error("Plugin editor suggestion selection requires a renderer KeyboardEvent.");
+    }
+    try {
+      const event = new KeyboardEventConstructor("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "Enter",
+        shiftKey,
+      });
+      await Promise.resolve(session.provider.selectSuggestion(session.values[itemIndex], event));
+      await this.vault.waitForSettledMutations(250, 10_000);
+      this.captureEditorUpdate();
+      this.record("plugin", `Selected an editor suggestion from ${session.ownerId}.`);
+    } finally {
+      this.clearEditorSuggestSession();
+    }
+    return this.getSnapshot();
   }
 
   async waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {
@@ -718,6 +862,12 @@ export class PluginHost implements PluginRuntimePort {
       revision: context.revision,
       selection: view.editor.getSelectionOffsets(),
     };
+  }
+
+  private clearEditorSuggestSession(): void {
+    this.activeEditorSuggestSession?.provider.close();
+    this.activeEditorSuggestSession = null;
+    this.editorSuggest = null;
   }
 
   async markLayoutReady(): Promise<RuntimeSnapshot> {
@@ -883,6 +1033,9 @@ export class PluginHost implements PluginRuntimePort {
     if (!record || record.summary.state === "unloaded") {
       return this.getSnapshot();
     }
+    if (this.activeEditorSuggestSession?.ownerId === targetId) {
+      this.clearEditorSuggestSession();
+    }
     const modalCloseFailure = this.app.closePluginModals(record.summary.id);
     let unloadError: string | null = null;
     try {
@@ -1003,6 +1156,7 @@ export class PluginHost implements PluginRuntimePort {
       },
       editorUpdate: this.editorUpdate ? structuredClone(this.editorUpdate) : null,
       editorEvent: this.editorEvent ? { ...this.editorEvent } : null,
+      editorSuggest: this.editorSuggest ? structuredClone(this.editorSuggest) : null,
       pluginSurface:
         this.activeSettingTab && this.activeSettingTabPluginId
           ? {

@@ -4,7 +4,7 @@ This document is generated from the versioned receipt-aware source [`compatibili
 Discovery in the external community package directory is separate from Threadleaf compatibility evidence.
 A row applies only to the exact plugin and Threadleaf versions shown.
 
-Registry schema: 2. Threadleaf version: 0.1.0. Generation: 8b29ad895b41335af003203b6ec21706acea671e7e890d371582da85da0ac5ea.
+Registry schema: 2. Threadleaf version: 0.1.0. Generation: 904a30a008c29797f228daffbc4240173d3d71e135a59d494751983e5ec93ba1.
 
 | Plugin | Plugin version | Threadleaf | Level | Evidence | Last tested |
 | --- | --- | --- | ---: | --- | --- |
@@ -20,7 +20,7 @@ Registry schema: 2. Threadleaf version: 0.1.0. Generation: 8b29ad895b41335af0032
 
 ## Natural Language Dates 0.6.2
 
-The unchanged Natural Language Dates 0.6.2 release, byte-identical to the package installed in the acceptance vault, passed exact-package authority review and a direct Linux Electron command-palette workflow. Selected natural-language text was replaced by the expected date link while eight commands and one editor suggest remained registered.
+The unchanged Natural Language Dates 0.6.2 release, byte-identical to the package installed in the acceptance vault, passed exact-package authority review and direct Linux Electron command-palette and editor-autosuggest workflows. Selected natural-language text and visible @to suggestions both produced the expected date link while eight commands and one editor suggest remained registered.
 
 Bundle SHA-256: `387d36a43412f761c0c69320655a7ec09aa9189ae2267550224cacc861e63fd6`. License: MIT.
 
@@ -31,10 +31,13 @@ Required static authority review: `vault-read`, `workspace-ui`.
 - **Parse selected natural-language text into a date link from the command palette** (passed)
   - `pnpm test:natural-dates` via [scripts/check-url-selection-paste.mjs](../../scripts/check-url-selection-paste.mjs)
   - `pnpm exec vitest run src/runtime/plugin-host.test.ts` via [src/runtime/plugin-host.test.ts](../../src/runtime/plugin-host.test.ts)
+- **Type @to, navigate the visible date suggestions, and insert Tomorrow** (passed)
+  - `pnpm test:natural-dates` via [scripts/check-url-selection-paste.mjs](../../scripts/check-url-selection-paste.mjs)
+  - `pnpm exec vitest run src/runtime/plugin-host.test.ts src/runtime/isolated-plugin-runtime.test.ts` via [src/runtime/plugin-host.test.ts](../../src/runtime/plugin-host.test.ts)
 
 ### Platform limits
 
-- **linux-x64-electron**: verified. Verified in Linux X11 and Xvfb Electron with the exact upstream and acceptance-vault bundle, a disposable vault, and private state. The runtime is trusted same-user desktop code, not a sandbox.
+- **linux-x64-electron**: verified. Verified in Linux X11 and Xvfb Electron with the exact upstream and acceptance-vault bundle, a disposable vault, private state, and light and dark suggestion surfaces. The runtime is trusted same-user desktop code, not a sandbox.
 - **macos-electron**: unverified. This exact package workflow is not verified on macOS.
 - **windows-x64-electron**: unverified. This exact package workflow is not verified on Windows.
 
@@ -44,8 +47,7 @@ Required static authority review: `vault-read`, `workspace-ui`.
 
 ### Limitations
 
-- The editor suggest registration is observed, but native autosuggest display and selection are not verified by this workflow.
-- Date Picker, date and time insertion commands, daily-note creation, Obsidian URI handling, plugin settings, and cross-plugin daily-note settings are outside this claim.
+- Date Picker, the remaining date and time insertion commands, daily-note creation, Obsidian URI handling, non-default plugin settings, and cross-plugin daily-note settings are outside this claim.
 - This is supporting behavior evidence, not Level 4 evidence.
 - No controller-finalized signed production receipt exists for this tuple.
 

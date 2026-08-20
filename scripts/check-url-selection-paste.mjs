@@ -9,6 +9,7 @@ const appRoot = process.cwd();
 const electronPath = path.join(appRoot, "node_modules", ".bin", "electron");
 const autoLinkTitleMode = process.env.THREADLEAF_AUTO_LINK_TITLE === "1";
 const naturalDatesMode = process.env.THREADLEAF_NATURAL_DATES === "1";
+const e2eColorScheme = process.env.THREADLEAF_E2E_COLOR_SCHEME === "light" ? "light" : "dark";
 const pluginId = naturalDatesMode
   ? "nldates-obsidian"
   : autoLinkTitleMode
@@ -288,6 +289,18 @@ async function editorText() {
   ].map((line) => line.textContent ?? "").join("\\n")`);
 }
 
+async function dispatchEditorKey(key, code, windowsVirtualKeyCode, modifiers = 0) {
+  for (const type of ["rawKeyDown", "keyUp"]) {
+    await cdp.send("Input.dispatchKeyEvent", {
+      type,
+      key,
+      code,
+      modifiers,
+      windowsVirtualKeyCode,
+    });
+  }
+}
+
 async function captureScreenshot(name) {
   if (!screenshotDirectory) return;
   await fs.mkdir(screenshotDirectory, { recursive: true });
@@ -320,7 +333,7 @@ try {
         version: 4,
         keyBindings: {},
         appearanceByVault: {
-          [vaultId]: { colorScheme: "dark", themeId: null, enabledSnippetIds: [] },
+          [vaultId]: { colorScheme: e2eColorScheme, themeId: null, enabledSnippetIds: [] },
         },
         pluginsByVault: {
           [vaultId]: {
@@ -518,6 +531,82 @@ try {
       `Natural Language Dates exposed an incomplete registration or runtime failure: ${JSON.stringify(naturalDatesState)}`,
     );
     await captureScreenshot("natural-dates-command.png");
+
+    await focusAndSelectAllEditor();
+    for (const character of ["@", "t", "o"]) {
+      await cdp.send("Input.insertText", { text: character });
+      await delay(30);
+    }
+    let autosuggest;
+    try {
+      autosuggest = await waitFor(
+        () =>
+          evaluate(`(() => {
+          const popover = document.querySelector(".plugin-editor-suggest");
+          if (!(popover instanceof HTMLElement) || popover.hidden) return null;
+          return {
+            labels: [...popover.querySelectorAll(".plugin-editor-suggest-option")].map(
+              (option) => option.textContent ?? ""
+            ),
+            instructions: popover.querySelector(".plugin-editor-suggest-instructions")?.textContent ?? "",
+            selected: popover.querySelector('[aria-selected="true"]')?.textContent ?? "",
+          };
+        })()`),
+        "Natural Language Dates did not expose its visible @to editor suggestions",
+      );
+    } catch (error) {
+      const diagnostic = await evaluate(`window.threadleaf.getSnapshot().then((snapshot) => ({
+        busy: [...document.querySelectorAll("button")].some((button) => button.disabled),
+        editorSuggest: snapshot.editorSuggest,
+        editorSuggests: snapshot.integrations?.editorSuggests ?? 0,
+        errors: snapshot.events.filter((event) => event.kind === "error").slice(-10),
+        focused: document.activeElement?.className ?? "",
+        popover: document.querySelector(".plugin-editor-suggest")?.outerHTML ?? "",
+        toast: document.querySelector("#toast")?.textContent ?? ""
+      }))`);
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)}: editor=${JSON.stringify(await editorText())} state=${JSON.stringify(diagnostic)}`,
+      );
+    }
+    assert(
+      JSON.stringify(autosuggest.labels) === JSON.stringify(["Today", "Tomorrow"]) &&
+        autosuggest.selected === "Today",
+      `Natural Language Dates exposed unexpected editor suggestions: ${JSON.stringify(autosuggest)}`,
+    );
+    await captureScreenshot("natural-dates-autosuggest.png");
+    await dispatchEditorKey("ArrowDown", "ArrowDown", 40);
+    await dispatchEditorKey("Enter", "Enter", 13);
+    try {
+      await waitFor(
+        async () => (await editorText()) === expected,
+        "Natural Language Dates did not select Tomorrow through the visible editor suggestion",
+      );
+    } catch (error) {
+      const diagnostic = await evaluate(`window.threadleaf.getSnapshot().then((snapshot) => ({
+        editorSuggest: snapshot.editorSuggest,
+        editorUpdate: snapshot.editorUpdate,
+        errors: snapshot.events.filter((event) => event.kind === "error").slice(-10),
+        popover: document.querySelector(".plugin-editor-suggest")?.outerHTML ?? "",
+        toast: document.querySelector("#toast")?.textContent ?? ""
+      }))`);
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)}: editor=${JSON.stringify(await editorText())} state=${JSON.stringify(diagnostic)}`,
+      );
+    }
+    const autosuggestResult = await evaluate(`window.threadleaf.getSnapshot().then((snapshot) => ({
+      editorSuggest: snapshot.editorSuggest,
+      errors: snapshot.events.filter((event) => event.kind === "error").slice(-5),
+      popoverHidden: document.querySelector(".plugin-editor-suggest")?.hidden ?? null,
+      toast: document.querySelector("#toast")?.textContent ?? ""
+    }))`);
+    assert(
+      autosuggestResult.editorSuggest === null &&
+        autosuggestResult.errors.length === 0 &&
+        autosuggestResult.popoverHidden === true &&
+        !autosuggestResult.toast.includes("failed"),
+      `Natural Language Dates left an incomplete suggestion session: ${JSON.stringify(autosuggestResult)}`,
+    );
+    await captureScreenshot("natural-dates-autosuggest-selected.png");
     console.log(
       JSON.stringify({
         verified: true,
@@ -525,8 +614,14 @@ try {
         version: pluginVersion,
         bundleSha256,
         source: sourcePluginPath ? "operator-package" : "official-release",
+        colorScheme: e2eColorScheme,
         workflows: {
           naturalLanguageDateCommand: expected,
+          naturalLanguageDateAutosuggest: {
+            input: "@to",
+            labels: autosuggest.labels,
+            selected: expected,
+          },
           commands: naturalDatesState.commands.length,
           editorSuggests: naturalDatesState.editorSuggests,
         },
@@ -607,6 +702,7 @@ try {
         version: pluginVersion,
         bundleSha256,
         source: sourcePluginPath ? "operator-package" : "official-release",
+        colorScheme: e2eColorScheme,
         workflows: {
           selectedUrlPaste: autoLinkTitleMode
             ? `[Threadleaf Compatibility Page](${titleUrl})`

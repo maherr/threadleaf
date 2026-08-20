@@ -1531,6 +1531,132 @@ module.exports = class PasteFixture extends Plugin {
     }
   });
 
+  it("queries and selects revision-bound native editor suggestions without trusting stale sessions", async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-editor-suggest-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    const dom = new JSDOM("<!doctype html><body></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    const previousWindow = globalThis.window;
+    const previousDocument = globalThis.document;
+    try {
+      installObsidianDomCompatibility(dom.window);
+      Object.assign(globalThis, {
+        window: dom.window,
+        document: dom.window.document,
+      });
+      await fs.mkdir(vaultPath, { recursive: true });
+      await fs.writeFile(path.join(vaultPath, "Welcome.md"), "alpha @to", "utf8");
+      const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "suggest-fixture");
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({ id: "suggest-fixture", name: "Suggest fixture", version: "0.1.0" }),
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        `const { EditorSuggest, Plugin } = require("obsidian");
+class DateSuggest extends EditorSuggest {
+  constructor(app) {
+    super(app);
+    this.setInstructions([{ command: "Enter", purpose: "Insert date" }]);
+  }
+  onTrigger(cursor, editor) {
+    const start = this.context?.start || { line: cursor.line, ch: cursor.ch - 1 };
+    if (!editor.getRange(start, cursor).startsWith("@")) return null;
+    return {
+      start,
+      end: cursor,
+      query: editor.getRange(start, cursor).slice(1),
+    };
+  }
+  getSuggestions(context) {
+    return [
+      { label: "Today", replacement: "[[2026-08-20]]" },
+      { label: "Tomorrow", replacement: "[[2026-08-21]]" },
+    ].filter((item) => item.label.toLowerCase().startsWith(context.query.toLowerCase()));
+  }
+  renderSuggestion(value, element) {
+    const strong = element.createEl("strong");
+    strong.setText(value.label);
+  }
+  selectSuggestion(value, event) {
+    const suffix = event.shiftKey ? "|" + value.label.toLowerCase() : "";
+    this.context.editor.replaceRange(
+      value.replacement.slice(0, -2) + suffix + "]]",
+      this.context.start,
+      this.context.end,
+    );
+  }
+}
+module.exports = class SuggestFixture extends Plugin {
+  async onload() {
+    this.registerEditorSuggest(new DateSuggest(this.app));
+  }
+};
+`,
+        "utf8",
+      );
+
+      const host = new PluginHost(vaultPath);
+      await loadPlugin(host, pluginPath);
+      const context = {
+        path: "Welcome.md",
+        content: "alpha @to",
+        revision: "a".repeat(64),
+        selection: { anchor: 9, head: 9 },
+      };
+      await host.queryPluginEditorSuggest({
+        ...context,
+        content: "alpha @",
+        selection: { anchor: 7, head: 7 },
+      });
+      await host.queryPluginEditorSuggest({
+        ...context,
+        content: "alpha @t",
+        selection: { anchor: 8, head: 8 },
+      });
+      const queried = await host.queryPluginEditorSuggest(context);
+      expect(queried.editorSuggest).toMatchObject({
+        ownerId: "suggest-fixture",
+        instructions: [{ command: "Enter", purpose: "Insert date" }],
+        items: [{ label: "Today" }, { label: "Tomorrow" }],
+      });
+      const sessionId = queried.editorSuggest?.id;
+      if (!sessionId) throw new Error("The editor suggestion fixture did not open a session.");
+
+      await expect(
+        host.selectPluginEditorSuggest(
+          { ...context, selection: { anchor: 8, head: 8 } },
+          sessionId,
+          1,
+          false,
+        ),
+      ).rejects.toThrow("stale or invalid");
+
+      const refreshed = await host.queryPluginEditorSuggest(context);
+      const freshSessionId = refreshed.editorSuggest?.id;
+      if (!freshSessionId) throw new Error("The editor suggestion fixture did not reopen.");
+      const selected = await host.selectPluginEditorSuggest(context, freshSessionId, 1, true);
+      expect(selected.editorSuggest).toBeNull();
+      expect(selected.editorUpdate).toMatchObject({
+        baseContent: "alpha @to",
+        content: "alpha [[2026-08-21|tomorrow]]",
+        revision: context.revision,
+        selection: { anchor: 29, head: 29 },
+      });
+      await host.close();
+    } finally {
+      if (previousWindow === undefined) Reflect.deleteProperty(globalThis, "window");
+      else globalThis.window = previousWindow;
+      if (previousDocument === undefined) Reflect.deleteProperty(globalThis, "document");
+      else globalThis.document = previousDocument;
+      dom.window.close();
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   it("rejects plugin directories outside the active vault", async () => {
     const host = new PluginHost(fixtureVault);
     const request = await testConstructionRequest(fixturePlugin);

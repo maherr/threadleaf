@@ -15,7 +15,7 @@
       "threadleafVersion": "0.1.0",
       "lastTested": "2026-08-20",
       "compatibilityLevel": 3,
-      "summary": "The unchanged Natural Language Dates 0.6.2 release, byte-identical to the package installed in the acceptance vault, passed exact-package authority review and a direct Linux Electron command-palette workflow. Selected natural-language text was replaced by the expected date link while eight commands and one editor suggest remained registered.",
+      "summary": "The unchanged Natural Language Dates 0.6.2 release, byte-identical to the package installed in the acceptance vault, passed exact-package authority review and direct Linux Electron command-palette and editor-autosuggest workflows. Selected natural-language text and visible @to suggestions both produced the expected date link while eight commands and one editor suggest remained registered.",
       "evidenceMode": "direct",
       "requiredCapabilities": [
         "vault-read",
@@ -26,7 +26,7 @@
           "id": "linux-x64-electron",
           "status": "verified",
           "limits": [
-            "Verified in Linux X11 and Xvfb Electron with the exact upstream and acceptance-vault bundle, a disposable vault, and private state.",
+            "Verified in Linux X11 and Xvfb Electron with the exact upstream and acceptance-vault bundle, a disposable vault, private state, and light and dark suggestion surfaces.",
             "The runtime is trusted same-user desktop code, not a sandbox."
           ]
         },
@@ -60,12 +60,26 @@
               "command": "pnpm exec vitest run src/runtime/plugin-host.test.ts"
             }
           ]
+        },
+        {
+          "id": "natural-dates.editor-autosuggest.v1",
+          "name": "Type @to, navigate the visible date suggestions, and insert Tomorrow",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "scripts/check-url-selection-paste.mjs",
+              "command": "pnpm test:natural-dates"
+            },
+            {
+              "path": "src/runtime/plugin-host.test.ts",
+              "command": "pnpm exec vitest run src/runtime/plugin-host.test.ts src/runtime/isolated-plugin-runtime.test.ts"
+            }
+          ]
         }
       ],
       "failures": [],
       "limitations": [
-        "The editor suggest registration is observed, but native autosuggest display and selection are not verified by this workflow.",
-        "Date Picker, date and time insertion commands, daily-note creation, Obsidian URI handling, plugin settings, and cross-plugin daily-note settings are outside this claim.",
+        "Date Picker, the remaining date and time insertion commands, daily-note creation, Obsidian URI handling, non-default plugin settings, and cross-plugin daily-note settings are outside this claim.",
         "This is supporting behavior evidence, not Level 4 evidence.",
         "No controller-finalized signed production receipt exists for this tuple."
       ]
@@ -667,5 +681,5 @@
       ]
     }
   ],
-  "generationId": "8b29ad895b41335af003203b6ec21706acea671e7e890d371582da85da0ac5ea"
+  "generationId": "904a30a008c29797f228daffbc4240173d3d71e135a59d494751983e5ec93ba1"
 }

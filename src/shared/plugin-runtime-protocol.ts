@@ -356,6 +356,8 @@ export const pluginRendererOperations = [
   "render-markdown",
   "run-command",
   "run-editor-paste",
+  "query-editor-suggest",
+  "select-editor-suggest",
   "seed-vault-markdown-paths",
   "unload-all",
   "unload-plugin",
@@ -505,6 +507,26 @@ export function requirePluginClipboardText(request: PluginRendererRequest): stri
   const value = requirePayloadContent(request, "clipboardText");
   if (new TextEncoder().encode(value).byteLength > maximumPluginClipboardTextBytes) {
     throw new Error("Plugin editor paste clipboard text exceeds its byte limit.");
+  }
+  return value;
+}
+
+export function requirePluginEditorSuggestSessionId(request: PluginRendererRequest): string {
+  return boundedString(request.payload?.sessionId, "sessionId", 128, false);
+}
+
+export function requirePluginEditorSuggestItemIndex(request: PluginRendererRequest): number {
+  const value = request.payload?.itemIndex;
+  if (!Number.isSafeInteger(value) || (value as number) < 0 || (value as number) >= 20) {
+    throw new Error("Plugin editor suggestion selection requires an item index from 0 through 19.");
+  }
+  return value as number;
+}
+
+export function requirePluginEditorSuggestShiftKey(request: PluginRendererRequest): boolean {
+  const value = request.payload?.shiftKey;
+  if (typeof value !== "boolean") {
+    throw new Error("Plugin editor suggestion selection requires a boolean shiftKey value.");
   }
   return value;
 }

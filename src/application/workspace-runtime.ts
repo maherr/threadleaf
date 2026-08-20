@@ -3469,6 +3469,32 @@ export class WorkspaceRuntime {
     );
   }
 
+  async queryPluginEditorSuggest(editorContext: PluginEditorContext): Promise<RuntimeSnapshot> {
+    if (!this.pluginHost.queryPluginEditorSuggest) {
+      throw new Error("The active plugin runtime does not support editor suggestions.");
+    }
+    return this.publishSnapshot(await this.pluginHost.queryPluginEditorSuggest(editorContext));
+  }
+
+  async selectPluginEditorSuggest(
+    editorContext: PluginEditorContext,
+    sessionId: string,
+    itemIndex: number,
+    shiftKey: boolean,
+  ): Promise<RuntimeSnapshot> {
+    if (!this.pluginHost.selectPluginEditorSuggest) {
+      throw new Error("The active plugin runtime does not support editor suggestions.");
+    }
+    return this.publishSnapshot(
+      await this.pluginHost.selectPluginEditorSuggest(
+        editorContext,
+        sessionId,
+        itemIndex,
+        shiftKey,
+      ),
+    );
+  }
+
   async waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {
     return this.publishSnapshot(await this.pluginHost.waitForPluginMutations(options));
   }

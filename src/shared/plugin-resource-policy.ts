@@ -53,6 +53,8 @@ export const defaultPluginResourcePolicy: PluginResourcePolicy = {
     "render-markdown": 15_000,
     "run-command": 30_000,
     "run-editor-paste": 30_000,
+    "query-editor-suggest": 5_000,
+    "select-editor-suggest": 10_000,
     "seed-vault-markdown-paths": 30_000,
     "unload-all": 10_000,
     "unload-plugin": 10_000,

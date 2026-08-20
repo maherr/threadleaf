@@ -327,6 +327,13 @@ export interface WorkspaceRuntimePort {
     editorContext: PluginEditorContext,
     clipboardText: string,
   ): Promise<RuntimeSnapshot>;
+  queryPluginEditorSuggest?(editorContext: PluginEditorContext): Promise<RuntimeSnapshot>;
+  selectPluginEditorSuggest?(
+    editorContext: PluginEditorContext,
+    sessionId: string,
+    itemIndex: number,
+    shiftKey: boolean,
+  ): Promise<RuntimeSnapshot>;
   waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot>;
   markPluginLayoutReady(): Promise<RuntimeSnapshot>;
   openPluginSettings(pluginId: string): Promise<RuntimeSnapshot>;
@@ -1463,6 +1470,27 @@ export class WorkspaceController {
       throw new Error("The active workspace does not support plugin editor paste delivery.");
     }
     return runtime.runPluginEditorPaste(editorContext, clipboardText);
+  }
+
+  queryPluginEditorSuggest(editorContext: PluginEditorContext): Promise<RuntimeSnapshot> {
+    const runtime = this.activeRuntime("query plugin editor suggestions");
+    if (!runtime.queryPluginEditorSuggest) {
+      throw new Error("The active workspace does not support plugin editor suggestions.");
+    }
+    return runtime.queryPluginEditorSuggest(editorContext);
+  }
+
+  selectPluginEditorSuggest(
+    editorContext: PluginEditorContext,
+    sessionId: string,
+    itemIndex: number,
+    shiftKey: boolean,
+  ): Promise<RuntimeSnapshot> {
+    const runtime = this.activeRuntime("select a plugin editor suggestion");
+    if (!runtime.selectPluginEditorSuggest) {
+      throw new Error("The active workspace does not support plugin editor suggestions.");
+    }
+    return runtime.selectPluginEditorSuggest(editorContext, sessionId, itemIndex, shiftKey);
   }
 
   waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {

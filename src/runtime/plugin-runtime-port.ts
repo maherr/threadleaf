@@ -63,6 +63,13 @@ export interface PluginRuntimePort {
     editorContext: PluginEditorContext,
     clipboardText: string,
   ): Promise<RuntimeSnapshot>;
+  queryPluginEditorSuggest?(editorContext: PluginEditorContext): Promise<RuntimeSnapshot>;
+  selectPluginEditorSuggest?(
+    editorContext: PluginEditorContext,
+    sessionId: string,
+    itemIndex: number,
+    shiftKey: boolean,
+  ): Promise<RuntimeSnapshot>;
   waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot>;
   unloadAllPlugins(): Promise<RuntimeSnapshot>;
   unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;

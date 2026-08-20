@@ -69,6 +69,7 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
   private nextGeneration = 0;
   private operationTail: Promise<void> = Promise.resolve();
   private readonly seenEvents = new Set<string>();
+  private editorSuggestOwner: string | null = null;
   private readonly slots = new Map<string, PluginRuntimeSlot<T>>();
   private closed = false;
   private closePromise: Promise<void> | null = null;
@@ -260,6 +261,57 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
             editorUpdate: null,
           };
       return this.mergeSnapshot(this.lastPluginId, mergedOperation);
+    });
+  }
+
+  queryPluginEditorSuggest(editorContext: PluginEditorContext): Promise<RuntimeSnapshot> {
+    return this.enqueue(async () => {
+      this.editorSuggestOwner = null;
+      for (const [pluginId, slot] of this.slots) {
+        if ((slot.snapshot.integrations?.editorSuggests ?? 0) === 0) continue;
+        if (!slot.runtime.queryPluginEditorSuggest) {
+          throw new Error(`Plugin ${pluginId} cannot provide editor suggestions.`);
+        }
+        const snapshot = await slot.runtime.queryPluginEditorSuggest(editorContext);
+        this.rememberSlotSnapshot(pluginId, snapshot);
+        if (snapshot.editorSuggest && snapshot.editorSuggest.items.length > 0) {
+          this.editorSuggestOwner = pluginId;
+          this.lastPluginId = pluginId;
+          return this.mergeSnapshot(pluginId, snapshot);
+        }
+      }
+      return this.mergeSnapshot(this.lastPluginId, {
+        ...this.baseSnapshot,
+        editorSuggest: null,
+      });
+    });
+  }
+
+  selectPluginEditorSuggest(
+    editorContext: PluginEditorContext,
+    sessionId: string,
+    itemIndex: number,
+    shiftKey: boolean,
+  ): Promise<RuntimeSnapshot> {
+    return this.enqueue(async () => {
+      const ownerId = this.editorSuggestOwner;
+      if (!ownerId) throw new Error("No isolated plugin owns the active editor suggestion.");
+      const slot = this.requireSlot(ownerId);
+      if (!slot.runtime.selectPluginEditorSuggest) {
+        throw new Error(`Plugin ${ownerId} cannot select editor suggestions.`);
+      }
+      try {
+        const snapshot = await slot.runtime.selectPluginEditorSuggest(
+          editorContext,
+          sessionId,
+          itemIndex,
+          shiftKey,
+        );
+        this.rememberSlotSnapshot(ownerId, snapshot);
+        return this.mergeSnapshot(ownerId, snapshot);
+      } finally {
+        this.editorSuggestOwner = null;
+      }
     });
   }
 
@@ -618,6 +670,7 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
       ...(integrations ? { integrations } : {}),
       editorUpdate: operationSnapshot?.editorUpdate ?? null,
       editorEvent: operationSnapshot?.editorEvent ?? null,
+      editorSuggest: operationSnapshot?.editorSuggest ?? null,
       markdownProjection: operationSnapshot?.markdownProjection ?? null,
       pluginSurface: visibleSurface,
       ...(resourceDiagnostics.length > 0 ? { resourceDiagnostics } : {}),

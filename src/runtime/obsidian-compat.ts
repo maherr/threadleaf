@@ -3650,7 +3650,7 @@ export class Plugin extends Component {
   }
 
   registerEditorSuggest(editorSuggest: EditorSuggest<unknown>): void {
-    this.register(this.app.compatibility.registerEditorSuggest(editorSuggest));
+    this.register(this.app.compatibility.registerEditorSuggest(this.manifest.id, editorSuggest));
   }
 
   registerCliHandler(

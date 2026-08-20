@@ -67,6 +67,13 @@ class FakeIsolatedRuntime implements PluginRuntimePort {
   readonly markLayoutReady = vi.fn(async () => this.snapshot());
   readonly renderCalls: string[] = [];
   readonly runCalls: string[] = [];
+  readonly suggestQueries: PluginEditorContext[] = [];
+  readonly suggestSelections: Array<{
+    editorContext: PluginEditorContext;
+    itemIndex: number;
+    sessionId: string;
+    shiftKey: boolean;
+  }> = [];
   readonly environmentSequences: number[] = [];
   readonly vaultPathSeeds: string[][] = [];
   readonly trace: string[] = [];
@@ -74,6 +81,7 @@ class FakeIsolatedRuntime implements PluginRuntimePort {
   readonly instanceId: number;
   pluginId: string | null = null;
   pluginState: PluginSummary["state"] = "empty";
+  editorSuggestEnabled = false;
   surface: PluginSurfaceSnapshot | null = null;
 
   constructor(instanceId: number) {
@@ -126,6 +134,46 @@ class FakeIsolatedRuntime implements PluginRuntimePort {
   ): Promise<RuntimeSnapshot> {
     this.runCalls.push(commandId);
     return this.snapshot([`${this.pluginId} command completed in renderer ${this.instanceId}.`]);
+  }
+
+  async queryPluginEditorSuggest(editorContext: PluginEditorContext): Promise<RuntimeSnapshot> {
+    this.suggestQueries.push(editorContext);
+    return {
+      ...this.snapshot(),
+      editorSuggest: this.editorSuggestEnabled
+        ? {
+            id: `${this.pluginId}-suggest-session`,
+            instructions: [],
+            items: [{ id: `${this.pluginId}-suggestion`, label: `${this.pluginId} suggestion` }],
+            ownerId: this.pluginId as string,
+          }
+        : null,
+    };
+  }
+
+  async selectPluginEditorSuggest(
+    editorContext: PluginEditorContext,
+    sessionId: string,
+    itemIndex: number,
+    shiftKey: boolean,
+  ): Promise<RuntimeSnapshot> {
+    this.suggestSelections.push({ editorContext, itemIndex, sessionId, shiftKey });
+    return {
+      ...this.snapshot(),
+      editorSuggest: null,
+      editorUpdate: {
+        baseContent: editorContext.content,
+        content: `${editorContext.content} selected`,
+        focused: true,
+        id: `${this.pluginId}-editor-update`,
+        path: editorContext.path,
+        revision: editorContext.revision,
+        selection: {
+          anchor: editorContext.content.length + 9,
+          head: editorContext.content.length + 9,
+        },
+      },
+    };
   }
 
   async renderMarkdownProjection(
@@ -205,7 +253,7 @@ class FakeIsolatedRuntime implements PluginRuntimePort {
       ...(loaded
         ? {
             integrations: {
-              editorSuggests: 0,
+              editorSuggests: this.editorSuggestEnabled ? 1 : 0,
               extensions: [
                 { extension: this.pluginId as string, viewType: `${this.pluginId}-view` },
               ],
@@ -359,6 +407,57 @@ describe("IsolatedPluginRuntime", () => {
 
     await runtime.close();
     expect(created[2]?.close).toHaveBeenCalledOnce();
+  });
+
+  it("routes a two-phase editor suggestion selection back to the isolated owner", async () => {
+    const created: FakeIsolatedRuntime[] = [];
+    const runtime = await IsolatedPluginRuntime.open({
+      create: async () => {
+        const instance = new FakeIsolatedRuntime(created.length + 1);
+        created.push(instance);
+        return instance;
+      },
+    });
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/alpha"));
+    await runtime.loadPlugin(constructionRequest("/vault/.obsidian/plugins/beta"));
+    const beta = created[1];
+    if (!beta) throw new Error("The isolated suggestion fixture did not create beta.");
+    beta.editorSuggestEnabled = true;
+    await runtime.getSnapshot();
+    const editorContext = {
+      path: "Welcome.md",
+      content: "@to",
+      revision: "c".repeat(64),
+      selection: { anchor: 3, head: 3 },
+    };
+
+    const queried = await runtime.queryPluginEditorSuggest(editorContext);
+    expect(created[0]?.suggestQueries).toEqual([]);
+    expect(beta.suggestQueries).toEqual([editorContext]);
+    expect(queried.editorSuggest).toMatchObject({
+      id: "beta-suggest-session",
+      ownerId: "beta",
+    });
+
+    const selected = await runtime.selectPluginEditorSuggest(
+      editorContext,
+      "beta-suggest-session",
+      0,
+      true,
+    );
+    expect(beta.suggestSelections).toEqual([
+      {
+        editorContext,
+        itemIndex: 0,
+        sessionId: "beta-suggest-session",
+        shiftKey: true,
+      },
+    ]);
+    expect(selected.editorUpdate).toMatchObject({ content: "@to selected" });
+    await expect(
+      runtime.selectPluginEditorSuggest(editorContext, "beta-suggest-session", 0, false),
+    ).rejects.toThrow("No isolated plugin owns");
+    await runtime.close();
   });
 
   it("refreshes slot liveness before serving a snapshot", async () => {

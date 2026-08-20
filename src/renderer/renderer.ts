@@ -1,7 +1,7 @@
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { Compartment, EditorState, type Extension, Transaction } from "@codemirror/state";
-import { EditorView, type ViewUpdate } from "@codemirror/view";
+import { Compartment, EditorState, type Extension, Prec, Transaction } from "@codemirror/state";
+import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { basicSetup } from "codemirror";
 import {
@@ -82,6 +82,7 @@ import type {
   NotePropertyType,
   NoteWorkflowCatalogResponse,
   PluginEditorContext,
+  PluginEditorSuggestSnapshot,
   PluginEditorUpdate,
   PluginResourceDiagnostic,
   RuntimeSnapshot,
@@ -1781,6 +1782,7 @@ function updateEditorTextRepresentation(update: ViewUpdate): void {
 
 function editorExtensions(paneId: WorkspacePaneId) {
   return [
+    pluginEditorSuggestKeymapExtension(),
     basicSetup,
     rendererEditorCompatibilityFields.editorEditorField,
     rendererEditorCompatibilityFields.editorInfoField,
@@ -1798,6 +1800,13 @@ function editorExtensions(paneId: WorkspacePaneId) {
     editorWorkspacePreferencesForPane(paneId).of(editorWorkspacePreferenceExtension()),
     syntaxHighlighting(sourceHighlight),
     EditorView.domEventHandlers({
+      keydown: (event) => handlePluginEditorSuggestKeydown(event),
+      blur: () => {
+        window.setTimeout(() => {
+          if (!pluginEditorSuggestPopover.matches(":hover")) closePluginEditorSuggest();
+        }, 0);
+        return false;
+      },
       dragenter: (event, view) => handleEditorAttachmentDrag(paneId, view, event),
       dragover: (event, view) => handleEditorAttachmentDrag(paneId, view, event),
       dragleave: (_event, view) => {
@@ -1834,11 +1843,13 @@ function editorExtensions(paneId: WorkspacePaneId) {
             schedulePendingDiskAcceptance();
           }
           renderEditControls();
+          schedulePluginEditorSuggest(paneId, update.view);
           return;
         }
         if (dirty && update.selectionSet) {
           scheduleEditorDraftPersistence();
         }
+        if (update.selectionSet) schedulePluginEditorSuggest(paneId, update.view);
       });
     }),
   ];
@@ -3957,6 +3968,211 @@ interface CapturedPluginEditorPaste {
 }
 
 let pluginEditorPasteBusy = false;
+let pluginEditorSuggestBusy = false;
+let pluginEditorSuggestTimer: number | null = null;
+let pluginEditorSuggestSelection = 0;
+let pendingPluginEditorSuggest: { paneId: WorkspacePaneId; view: EditorView } | undefined;
+let activePluginEditorSuggest:
+  | {
+      captured: CapturedPluginEditorPaste;
+      paneId: WorkspacePaneId;
+      snapshot: PluginEditorSuggestSnapshot;
+      view: EditorView;
+    }
+  | undefined;
+const pluginEditorSuggestPopover = document.createElement("div");
+pluginEditorSuggestPopover.className = "plugin-editor-suggest";
+pluginEditorSuggestPopover.hidden = true;
+pluginEditorSuggestPopover.setAttribute("role", "listbox");
+pluginEditorSuggestPopover.setAttribute("aria-label", "Plugin editor suggestions");
+document.body.append(pluginEditorSuggestPopover);
+
+function resetPluginEditorSuggestSurface(): void {
+  activePluginEditorSuggest = undefined;
+  pluginEditorSuggestSelection = 0;
+  pluginEditorSuggestPopover.hidden = true;
+  pluginEditorSuggestPopover.replaceChildren();
+}
+
+function closePluginEditorSuggest(): void {
+  if (pluginEditorSuggestTimer !== null) {
+    window.clearTimeout(pluginEditorSuggestTimer);
+    pluginEditorSuggestTimer = null;
+  }
+  pendingPluginEditorSuggest = undefined;
+  resetPluginEditorSuggestSurface();
+}
+
+function takePendingPluginEditorSuggest():
+  | { paneId: WorkspacePaneId; view: EditorView }
+  | undefined {
+  const pending = pendingPluginEditorSuggest;
+  pendingPluginEditorSuggest = undefined;
+  return pending;
+}
+
+function renderPluginEditorSuggest(): void {
+  const active = activePluginEditorSuggest;
+  if (!active) {
+    closePluginEditorSuggest();
+    return;
+  }
+  const cursor = active.view.state.selection.main.head;
+  const coordinates = active.view.coordsAtPos(cursor);
+  if (!coordinates) {
+    closePluginEditorSuggest();
+    return;
+  }
+  pluginEditorSuggestPopover.replaceChildren();
+  pluginEditorSuggestPopover.style.left = `${Math.max(8, coordinates.left)}px`;
+  pluginEditorSuggestPopover.style.top = `${coordinates.bottom + 5}px`;
+  for (const [index, item] of active.snapshot.items.entries()) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "plugin-editor-suggest-option";
+    button.dataset.active = String(index === pluginEditorSuggestSelection);
+    button.setAttribute("role", "option");
+    button.setAttribute("aria-selected", String(index === pluginEditorSuggestSelection));
+    button.textContent = item.label;
+    button.addEventListener("mousedown", (event) => event.preventDefault());
+    button.addEventListener("click", () => void selectPluginEditorSuggest(index, false));
+    pluginEditorSuggestPopover.append(button);
+  }
+  if (active.snapshot.instructions.length > 0) {
+    const footer = document.createElement("footer");
+    footer.className = "plugin-editor-suggest-instructions";
+    footer.textContent = active.snapshot.instructions
+      .map(({ command, purpose }) => `${command}: ${purpose}`)
+      .join(" · ");
+    pluginEditorSuggestPopover.append(footer);
+  }
+  pluginEditorSuggestPopover.hidden = false;
+  pluginEditorSuggestPopover
+    .querySelector<HTMLElement>('[data-active="true"]')
+    ?.scrollIntoView({ block: "nearest" });
+}
+
+async function queryPluginEditorSuggest(paneId: WorkspacePaneId, view: EditorView): Promise<void> {
+  if (pluginEditorSuggestBusy) {
+    pendingPluginEditorSuggest = { paneId, view };
+    return;
+  }
+  pendingPluginEditorSuggest = undefined;
+  const captured = capturePluginEditorPaste(paneId, view);
+  if (
+    !captured ||
+    (currentSnapshot?.integrations?.editorSuggests ?? 0) === 0 ||
+    busy ||
+    readOnlyVault()
+  ) {
+    resetPluginEditorSuggestSurface();
+    return;
+  }
+  pluginEditorSuggestBusy = true;
+  try {
+    const snapshot = await window.threadleaf.queryPluginEditorSuggest(captured.context);
+    if (
+      !pluginPasteTargetIsCurrent(paneId, view, captured) ||
+      !snapshot.editorSuggest ||
+      snapshot.editorSuggest.items.length === 0
+    ) {
+      resetPluginEditorSuggestSurface();
+      return;
+    }
+    activePluginEditorSuggest = {
+      captured,
+      paneId,
+      snapshot: snapshot.editorSuggest,
+      view,
+    };
+    pluginEditorSuggestSelection = 0;
+    renderPluginEditorSuggest();
+  } catch {
+    resetPluginEditorSuggestSurface();
+  } finally {
+    pluginEditorSuggestBusy = false;
+    const pending = takePendingPluginEditorSuggest();
+    if (pending) schedulePluginEditorSuggest(pending.paneId, pending.view);
+  }
+}
+
+function schedulePluginEditorSuggest(paneId: WorkspacePaneId, view: EditorView): void {
+  if (pluginEditorSuggestTimer !== null) window.clearTimeout(pluginEditorSuggestTimer);
+  pluginEditorSuggestTimer = window.setTimeout(() => {
+    pluginEditorSuggestTimer = null;
+    void queryPluginEditorSuggest(paneId, view);
+  }, 0);
+}
+
+async function selectPluginEditorSuggest(index: number, shiftKey: boolean): Promise<void> {
+  const active = activePluginEditorSuggest;
+  if (
+    !active ||
+    pluginEditorSuggestBusy ||
+    index < 0 ||
+    index >= active.snapshot.items.length ||
+    !pluginPasteTargetIsCurrent(active.paneId, active.view, active.captured)
+  ) {
+    closePluginEditorSuggest();
+    return;
+  }
+  pluginEditorSuggestBusy = true;
+  try {
+    const snapshot = await window.threadleaf.selectPluginEditorSuggest(
+      active.captured.context,
+      active.snapshot.id,
+      index,
+      shiftKey,
+    );
+    closePluginEditorSuggest();
+    render(snapshot);
+  } catch (error) {
+    closePluginEditorSuggest();
+    showToast(ipcErrorMessage(error));
+  } finally {
+    pluginEditorSuggestBusy = false;
+  }
+}
+
+function handlePluginEditorSuggestKeydown(event: KeyboardEvent): boolean {
+  const handled = handlePluginEditorSuggestKey(event.key, event.shiftKey);
+  if (handled) event.preventDefault();
+  return handled;
+}
+
+function handlePluginEditorSuggestKey(key: string, shiftKey = false): boolean {
+  const active = activePluginEditorSuggest;
+  if (!active) return false;
+  if (key === "Escape") {
+    closePluginEditorSuggest();
+    return true;
+  }
+  if (key === "ArrowDown" || key === "ArrowUp") {
+    const direction = key === "ArrowDown" ? 1 : -1;
+    pluginEditorSuggestSelection =
+      (pluginEditorSuggestSelection + direction + active.snapshot.items.length) %
+      active.snapshot.items.length;
+    renderPluginEditorSuggest();
+    return true;
+  }
+  if (key === "Enter") {
+    void selectPluginEditorSuggest(pluginEditorSuggestSelection, shiftKey);
+    return true;
+  }
+  return false;
+}
+
+function pluginEditorSuggestKeymapExtension(): Extension {
+  return Prec.highest(
+    keymap.of([
+      { key: "Escape", run: () => handlePluginEditorSuggestKey("Escape") },
+      { key: "ArrowDown", run: () => handlePluginEditorSuggestKey("ArrowDown") },
+      { key: "ArrowUp", run: () => handlePluginEditorSuggestKey("ArrowUp") },
+      { key: "Enter", run: () => handlePluginEditorSuggestKey("Enter") },
+      { key: "Shift-Enter", run: () => handlePluginEditorSuggestKey("Enter", true) },
+    ]),
+  );
+}
 
 function capturePluginEditorPaste(
   paneId: WorkspacePaneId,

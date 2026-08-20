@@ -104,6 +104,8 @@ export const ipcChannels = {
   clearEditorDraft: "threadleaf:clear-editor-draft",
   runCommand: "threadleaf:run-command",
   runPluginEditorPaste: "threadleaf:run-plugin-editor-paste",
+  queryPluginEditorSuggest: "threadleaf:query-plugin-editor-suggest",
+  selectPluginEditorSuggest: "threadleaf:select-plugin-editor-suggest",
   waitForPluginMutations: "threadleaf:wait-for-plugin-mutations",
   reloadPlugin: "threadleaf:reload-plugin",
   unloadPlugin: "threadleaf:unload-plugin",

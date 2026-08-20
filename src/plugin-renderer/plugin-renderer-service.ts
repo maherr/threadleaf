@@ -29,6 +29,9 @@ import {
   requirePluginClipboardText,
   requirePluginConstructionDispatch,
   requirePluginEditorContext,
+  requirePluginEditorSuggestItemIndex,
+  requirePluginEditorSuggestSessionId,
+  requirePluginEditorSuggestShiftKey,
   requirePluginRendererEnvironment,
 } from "../shared/plugin-runtime-protocol";
 
@@ -295,6 +298,19 @@ export class PluginRendererService {
           await this.requireHost().runPluginEditorPaste(
             requirePluginEditorContext(request),
             requirePluginClipboardText(request),
+          ),
+        );
+      case "query-editor-suggest":
+        return this.withEnvironment(
+          await this.requireHost().queryPluginEditorSuggest(requirePluginEditorContext(request)),
+        );
+      case "select-editor-suggest":
+        return this.withEnvironment(
+          await this.requireHost().selectPluginEditorSuggest(
+            requirePluginEditorContext(request),
+            requirePluginEditorSuggestSessionId(request),
+            requirePluginEditorSuggestItemIndex(request),
+            requirePluginEditorSuggestShiftKey(request),
           ),
         );
       case "seed-vault-markdown-paths":

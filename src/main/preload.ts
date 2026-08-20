@@ -700,6 +700,19 @@ const bridge: ThreadleafBridge = {
       editorContext,
       clipboardText,
     ) as Promise<RuntimeSnapshot>,
+  queryPluginEditorSuggest: (editorContext) =>
+    ipcRenderer.invoke(
+      ipcChannels.queryPluginEditorSuggest,
+      editorContext,
+    ) as Promise<RuntimeSnapshot>,
+  selectPluginEditorSuggest: (editorContext, sessionId, itemIndex, shiftKey) =>
+    ipcRenderer.invoke(
+      ipcChannels.selectPluginEditorSuggest,
+      editorContext,
+      sessionId,
+      itemIndex,
+      shiftKey,
+    ) as Promise<RuntimeSnapshot>,
   waitForPluginMutations: (options) =>
     ipcRenderer.invoke(ipcChannels.waitForPluginMutations, options) as Promise<RuntimeSnapshot>,
   reloadPlugin: (pluginId) =>

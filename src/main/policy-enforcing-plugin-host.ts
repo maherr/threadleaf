@@ -59,6 +59,19 @@ export class PolicyEnforcingPluginHost implements PluginRuntimePort {
     return this.host.runPluginEditorPaste(editorContext, clipboardText);
   }
 
+  queryPluginEditorSuggest(editorContext: PluginEditorContext) {
+    return this.host.queryPluginEditorSuggest(editorContext);
+  }
+
+  selectPluginEditorSuggest(
+    editorContext: PluginEditorContext,
+    sessionId: string,
+    itemIndex: number,
+    shiftKey: boolean,
+  ) {
+    return this.host.selectPluginEditorSuggest(editorContext, sessionId, itemIndex, shiftKey);
+  }
+
   waitForPluginMutations(options?: PluginMutationWaitOptions) {
     return this.host.waitForPluginMutations(options);
   }

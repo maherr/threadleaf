@@ -265,7 +265,9 @@ headless runtime without a renderer document does not fabricate an editor.
 
 `pnpm test:natural-dates` proves the unchanged MIT Natural Language Dates 0.6.2 release. The gate
 selects `tomorrow`, opens Threadleaf's command palette, runs the exact Parse natural language date
-command, and requires the expected date link. It also requires all eight commands and one editor
-suggest registration to remain present. The exact release is byte-identical to the package installed
-in the acceptance vault. Autosuggest presentation, Date Picker, daily-note creation, URI handling,
-settings, and the other commands remain outside this claim.
+command, and requires the expected date link. It then types `@to`, requires the visible `Today` and
+`Tomorrow` menu, navigates to Tomorrow with the keyboard, selects it, and requires the same date
+link and a closed suggestion session. The visible menu is screenshot-checked in light and dark. All
+eight commands and one editor suggest registration must remain present. The exact release is
+byte-identical to the package installed in the acceptance vault. Date Picker, daily-note creation,
+URI handling, non-default settings, and the other commands remain outside this claim.
