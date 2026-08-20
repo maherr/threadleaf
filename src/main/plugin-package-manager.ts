@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { type Dirent, promises as fs } from "node:fs";
 import path from "node:path";
 import { atomicWriteFile, readStableFile, syncDirectory } from "../kernel/durability";
+import { canonicalAuthorityJson } from "../shared/authority-json";
 import { withPluginDiagnosticCode } from "../shared/plugin-diagnostics";
 import type {
   ManagedPluginPackageHistory,
@@ -52,6 +53,14 @@ interface PackageReceipt {
     size: number;
   } | null;
   inspection: PluginPackageInspectionReceipt;
+}
+
+function comparablePackageReceipt(receipt: PackageReceipt): string {
+  const comparable = structuredClone(receipt);
+  comparable.installedAt = "";
+  comparable.indexSha256 = null;
+  comparable.inspection.exactPackage.provenance.indexSha256 = null;
+  return canonicalAuthorityJson(comparable);
 }
 
 interface InventoryFile {
@@ -1893,10 +1902,27 @@ export class PluginPackageManager {
         return "changed";
       }
       const installedReceipt = await readStableFile(path.join(directoryPath, receiptFilename));
+      if (!installedReceipt) {
+        return "changed";
+      }
+      const installedParsed: unknown = JSON.parse(decoder.decode(installedReceipt.bytes));
+      if (!isRecord(installedParsed) || !("inspection" in installedParsed)) {
+        return "changed";
+      }
+      const installedInspection = verifyPluginPackageInspectionReceipt(
+        installedParsed.inspection,
+        pluginId,
+        manifest,
+        {
+          manifest: assetSnapshots.get("manifest.json")?.bytes ?? Buffer.alloc(0),
+          main: assetSnapshots.get("main.js")?.bytes ?? Buffer.alloc(0),
+          styles: assetSnapshots.get("styles.css")?.bytes ?? null,
+        },
+      );
       if (
-        !installedReceipt ||
-        installedReceipt.size !== snapshot.size ||
-        installedReceipt.revision !== snapshot.revision
+        !installedInspection.receipt ||
+        comparablePackageReceipt(installedParsed as unknown as PackageReceipt) !==
+          comparablePackageReceipt(receipt)
       ) {
         return "changed";
       }

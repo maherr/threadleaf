@@ -195,6 +195,27 @@ describe("plugin package manager", () => {
     expect(await fs.readFile(pluginPath("main.js"), "utf8")).toContain('"1.0.0"');
   });
 
+  it("accepts a fresh exact-package provenance receipt without accepting changed authority", async () => {
+    const manager = await openManager();
+    const install = await manager.preview(vaultPath, vaultId, { action: "install", pluginId });
+    await manager.apply(vaultPath, vaultId, install.reviewId);
+
+    const receiptPath = pluginPath(".threadleaf-package.json");
+    const refreshed = JSON.parse(await fs.readFile(receiptPath, "utf8"));
+    refreshed.installedAt = "2026-08-19T19:19:45.054Z";
+    refreshed.indexSha256 = "c".repeat(64);
+    refreshed.inspection.exactPackage.provenance.indexSha256 = "c".repeat(64);
+    await fs.writeFile(receiptPath, `${JSON.stringify(refreshed, null, 2)}\n`, "utf8");
+
+    expect((await manager.getManagedPackages(vaultPath, vaultId))[0]?.integrity).toBe("verified");
+
+    refreshed.inspection.staticAuthority.capabilities = [];
+    refreshed.inspection.staticAuthority.findings = [];
+    await fs.writeFile(receiptPath, `${JSON.stringify(refreshed, null, 2)}\n`, "utf8");
+
+    expect((await manager.getManagedPackages(vaultPath, vaultId))[0]?.integrity).toBe("changed");
+  });
+
   it("invalidates reviewed payload tampering before the vault is changed", async () => {
     const manager = await openManager();
     const review = await manager.preview(vaultPath, vaultId, { action: "install", pluginId });
