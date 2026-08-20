@@ -892,6 +892,149 @@
     },
     {
       "plugin": {
+        "id": "table-editor-obsidian",
+        "name": "Advanced Tables",
+        "version": "0.22.1",
+        "repository": "https://github.com/tgrosinger/advanced-tables-obsidian",
+        "license": "GPL-3.0",
+        "bundleSha256": "bf394e1058d2f5bc2bf8acce6bd46eca355b211f9cae62c11cef8d6575989420"
+      },
+      "threadleafVersion": "0.1.0",
+      "lastTested": "2026-08-20",
+      "compatibilityLevel": 3,
+      "summary": "The exact official Advanced Tables 0.22.1 package passed reviewed authority, registered all 22 commands, rendered and persisted its complete four-control Options surface in light and dark, formatted malformed Markdown table bytes through the native editor, repeated both settings and formatting after a full application restart, and remained loaded beside seven other exact packages. The same exact package also loaded with all 22 commands and rendered all four controls in the installed macOS ARM64 application.",
+      "evidenceMode": "direct",
+      "requiredCapabilities": [
+        "network",
+        "filesystem",
+        "subprocess",
+        "host-environment",
+        "external-navigation",
+        "editor-extension",
+        "workspace-ui",
+        "dynamic-code"
+      ],
+      "platforms": [
+        {
+          "id": "linux-x64-electron",
+          "status": "verified",
+          "limits": [
+            "Verified under Xvfb Electron with the exact official package, trusted-workspace renderer, disposable vault, native editor mutation, restart, and light and dark settings screenshots.",
+            "The runtime is trusted same-user desktop code, not a sandbox."
+          ]
+        },
+        {
+          "id": "macos-electron",
+          "status": "verified",
+          "limits": [
+            "The exact package loaded in the installed native ARM64 application with all 22 commands and the complete four-control Options surface.",
+            "The table-format mutation and restart workflow has not been repeated on macOS."
+          ]
+        },
+        {
+          "id": "windows-x64-electron",
+          "status": "unverified",
+          "limits": ["This exact package workflow is not verified on Windows."]
+        }
+      ],
+      "workflows": [
+        {
+          "id": "advanced-tables.options-format-restart.v1",
+          "name": "Render Options, format a Markdown table in the native editor, persist exact bytes, and repeat after restart",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "scripts/check-excalidraw-roundtrip.mjs",
+              "command": "THREADLEAF_ADVANCED_TABLES_PLUGIN_PATH=$ADVANCED_TABLES_PACKAGE THREADLEAF_TEMPLATER_PLUGIN_PATH=$TEMPLATER_PACKAGE THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT=$PLUGIN_ROOT THREADLEAF_INSTALLED_THEME_MATRIX_ROOT=$MINIMAL_THEME pnpm test:excalidraw-roundtrip"
+            },
+            {
+              "path": "src/runtime/obsidian-dom.test.ts",
+              "command": "pnpm exec vitest run src/runtime/obsidian-dom.test.ts src/runtime/plugin-host.test.ts"
+            }
+          ]
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The macOS proof covers exact-package activation, commands, Options, and visible chrome, not table mutation or restart.",
+        "Toolbar commands beyond the exact format-table workflow, formulas, CSV export, and non-default settings remain outside this claim.",
+        "This is supporting behavior evidence, not Level 4 evidence.",
+        "No controller-finalized signed production receipt exists for this tuple."
+      ]
+    },
+    {
+      "plugin": {
+        "id": "templater-obsidian",
+        "name": "Templater",
+        "version": "2.25.0",
+        "repository": "https://github.com/SilentVoid13/Templater",
+        "license": "AGPL-3.0",
+        "bundleSha256": "6a29790e8ad3bb3de5bcc7381588f20093b2dbecc1ff27d8a5d7ed3fcebbdf4e"
+      },
+      "threadleafVersion": "0.1.0",
+      "lastTested": "2026-08-20",
+      "compatibilityLevel": 3,
+      "summary": "The exact Templater 2.25.0 package passed reviewed authority, exposed its declarative and nested settings pages, persisted the template folder and a template hotkey, registered the resulting dynamic command, bound it to Alt+T through Threadleaf Hotkeys, inserted the selected template through the native editor, and repeated the dynamic command, binding, and exact output after a full application restart while seven other exact packages remained loaded.",
+      "evidenceMode": "direct",
+      "requiredCapabilities": [
+        "vault-read",
+        "vault-write",
+        "network",
+        "filesystem",
+        "subprocess",
+        "host-environment",
+        "clipboard",
+        "editor-extension",
+        "workspace-ui",
+        "dynamic-code"
+      ],
+      "platforms": [
+        {
+          "id": "linux-x64-electron",
+          "status": "verified",
+          "limits": [
+            "Verified under Xvfb Electron with the exact package, trusted-workspace renderer, disposable vault, private settings, dynamic command, native hotkey, exact editor bytes, and restart.",
+            "The runtime is trusted same-user desktop code, not a sandbox."
+          ]
+        },
+        {
+          "id": "macos-electron",
+          "status": "unverified",
+          "limits": ["This exact package workflow is not verified on macOS."]
+        },
+        {
+          "id": "windows-x64-electron",
+          "status": "unverified",
+          "limits": ["This exact package workflow is not verified on Windows."]
+        }
+      ],
+      "workflows": [
+        {
+          "id": "templater.settings-hotkey-insert-restart.v1",
+          "name": "Configure a template hotkey, bind it natively, insert exact output, and repeat after restart",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "scripts/check-excalidraw-roundtrip.mjs",
+              "command": "THREADLEAF_ADVANCED_TABLES_PLUGIN_PATH=$ADVANCED_TABLES_PACKAGE THREADLEAF_TEMPLATER_PLUGIN_PATH=$TEMPLATER_PACKAGE THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT=$PLUGIN_ROOT THREADLEAF_INSTALLED_THEME_MATRIX_ROOT=$MINIMAL_THEME pnpm test:excalidraw-roundtrip"
+            },
+            {
+              "path": "src/runtime/plugin-host.test.ts",
+              "command": "pnpm exec vitest run src/runtime/plugin-host.test.ts src/runtime/obsidian-dom.test.ts"
+            }
+          ]
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "User scripts, system commands, folder and file regex templates, create-from-template, web requests, and explicit plugin reload remain outside this exact workflow claim.",
+        "The trusted desktop escape can execute user template code with the user's authority and is not a sandbox.",
+        "This is supporting behavior evidence, not Level 4 evidence.",
+        "No controller-finalized signed production receipt exists for this tuple."
+      ]
+    },
+    {
+      "plugin": {
         "id": "calendar-beta",
         "name": "Calendar (Beta)",
         "version": "2.0.0",

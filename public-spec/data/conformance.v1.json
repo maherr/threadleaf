@@ -441,6 +441,18 @@
       "compatibilityLevel": 3
     },
     {
+      "id": "table-editor-obsidian",
+      "version": "0.22.1",
+      "threadleafVersion": "0.1.0",
+      "compatibilityLevel": 3
+    },
+    {
+      "id": "templater-obsidian",
+      "version": "2.25.0",
+      "threadleafVersion": "0.1.0",
+      "compatibilityLevel": 3
+    },
+    {
       "id": "threadleaf-fixture",
       "version": "0.1.0",
       "threadleafVersion": "0.1.0",

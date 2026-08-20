@@ -4,7 +4,7 @@ This document is generated from the versioned receipt-aware source [`compatibili
 Discovery in the external community package directory is separate from Threadleaf compatibility evidence.
 A row applies only to the exact plugin and Threadleaf versions shown.
 
-Registry schema: 2. Threadleaf version: 0.1.0. Generation: 433f32d10601e4d8ea38108b62ef7fef5c32588cb3f2fad79a93ad8e1db6a968.
+Registry schema: 2. Threadleaf version: 0.1.0. Generation: 7ed9e4d87ffa93cb93a486595c3438512e499a4f7d7568843124273d318712a0.
 
 | Plugin | Plugin version | Threadleaf | Level | Evidence | Last tested |
 | --- | --- | --- | ---: | --- | --- |
@@ -19,6 +19,8 @@ Registry schema: 2. Threadleaf version: 0.1.0. Generation: 433f32d10601e4d8ea381
 | [Minimal Theme Settings](https://github.com/kepano/obsidian-minimal-settings) | 8.2.3 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Style Settings](https://github.com/mgmeyers/obsidian-style-settings) | 1.0.9 | 0.1.0 | 3 | direct | 2026-08-17 |
 | [Omnisearch](https://github.com/scambier/obsidian-omnisearch) | 1.30.1 | 0.1.0 | 3 | direct | 2026-08-20 |
+| [Advanced Tables](https://github.com/tgrosinger/advanced-tables-obsidian) | 0.22.1 | 0.1.0 | 3 | direct | 2026-08-20 |
+| [Templater](https://github.com/SilentVoid13/Templater) | 2.25.0 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Threadleaf Compatibility Fixture](https://github.com/maherr/threadleaf) | 0.1.0 | 0.1.0 | 0 | direct | 2026-08-15 |
 | [Paste URL into Selection](https://github.com/denolehov/obsidian-url-into-selection) | 1.11.4 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Paste URL into Selection](https://github.com/denolehov/obsidian-url-into-selection) | 1.11.4 | 0.1.0 | 3 | direct | 2026-08-20 |
@@ -369,6 +371,68 @@ Required static authority review: `vault-read`, `network`, `workspace-ui`, `file
 ### Limitations
 
 - Mutation reindexing, cache reuse, in-file search, PDF and image indexing, HTTP APIs, non-default settings, and explicit plugin reload remain outside this claim.
+- This is supporting behavior evidence, not Level 4 evidence.
+- No controller-finalized signed production receipt exists for this tuple.
+
+## Advanced Tables 0.22.1
+
+The exact official Advanced Tables 0.22.1 package passed reviewed authority, registered all 22 commands, rendered and persisted its complete four-control Options surface in light and dark, formatted malformed Markdown table bytes through the native editor, repeated both settings and formatting after a full application restart, and remained loaded beside seven other exact packages. The same exact package also loaded with all 22 commands and rendered all four controls in the installed macOS ARM64 application.
+
+Bundle SHA-256: `bf394e1058d2f5bc2bf8acce6bd46eca355b211f9cae62c11cef8d6575989420`. License: GPL-3.0.
+
+Required static authority review: `network`, `filesystem`, `subprocess`, `host-environment`, `external-navigation`, `editor-extension`, `workspace-ui`, `dynamic-code`.
+
+### Supported workflows
+
+- **Render Options, format a Markdown table in the native editor, persist exact bytes, and repeat after restart** (passed)
+  - `THREADLEAF_ADVANCED_TABLES_PLUGIN_PATH=$ADVANCED_TABLES_PACKAGE THREADLEAF_TEMPLATER_PLUGIN_PATH=$TEMPLATER_PACKAGE THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT=$PLUGIN_ROOT THREADLEAF_INSTALLED_THEME_MATRIX_ROOT=$MINIMAL_THEME pnpm test:excalidraw-roundtrip` via [scripts/check-excalidraw-roundtrip.mjs](../../scripts/check-excalidraw-roundtrip.mjs)
+  - `pnpm exec vitest run src/runtime/obsidian-dom.test.ts src/runtime/plugin-host.test.ts` via [src/runtime/obsidian-dom.test.ts](../../src/runtime/obsidian-dom.test.ts)
+
+### Platform limits
+
+- **linux-x64-electron**: verified. Verified under Xvfb Electron with the exact official package, trusted-workspace renderer, disposable vault, native editor mutation, restart, and light and dark settings screenshots. The runtime is trusted same-user desktop code, not a sandbox.
+- **macos-electron**: verified. The exact package loaded in the installed native ARM64 application with all 22 commands and the complete four-control Options surface. The table-format mutation and restart workflow has not been repeated on macOS.
+- **windows-x64-electron**: unverified. This exact package workflow is not verified on Windows.
+
+### Known failures
+
+- No reproducible failure is recorded for the supported workflows above.
+
+### Limitations
+
+- The macOS proof covers exact-package activation, commands, Options, and visible chrome, not table mutation or restart.
+- Toolbar commands beyond the exact format-table workflow, formulas, CSV export, and non-default settings remain outside this claim.
+- This is supporting behavior evidence, not Level 4 evidence.
+- No controller-finalized signed production receipt exists for this tuple.
+
+## Templater 2.25.0
+
+The exact Templater 2.25.0 package passed reviewed authority, exposed its declarative and nested settings pages, persisted the template folder and a template hotkey, registered the resulting dynamic command, bound it to Alt+T through Threadleaf Hotkeys, inserted the selected template through the native editor, and repeated the dynamic command, binding, and exact output after a full application restart while seven other exact packages remained loaded.
+
+Bundle SHA-256: `6a29790e8ad3bb3de5bcc7381588f20093b2dbecc1ff27d8a5d7ed3fcebbdf4e`. License: AGPL-3.0.
+
+Required static authority review: `vault-read`, `vault-write`, `network`, `filesystem`, `subprocess`, `host-environment`, `clipboard`, `editor-extension`, `workspace-ui`, `dynamic-code`.
+
+### Supported workflows
+
+- **Configure a template hotkey, bind it natively, insert exact output, and repeat after restart** (passed)
+  - `THREADLEAF_ADVANCED_TABLES_PLUGIN_PATH=$ADVANCED_TABLES_PACKAGE THREADLEAF_TEMPLATER_PLUGIN_PATH=$TEMPLATER_PACKAGE THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT=$PLUGIN_ROOT THREADLEAF_INSTALLED_THEME_MATRIX_ROOT=$MINIMAL_THEME pnpm test:excalidraw-roundtrip` via [scripts/check-excalidraw-roundtrip.mjs](../../scripts/check-excalidraw-roundtrip.mjs)
+  - `pnpm exec vitest run src/runtime/plugin-host.test.ts src/runtime/obsidian-dom.test.ts` via [src/runtime/plugin-host.test.ts](../../src/runtime/plugin-host.test.ts)
+
+### Platform limits
+
+- **linux-x64-electron**: verified. Verified under Xvfb Electron with the exact package, trusted-workspace renderer, disposable vault, private settings, dynamic command, native hotkey, exact editor bytes, and restart. The runtime is trusted same-user desktop code, not a sandbox.
+- **macos-electron**: unverified. This exact package workflow is not verified on macOS.
+- **windows-x64-electron**: unverified. This exact package workflow is not verified on Windows.
+
+### Known failures
+
+- No reproducible failure is recorded for the supported workflows above.
+
+### Limitations
+
+- User scripts, system commands, folder and file regex templates, create-from-template, web requests, and explicit plugin reload remain outside this exact workflow claim.
+- The trusted desktop escape can execute user template code with the user's authority and is not a sandbox.
 - This is supporting behavior evidence, not Level 4 evidence.
 - No controller-finalized signed production receipt exists for this tuple.
 
