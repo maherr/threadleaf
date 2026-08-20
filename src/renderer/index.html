@@ -113,6 +113,16 @@
             </div>
             <div class="navigator-heading-actions">
               <span class="count-badge" id="file-count">0</span>
+              <span class="navigator-tree-toolbar" id="navigator-tree-toolbar">
+                <button
+                  id="reveal-active-note"
+                  type="button"
+                  aria-label="Reveal active note"
+                  title="Reveal active note"
+                >
+                  ◎
+                </button>
+              </span>
               <button
                 class="navigator-view-toggle"
                 id="navigator-view-toggle"
@@ -166,9 +176,6 @@
           </label>
 
           <p class="filter-summary" id="filter-summary" aria-live="polite">Loading vault index</p>
-          <div class="navigator-tree-toolbar" id="navigator-tree-toolbar">
-            <button id="reveal-active-note" type="button">Reveal active note</button>
-          </div>
           <section
             class="bookmark-shelf"
             id="bookmark-shelf"
@@ -1073,6 +1080,7 @@
                   <small>Constrained choices retain text and control contrast in both schemes.</small>
                 </span>
                 <select id="accessibility-accent" aria-describedby="accessibility-status">
+                  <option value="violet">Violet</option>
                   <option value="blue">Blue</option>
                   <option value="teal">Teal</option>
                   <option value="orange">Orange</option>

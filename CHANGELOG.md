@@ -23,12 +23,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
-- Replaced the stacked desktop chrome with one uninterrupted 40-pixel Longstitch workbench rail
+- Replaced the stacked desktop chrome with one uninterrupted 44-pixel Longstitch workbench rail
   that aligns the file dock, active vault, compact global actions, and native window controls above
   a quieter document-tab and toolbar tier in both themes and at the minimum supported width.
-- Rebuilt Longstitch around neutral Paper and Graphite themes, compact 28-pixel explorer rows,
+- Rebuilt Longstitch around neutral Paper and Graphite themes, compact 30-pixel explorer rows,
   coherent Hanken Grotesk interface and document typography, restrained violet interaction state,
   and less ornamental workspace chrome.
+- Reworked the Files pane around consistent chevrons and file-type icons, compact header actions,
+  and virtualized row geometry that scales with interface text. The default accent now matches
+  Longstitch violet, while blue, teal, and orange remain explicit accessible choices.
 - Made large-vault Files navigation permanently lazy: directory expansion and Reveal Active Note
   resolve only the required filesystem pages, while global inventory is reserved for operations
   that require vault-wide ambiguity resolution. A visible Markdown note not yet in the partial

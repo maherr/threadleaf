@@ -12,6 +12,9 @@ const vaultPath = path.join(testRoot, "vault");
 const userDataPath = path.join(testRoot, "user-data");
 const screenshotDirectory = process.env.THREADLEAF_NAVIGATOR_TREE_SCREENSHOT_DIR;
 const processMarker = randomUUID();
+const requestedUiScale = process.env.THREADLEAF_NAVIGATOR_UI_SCALE
+  ? Number(process.env.THREADLEAF_NAVIGATOR_UI_SCALE)
+  : null;
 const output = [];
 const outsidePath = path.join(testRoot, "outside");
 const symlinkParentPath = path.join(vaultPath, "Symlink parent");
@@ -785,6 +788,34 @@ async function writeFixtureVault() {
   }
 }
 
+async function seedAccessibilityPreferences() {
+  if (requestedUiScale === null) return;
+  assert(
+    Number.isFinite(requestedUiScale) && requestedUiScale >= 0.8 && requestedUiScale <= 1.6,
+    "THREADLEAF_NAVIGATOR_UI_SCALE must be between 0.8 and 1.6.",
+  );
+  await fs.mkdir(userDataPath, { recursive: true });
+  await fs.writeFile(
+    path.join(userDataPath, "accessibility-preferences.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        highContrast: null,
+        accent: "violet",
+        uiFontScale: requestedUiScale,
+        textFontScale: 1,
+        editorFontSize: 15,
+        editorLineHeight: 1.6,
+        reducedMotion: null,
+        reducedTransparency: null,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+}
+
 try {
   assert(
     process.platform === "linux",
@@ -792,6 +823,7 @@ try {
   );
   await fs.access(electronPath);
   await writeFixtureVault();
+  await seedAccessibilityPreferences();
 
   phase = "isolated X11 launch";
   await launchApplication();
@@ -844,6 +876,17 @@ try {
         expanded: emptyFolder.getAttribute("aria-expanded"),
         summary: emptyFolder.querySelector("small")?.textContent ?? "",
       } : null,
+      rowGeometry: rows[0] instanceof HTMLElement ? {
+        height: rows[0].getBoundingClientRect().height,
+        configuredHeight: Number.parseFloat(
+          getComputedStyle(document.documentElement)
+            .getPropertyValue("--threadleaf-navigator-tree-row-height")
+        ),
+        titleFontSize: Number.parseFloat(
+          getComputedStyle(rows[0].querySelector("strong")).fontSize
+        ),
+        icons: rows.filter((row) => row.querySelector(".navigator-tree-entry-icon")).length,
+      } : null,
     };
   })()`);
   assert(
@@ -870,6 +913,17 @@ try {
       initialSemantics.emptyFolder.summary === "0 items",
     `The explicit empty folder was not represented truthfully: ${JSON.stringify(initialSemantics.emptyFolder)}`,
   );
+  assert(
+    initialSemantics.rowGeometry?.height === initialSemantics.rowGeometry?.configuredHeight &&
+      initialSemantics.rowGeometry.icons === initialTree.rows,
+    `The Files rows did not match their virtual geometry or icon grammar: ${JSON.stringify(initialSemantics.rowGeometry)}`,
+  );
+  if (requestedUiScale !== null) {
+    assert(
+      initialSemantics.rowGeometry.titleFontSize >= 13 * requestedUiScale - 0.05,
+      `The requested interface scale did not reach Files row labels: ${JSON.stringify(initialSemantics.rowGeometry)}`,
+    );
+  }
 
   phase = "on-demand physical inventory";
   const lazyInventory = (await snapshot()).workspace?.inventory;

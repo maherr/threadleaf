@@ -11190,3 +11190,190 @@ a.tag.property-tag {
 :root[data-platform="darwin"] .vault-switcher {
   width: 190px;
 }
+
+/* Semantic interface scale and Files tree polish. UI text scaling changes the
+   actual control hierarchy instead of enlarging only inherited body copy. */
+.vault-identity strong,
+.titlebar-tabs-host .note-tab-activate,
+.pane-heading h1,
+.navigator-tree-copy strong,
+.search-field input {
+  font-size: var(--threadleaf-ui-font-body, 13px);
+}
+
+.state-word,
+.count-badge,
+.navigator-tree-toolbar button,
+.filter-summary,
+.navigator-foot,
+.statusbar {
+  font-size: var(--threadleaf-ui-font-meta, 11px);
+}
+
+.note-location,
+.note-stats,
+.document-view-switch,
+.toolbar-button,
+.settings-sidebar button,
+.settings-search input,
+.settings-page input,
+.settings-page select,
+.settings-page textarea,
+.settings-page button {
+  font-size: var(--threadleaf-ui-font-compact, 12px);
+}
+
+.settings-section-heading strong,
+.settings-page h2,
+.settings-page h3 {
+  font-size: var(--threadleaf-ui-font-heading, 14px);
+}
+
+.pane-heading.navigator-heading {
+  min-height: 38px;
+  gap: 5px;
+  padding: 5px 5px 4px 10px;
+}
+
+.navigator-heading-actions {
+  gap: 1px;
+}
+
+.count-badge,
+.navigator-view-toggle,
+.navigator-new-note,
+.dock-collapse-button,
+.navigator-tree-toolbar button {
+  width: 27px;
+  min-width: 27px;
+  height: 27px;
+  min-height: 27px;
+  padding: 0;
+  place-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+}
+
+.count-badge {
+  width: auto;
+  min-width: 24px;
+  padding: 0 4px;
+  color: var(--ink-muted);
+}
+
+.navigator-tree-toolbar {
+  display: contents;
+  padding: 0;
+}
+
+.navigator-tree-toolbar[hidden] {
+  display: none;
+}
+
+.navigator-control-icon,
+.interface-icon {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.file-list {
+  padding: 1px 4px 8px;
+}
+
+.navigator-tree-row {
+  grid-template-columns: 12px 16px minmax(0, 1fr);
+  gap: 3px;
+  height: var(--threadleaf-navigator-tree-row-height, 30px);
+  padding: 2px 7px 2px calc(6px + (var(--tree-depth) - 1) * 14px);
+  border: 0;
+  border-radius: 4px;
+}
+
+.navigator-tree-row:hover,
+.navigator-tree-row:focus-visible {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--background-modifier-hover) 88%, transparent);
+}
+
+.navigator-tree-row[aria-current="page"] {
+  background: color-mix(in srgb, var(--accent) 18%, var(--background-secondary));
+}
+
+.navigator-tree-row[aria-current="page"]::after {
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+}
+
+.navigator-tree-disclosure,
+.navigator-tree-icon {
+  display: grid;
+  min-width: 0;
+  place-items: center;
+  color: var(--ink-muted);
+}
+
+.navigator-tree-chevron {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.navigator-tree-entry-icon {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.65;
+}
+
+.navigator-tree-row[data-kind="folder"] .navigator-tree-icon {
+  color: var(--ink-soft);
+}
+
+.navigator-tree-row[data-kind="note"] .navigator-tree-icon,
+.navigator-tree-row[data-kind="file"] .navigator-tree-icon,
+.navigator-tree-row[data-kind="canvas"] .navigator-tree-icon {
+  color: color-mix(in srgb, var(--ink-muted) 84%, transparent);
+}
+
+.navigator-tree-row[aria-current="page"] .navigator-tree-icon,
+.navigator-tree-row[aria-current="page"] .navigator-tree-disclosure {
+  color: var(--accent-strong);
+}
+
+.navigator-tree-copy {
+  gap: 0;
+}
+
+.navigator-tree-copy strong {
+  font-weight: 510;
+  line-height: 1.2;
+}
+
+.navigator-tree-row[data-kind="folder"] .navigator-tree-copy strong {
+  font-weight: 590;
+}
+
+.navigator-tree-placeholder {
+  height: var(--threadleaf-navigator-tree-row-height, 30px);
+}
+
+.tag-tree-row {
+  height: var(--threadleaf-navigator-tag-row-height, 32px);
+}

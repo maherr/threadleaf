@@ -9,7 +9,7 @@
 
 export const accessibilityPreferencesVersion = 1 as const;
 
-export const accessibilityAccentChoices = ["blue", "teal", "orange"] as const;
+export const accessibilityAccentChoices = ["violet", "blue", "teal", "orange"] as const;
 export type AccessibilityAccent = (typeof accessibilityAccentChoices)[number];
 
 /** null means "follow the operating-system preference". */
@@ -46,7 +46,7 @@ export interface EffectiveAccessibilityPreferences {
 export const defaultAccessibilityPreferences: Readonly<AccessibilityPreferences> = {
   version: accessibilityPreferencesVersion,
   highContrast: null,
-  accent: "blue",
+  accent: "violet",
   uiFontScale: 1,
   textFontScale: 1,
   editorFontSize: 15,

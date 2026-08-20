@@ -35,14 +35,15 @@ measured pairwise in both themes. See [`accessibility.md`](accessibility.md).
 ## Geometry
 
 - Corners are cut and restrained: 3px, 5px, and 8px are the system radii.
-- The 40px window rail is the native drag surface and the first workspace row. It aligns to the
+- The 44px window rail is the native drag surface and the first workspace row. It aligns to the
   left file dock, center workspace, and right metadata dock, and reserves the operating system's
   window controls instead of stacking a second title bar above the app.
 - Document tabs sit immediately below the rail. The active tab uses a 2px violet edge plus a
   material change; inactive tabs recede into the workspace chrome.
 - Tags are square foil labels, not pills.
 - Callouts are bounded sheets with a 4px categorical spine and a sunken title band.
-- Navigator rows are 28px high, with full-row pointer targets and visible keyboard focus.
+- Navigator rows start at 30px and expand with the interface-text preference, with full-row pointer
+  targets and visible keyboard focus.
 - The navigator header keeps identity and primary actions compact without clipping or hiding the
   current mode.
 - Main reading width follows the existing Threadleaf content rail. Decorative marks cannot expand

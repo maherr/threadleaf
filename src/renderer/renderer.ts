@@ -4,6 +4,33 @@ import { Compartment, EditorState, type Extension, Transaction } from "@codemirr
 import { EditorView, type ViewUpdate } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { basicSetup } from "codemirror";
+import {
+  ChevronDown,
+  ChevronRight,
+  createElement as createLucideElement,
+  File,
+  FileArchive,
+  FileAudio,
+  FileCode,
+  FileImage,
+  FileJson,
+  FileSpreadsheet,
+  FileText,
+  FileVideo,
+  Folder,
+  FolderOpen,
+  Hash,
+  type IconNode,
+  List,
+  ListTree,
+  LocateFixed,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  Plus,
+  Shapes,
+} from "lucide";
 import { splitMarkdownDestinationTarget } from "../kernel/markdown-links";
 import { rendererEditorCompatibilityFields } from "../runtime/obsidian-editor-compat";
 import {
@@ -1166,9 +1193,11 @@ let lastVirtualActivePath: string | null = null;
 type NavigatorViewMode = "tree" | "flat";
 type NavigatorContentMode = "notes" | "tags";
 type ReadyWorkspaceTagCatalog = Extract<WorkspaceTagCatalogResponse, { status: "ready" }>;
-const navigatorTreeRowHeight = 28;
+const defaultNavigatorTreeRowHeight = 30;
+const defaultNavigatorTagRowHeight = 32;
+let navigatorTreeRowHeight = defaultNavigatorTreeRowHeight;
 const navigatorTreeOverscan = 8;
-const navigatorTagRowHeight = 32;
+let navigatorTagRowHeight = defaultNavigatorTagRowHeight;
 const navigatorTagOverscan = 8;
 let navigatorViewMode: NavigatorViewMode = "tree";
 let navigatorContentMode: NavigatorContentMode = "notes";
@@ -1884,6 +1913,50 @@ function getForm(id: string): HTMLFormElement {
     throw new Error(`Expected a form: ${id}`);
   }
   return element;
+}
+
+function interfaceIcon(icon: IconNode, className = "interface-icon"): SVGElement {
+  const element = createLucideElement(icon);
+  element.classList.add(className);
+  element.setAttribute("aria-hidden", "true");
+  element.setAttribute("focusable", "false");
+  return element;
+}
+
+function navigatorEntryIcon(
+  entry: WorkspaceTreeEntry,
+  expanded: boolean,
+  pluginFileViewType: string | null,
+): SVGElement {
+  if (entry.kind === "folder") {
+    return interfaceIcon(expanded ? FolderOpen : Folder, "navigator-tree-entry-icon");
+  }
+  if (pluginFileViewType) {
+    return interfaceIcon(Shapes, "navigator-tree-entry-icon");
+  }
+  if (entry.kind === "note") {
+    return interfaceIcon(FileText, "navigator-tree-entry-icon");
+  }
+  if (entry.kind === "canvas") {
+    return interfaceIcon(FileJson, "navigator-tree-entry-icon");
+  }
+  const extension = entry.path.slice(entry.path.lastIndexOf(".") + 1).toLowerCase();
+  const icon = /^(?:avif|bmp|gif|jpe?g|png|svg|webp)$/u.test(extension)
+    ? FileImage
+    : /^(?:aac|flac|m4a|mp3|ogg|wav)$/u.test(extension)
+      ? FileAudio
+      : /^(?:m4v|mkv|mov|mp4|webm)$/u.test(extension)
+        ? FileVideo
+        : /^(?:csv|ods|tsv|xls|xlsx)$/u.test(extension)
+          ? FileSpreadsheet
+          : /^(?:7z|bz2|gz|rar|tar|xz|zip)$/u.test(extension)
+            ? FileArchive
+            : /^(?:c|cc|cpp|css|go|html?|java|js|jsx|py|rs|sh|ts|tsx|xml|yaml|yml)$/u.test(
+                  extension,
+                )
+              ? FileCode
+              : File;
+  return interfaceIcon(icon, "navigator-tree-entry-icon");
 }
 
 function bindingFor(targetId: ShortcutTargetId): string | null {
@@ -7180,6 +7253,7 @@ const accessibilityAccentColors: Record<
   // Each ink is independently chosen for both schemes. The light values are
   // dark enough for text and controls on the light ground; the dark values are
   // bright enough for text and controls on the dark ground.
+  violet: { light: "#6750a4", dark: "#a99af5", lightHover: "#523b91", darkHover: "#c2b8ff" },
   blue: { light: "#1c5c8c", dark: "#85b2dc", lightHover: "#14486f", darkHover: "#a9cbe9" },
   teal: { light: "#006b5d", dark: "#62d4c3", lightHover: "#004f46", darkHover: "#a0f1e3" },
   orange: { light: "#9a4b00", dark: "#ffb45f", lightHover: "#713400", darkHover: "#ffd29a" },
@@ -7205,6 +7279,10 @@ function accessibilityCss(state: EffectiveAccessibilityPreferences): string {
       --threadleaf-text-font-scale: ${state.textFontScale};
       --threadleaf-editor-font-size: ${state.editorFontSize}px;
       --threadleaf-editor-line-height: ${state.editorLineHeight};
+      --threadleaf-ui-font-meta: max(11px, calc(11px * var(--threadleaf-ui-font-scale)));
+      --threadleaf-ui-font-compact: max(11px, calc(12px * var(--threadleaf-ui-font-scale)));
+      --threadleaf-ui-font-body: max(12px, calc(13px * var(--threadleaf-ui-font-scale)));
+      --threadleaf-ui-font-heading: max(13px, calc(14px * var(--threadleaf-ui-font-scale)));
     }
     :root[data-threadleaf-accessibility="true"] {
       --color-accent: ${colors.light} !important;
@@ -7214,7 +7292,6 @@ function accessibilityCss(state: EffectiveAccessibilityPreferences): string {
       --text-accent-hover: ${colors.lightHover} !important;
       --accent: ${colors.light} !important;
       --accent-strong: ${colors.light} !important;
-      font-size: calc(100% * var(--threadleaf-ui-font-scale)) !important;
     }
     :root[data-theme="dark"][data-threadleaf-accessibility="true"] {
       --color-accent: ${colors.dark} !important;
@@ -7226,12 +7303,14 @@ function accessibilityCss(state: EffectiveAccessibilityPreferences): string {
       --accent-strong: ${colors.dark} !important;
     }
     :root[data-threadleaf-accessibility="true"] body {
-      font-size: calc(14px * var(--threadleaf-ui-font-scale)) !important;
+      font-size: var(--threadleaf-ui-font-body) !important;
     }
     :root[data-threadleaf-accessibility="true"] .note-preview,
-    :root[data-threadleaf-accessibility="true"] .note-header,
-    :root[data-threadleaf-accessibility="true"] .settings-content {
+    :root[data-threadleaf-accessibility="true"] .note-header {
       font-size: calc(14px * var(--threadleaf-text-font-scale)) !important;
+    }
+    :root[data-threadleaf-accessibility="true"] .settings-content {
+      font-size: var(--threadleaf-ui-font-body) !important;
     }
     :root[data-threadleaf-accessibility="true"] .cm-editor,
     :root[data-threadleaf-accessibility="true"] .cm-content,
@@ -7322,8 +7401,24 @@ function accessibilityCss(state: EffectiveAccessibilityPreferences): string {
   `;
 }
 
+function scaledNavigatorRowHeight(base: number, scale: number): number {
+  return Math.max(base - 2, Math.min(base + 9, Math.round(base + (scale - 1) * 14)));
+}
+
 function setAccessibilityRootAttributes(state: EffectiveAccessibilityPreferences): void {
   const root = document.documentElement;
+  const nextTreeRowHeight = scaledNavigatorRowHeight(
+    defaultNavigatorTreeRowHeight,
+    state.uiFontScale,
+  );
+  const nextTagRowHeight = scaledNavigatorRowHeight(
+    defaultNavigatorTagRowHeight,
+    state.uiFontScale,
+  );
+  const navigatorGeometryChanged =
+    nextTreeRowHeight !== navigatorTreeRowHeight || nextTagRowHeight !== navigatorTagRowHeight;
+  navigatorTreeRowHeight = nextTreeRowHeight;
+  navigatorTagRowHeight = nextTagRowHeight;
   root.dataset.threadleafAccessibility = "true";
   root.dataset.threadleafHighContrast = String(state.highContrast);
   root.dataset.threadleafReducedMotion = String(state.reducedMotion);
@@ -7346,8 +7441,27 @@ function setAccessibilityRootAttributes(state: EffectiveAccessibilityPreferences
       String(state.editorLineHeight),
       "important",
     );
+    target.style.setProperty(
+      "--threadleaf-navigator-tree-row-height",
+      `${navigatorTreeRowHeight}px`,
+      "important",
+    );
+    target.style.setProperty(
+      "--threadleaf-navigator-tag-row-height",
+      `${navigatorTagRowHeight}px`,
+      "important",
+    );
   }
   accessibilityStyle.textContent = accessibilityCss(state);
+  if (navigatorGeometryChanged) {
+    navigatorTreeRenderKey = "";
+    navigatorTagRenderKey = "";
+    window.requestAnimationFrame(() => {
+      if (navigatorContentMode === "tags") renderNavigatorTagTree(true);
+      else if (navigatorViewMode === "tree")
+        renderNavigatorTree(activeWorkspaceDocumentPath(), true);
+    });
+  }
   void window.threadleaf.setPluginSurfaceAccessibility(state).catch(() => undefined);
 }
 
@@ -7422,7 +7536,7 @@ function accessibilityPreferencesAreCustomized(preferences: AccessibilityPrefere
     preferences.highContrast !== null ||
     preferences.reducedMotion !== null ||
     preferences.reducedTransparency !== null ||
-    preferences.accent !== "blue" ||
+    preferences.accent !== "violet" ||
     preferences.uiFontScale !== 1 ||
     preferences.textFontScale !== 1 ||
     preferences.editorFontSize !== 15 ||
@@ -10938,7 +11052,9 @@ function renderWorkspaceLayout(layout: WorkspaceLayoutSnapshot | null | undefine
     `${leftCollapsed ? "Expand" : "Collapse"} notes dock`,
   );
   elements.collapseLeftDock.title = leftCollapsed ? "Expand notes dock" : "Collapse notes dock";
-  elements.collapseLeftDock.textContent = leftCollapsed ? "›" : "‹";
+  elements.collapseLeftDock.replaceChildren(
+    interfaceIcon(leftCollapsed ? PanelLeftOpen : PanelLeftClose, "navigator-control-icon"),
+  );
   const rightCollapsed = layout.docks.right.collapsed;
   elements.collapseRightDock.setAttribute("aria-expanded", String(!rightCollapsed));
   elements.collapseRightDock.setAttribute(
@@ -10948,7 +11064,9 @@ function renderWorkspaceLayout(layout: WorkspaceLayoutSnapshot | null | undefine
   elements.collapseRightDock.title = rightCollapsed
     ? "Expand inspector dock"
     : "Collapse inspector dock";
-  elements.collapseRightDock.textContent = rightCollapsed ? "‹" : "›";
+  elements.collapseRightDock.replaceChildren(
+    interfaceIcon(rightCollapsed ? PanelRightOpen : PanelRightClose, "navigator-control-icon"),
+  );
   const warning =
     layout.popout.warning ?? layout.docks.left.warning ?? layout.docks.right.warning ?? null;
   const warningKey = warning ? `${layout.vaultId}\u0000${warning}` : null;
@@ -12332,11 +12450,12 @@ function renderNavigatorModeControls(queryActive: boolean): void {
   const treeVisible = !tagsVisible && navigatorViewMode === "tree" && !queryActive;
   elements.filesHeading.textContent = tagsVisible ? "Tags" : treeVisible ? "Files" : "Notes";
   elements.navigatorTagToggle.setAttribute("aria-pressed", String(tagsVisible));
-  elements.navigatorTagToggle.textContent = tagsVisible
-    ? navigatorViewMode === "tree"
-      ? "Files"
-      : "Notes"
-    : "Tags";
+  elements.navigatorTagToggle.replaceChildren(
+    interfaceIcon(
+      tagsVisible ? (navigatorViewMode === "tree" ? ListTree : List) : Hash,
+      "navigator-control-icon",
+    ),
+  );
   elements.navigatorTagToggle.ariaLabel = tagsVisible
     ? navigatorViewMode === "tree"
       ? "Browse vault files"
@@ -12346,6 +12465,7 @@ function renderNavigatorModeControls(queryActive: boolean): void {
   elements.navigatorTagToggle.disabled = vaultOpening() || busy;
   elements.navigatorViewToggle.hidden = tagsVisible;
   elements.newNote.hidden = tagsVisible;
+  elements.newNote.replaceChildren(interfaceIcon(Plus, "navigator-control-icon"));
   elements.navigatorSearchField.hidden = tagsVisible;
   elements.canvasShelf.hidden = tagsVisible || elements.canvasShelf.dataset.empty === "true";
   elements.fileCount.textContent = vaultOpening()
@@ -12365,10 +12485,13 @@ function renderNavigatorModeControls(queryActive: boolean): void {
                   0),
           );
   elements.navigatorViewToggle.setAttribute("aria-pressed", String(navigatorViewMode === "tree"));
-  elements.navigatorViewToggle.textContent = navigatorViewMode === "tree" ? "Tree" : "List";
+  elements.navigatorViewToggle.replaceChildren(
+    interfaceIcon(navigatorViewMode === "tree" ? List : ListTree, "navigator-control-icon"),
+  );
   elements.navigatorViewToggle.ariaLabel =
     navigatorViewMode === "tree" ? "Switch to flat list" : "Switch to folder tree";
   elements.navigatorViewToggle.title = elements.navigatorViewToggle.ariaLabel;
+  elements.revealActiveNote.replaceChildren(interfaceIcon(LocateFixed, "navigator-control-icon"));
   elements.navigatorTreeToolbar.hidden = !treeVisible;
   elements.bookmarkShelf.hidden = tagsVisible || bookmarkPaths.length === 0;
   const activePath = activeWorkspaceDocumentPath();
@@ -12545,7 +12668,15 @@ function renderNavigatorTree(
     const disclosure = document.createElement("span");
     disclosure.className = "navigator-tree-disclosure";
     disclosure.ariaHidden = "true";
-    disclosure.textContent = entry.kind === "folder" ? (row.expanded ? "▾" : "▸") : "·";
+    if (entry.kind === "folder") {
+      disclosure.append(
+        interfaceIcon(row.expanded ? ChevronDown : ChevronRight, "navigator-tree-chevron"),
+      );
+    }
+    const entryIcon = document.createElement("span");
+    entryIcon.className = "navigator-tree-icon";
+    entryIcon.ariaHidden = "true";
+    entryIcon.append(navigatorEntryIcon(entry, row.expanded, pluginFileViewType));
     const copy = document.createElement("span");
     copy.className = "navigator-tree-copy";
     const title = document.createElement("strong");
@@ -12556,7 +12687,7 @@ function renderNavigatorTree(
         ? `${entry.childCount.toLocaleString()} ${entry.childCount === 1 ? "item" : "items"}`
         : (navigatorTreeParentPath(entry.path) ?? "Vault root");
     copy.append(title, location);
-    button.append(disclosure, copy);
+    button.append(disclosure, entryIcon, copy);
     button.addEventListener("click", () => {
       if (entry.kind === "folder") {
         void setNavigatorFolderExpanded(entry.path, !navigatorExpandedPaths.has(entry.path));

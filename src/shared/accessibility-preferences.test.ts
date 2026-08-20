@@ -13,6 +13,7 @@ import {
 describe("accessibility preferences", () => {
   it("starts with system defaults for media-query controlled preferences", () => {
     const defaults = createDefaultAccessibilityPreferences();
+    expect(defaults.accent).toBe("violet");
     expect(defaults.highContrast).toBeNull();
     expect(defaults.reducedMotion).toBeNull();
     expect(defaults.reducedTransparency).toBeNull();

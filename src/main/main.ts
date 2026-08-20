@@ -340,7 +340,7 @@ let pluginSurfacePresentationVisible = true;
 let appearanceWatcherLifecycle: AppearanceWatcherLifecycle | null = null;
 let pluginSurfaceAccessibility: EffectiveAccessibilityPreferences = {
   highContrast: false,
-  accent: "blue",
+  accent: "violet",
   uiFontScale: 1,
   textFontScale: 1,
   editorFontSize: 15,
