@@ -335,7 +335,137 @@
         "This repository-owned fixture intentionally exercises a narrow API surface.",
         "It is not listed in the external community package directory."
       ]
+    },
+    {
+      "plugin": {
+        "id": "url-into-selection",
+        "name": "Paste URL into Selection",
+        "version": "1.11.4",
+        "repository": "https://github.com/denolehov/obsidian-url-into-selection",
+        "license": "MIT",
+        "bundleSha256": "377883d2fc2a1feeb96be868f7110782874206cb3065635281e89fdfdc6e6d77"
+      },
+      "threadleafVersion": "0.1.0",
+      "lastTested": "2026-08-20",
+      "compatibilityLevel": 3,
+      "summary": "The unchanged official Paste URL into Selection 1.11.4 release passed exact-package authority review and direct Linux Electron delivery from native editor paste through the trusted compatibility runtime. Selected text became a Markdown link and an unhandled ordinary paste retained its plain text fallback.",
+      "evidenceMode": "direct",
+      "requiredCapabilities": [
+        "clipboard",
+        "workspace-ui"
+      ],
+      "platforms": [
+        {
+          "id": "linux-x64-electron",
+          "status": "verified",
+          "limits": [
+            "Verified in Linux X11 and Xvfb Electron with the exact upstream release and disposable vault and private state.",
+            "The runtime is trusted same-user desktop code, not a sandbox."
+          ]
+        },
+        {
+          "id": "macos-electron",
+          "status": "unverified",
+          "limits": [
+            "This exact package workflow is not verified on macOS."
+          ]
+        },
+        {
+          "id": "windows-x64-electron",
+          "status": "unverified",
+          "limits": [
+            "This exact package workflow is not verified on Windows."
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "id": "url-selection.selected-text-paste.v1",
+          "name": "Wrap selected text with a pasted URL and preserve ordinary paste fallback",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "scripts/check-url-selection-paste.mjs",
+              "command": "pnpm test:url-selection-paste"
+            },
+            {
+              "path": "src/runtime/plugin-host.test.ts",
+              "command": "pnpm exec vitest run src/runtime/plugin-host.test.ts src/shared/plugin-runtime-protocol.test.ts"
+            }
+          ]
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "The clipboard-reading command, all settings combinations, and workspace events other than editor-paste are outside this claim.",
+        "File-backed paste remains in Threadleaf's attachment workbench and is not delivered through this text bridge.",
+        "This is supporting behavior evidence, not Level 4 evidence.",
+        "No controller-finalized signed production receipt exists for this tuple."
+      ]
+    },
+    {
+      "plugin": {
+        "id": "url-into-selection",
+        "name": "Paste URL into Selection",
+        "version": "1.11.4",
+        "repository": "https://github.com/denolehov/obsidian-url-into-selection",
+        "license": "MIT",
+        "bundleSha256": "8578844689112df74390d7b107a1302b30c8e31a490cadf40bccd73ddeca9aca"
+      },
+      "threadleafVersion": "0.1.0",
+      "lastTested": "2026-08-20",
+      "compatibilityLevel": 3,
+      "summary": "The distinct Paste URL into Selection 1.11.4 bundle installed in the acceptance vault passed its own exact-package authority review and the same direct Linux Electron selected-URL and ordinary-paste workflows. Its same version string does not inherit evidence from the upstream release hash.",
+      "evidenceMode": "direct",
+      "requiredCapabilities": [
+        "clipboard",
+        "workspace-ui"
+      ],
+      "platforms": [
+        {
+          "id": "linux-x64-electron",
+          "status": "verified",
+          "limits": [
+            "Verified from the operator-supplied exact package in Linux X11 and Xvfb Electron with disposable vault and private state.",
+            "The runtime is trusted same-user desktop code, not a sandbox."
+          ]
+        },
+        {
+          "id": "macos-electron",
+          "status": "unverified",
+          "limits": [
+            "This exact package workflow is not verified on macOS."
+          ]
+        },
+        {
+          "id": "windows-x64-electron",
+          "status": "unverified",
+          "limits": [
+            "This exact package workflow is not verified on Windows."
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "id": "url-selection.selected-text-paste.operator-package.v1",
+          "name": "Run the selected-URL and ordinary-paste workflow against an explicit installed package",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "scripts/check-url-selection-paste.mjs",
+              "command": "THREADLEAF_URL_SELECTION_PLUGIN_DIR=$PLUGIN_DIR node scripts/check-url-selection-paste.mjs"
+            }
+          ]
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "This identity is operator-supplied and is not substituted for the separately reviewed upstream release hash.",
+        "The clipboard-reading command, all settings combinations, and workspace events other than editor-paste are outside this claim.",
+        "This is supporting behavior evidence, not Level 4 evidence.",
+        "No controller-finalized signed production receipt exists for this tuple."
+      ]
     }
   ],
-  "generationId": "4d63dc9b6afa0fc087e3f40817cdb5441f8ad9d0739703eb410d8233ae346908"
+  "generationId": "b87355b288a93a84621e1bbc0740df9873393d648bbe08be959bbfc3fb48781f"
 }

@@ -1,0 +1,29 @@
+{
+  "$schema": "./reviewed-authority-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profileId": "url-into-selection-1.11.4",
+  "profileRevision": 1,
+  "packageIdentity": {
+    "pluginId": "url-into-selection",
+    "manifestVersion": "1.11.4",
+    "distributionTag": "1.11.4",
+    "manifestSha256": "6573c0ef277b0eb366e19acd558445a46473a5fccf0b7e80b9e07dc95f8b0443",
+    "mainSha256": "377883d2fc2a1feeb96be868f7110782874206cb3065635281e89fdfdc6e6d77",
+    "stylesSha256": null,
+    "packageTreeSha256": "a52568904cdae994181ea7437d37a437a3dbe2ae4df71444a7340ad9a3b73804"
+  },
+  "packageIdentityDigest": "7a1b3ed4b953c99a47f1badc55bc68ae9cc882c0003bd4e16d4e3508098daf09",
+  "expectedStaticCapabilities": ["clipboard", "workspace-ui"],
+  "requiredAuthorities": [
+    "clipboard",
+    "workspace-ui",
+    "network",
+    "filesystem",
+    "subprocess",
+    "host-environment",
+    "dynamic-code"
+  ],
+  "executionProfile": "trusted-node-renderer",
+  "allowedPlatforms": ["linux", "darwin", "win32"],
+  "authorityDigest": "520e5da9066dde32e3e742d48db81fbe05f8705fbdeb989e97e8ca92bcfa4b6d"
+}

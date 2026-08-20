@@ -397,6 +397,18 @@
       "version": "0.1.0",
       "threadleafVersion": "0.1.0",
       "compatibilityLevel": 0
+    },
+    {
+      "id": "url-into-selection",
+      "version": "1.11.4",
+      "threadleafVersion": "0.1.0",
+      "compatibilityLevel": 3
+    },
+    {
+      "id": "url-into-selection",
+      "version": "1.11.4",
+      "threadleafVersion": "0.1.0",
+      "compatibilityLevel": 3
     }
   ]
 }

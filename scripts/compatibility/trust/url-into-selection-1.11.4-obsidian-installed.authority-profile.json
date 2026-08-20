@@ -1,0 +1,29 @@
+{
+  "$schema": "./reviewed-authority-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profileId": "url-into-selection-1.11.4-obsidian-installed",
+  "profileRevision": 1,
+  "packageIdentity": {
+    "pluginId": "url-into-selection",
+    "manifestVersion": "1.11.4",
+    "distributionTag": "1.11.4+obsidian-installed",
+    "manifestSha256": "6573c0ef277b0eb366e19acd558445a46473a5fccf0b7e80b9e07dc95f8b0443",
+    "mainSha256": "8578844689112df74390d7b107a1302b30c8e31a490cadf40bccd73ddeca9aca",
+    "stylesSha256": null,
+    "packageTreeSha256": "13572cac69d1fe11c6159d2d4f0454e3c8f2e066d150efa6027fbe0c21e5e0ca"
+  },
+  "packageIdentityDigest": "e925da31bf8ef84a2344d39a71483b49bfba9a56f136c3aad4c7ca8d0e496814",
+  "expectedStaticCapabilities": ["clipboard", "workspace-ui"],
+  "requiredAuthorities": [
+    "clipboard",
+    "workspace-ui",
+    "network",
+    "filesystem",
+    "subprocess",
+    "host-environment",
+    "dynamic-code"
+  ],
+  "executionProfile": "trusted-node-renderer",
+  "allowedPlatforms": ["linux", "darwin", "win32"],
+  "authorityDigest": "614d33697f9bce07ad9f0f8440d03d30906d7d7024e354ae02ced78c467ee71a"
+}

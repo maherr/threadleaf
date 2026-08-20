@@ -207,6 +207,8 @@ export interface PluginIntegrationSnapshot {
   settingTabPluginIds?: string[];
   statusBarItems: number;
   viewTypes: string[];
+  /** Workspace events with at least one live compatibility-plugin listener. */
+  workspaceEvents?: string[];
 }
 
 /**
@@ -262,6 +264,11 @@ export interface PluginEditorUpdate {
   selection: PluginEditorSelection;
 }
 
+export interface PluginEditorEventSnapshot {
+  handled: boolean;
+  type: "paste";
+}
+
 export type VaultSelectionSource = "bundled" | "direct" | "environment" | "picked" | "restored";
 
 export interface VaultStartupSnapshot {
@@ -290,6 +297,7 @@ export interface RuntimeSnapshot {
   events: RuntimeEvent[];
   integrations?: PluginIntegrationSnapshot;
   editorUpdate?: PluginEditorUpdate | null;
+  editorEvent?: PluginEditorEventSnapshot | null;
   markdownProjection?: PluginMarkdownProjectionSnapshot | null;
   pluginSurface?: PluginSurfaceSnapshot | null;
   resourcePolicy?: PluginResourcePolicySnapshot;
@@ -1865,6 +1873,10 @@ export interface ThreadleafBridge {
   ): Promise<NoteWorkflowValueResponse>;
   chooseVault(): Promise<VaultOpenResponse>;
   runCommand(commandId: string, editorContext?: PluginEditorContext): Promise<RuntimeSnapshot>;
+  runPluginEditorPaste(
+    editorContext: PluginEditorContext,
+    clipboardText: string,
+  ): Promise<RuntimeSnapshot>;
   waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot>;
   reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
   unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;

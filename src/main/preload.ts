@@ -694,6 +694,12 @@ const bridge: ThreadleafBridge = {
       commandId,
       editorContext,
     ) as Promise<RuntimeSnapshot>,
+  runPluginEditorPaste: (editorContext, clipboardText) =>
+    ipcRenderer.invoke(
+      ipcChannels.runPluginEditorPaste,
+      editorContext,
+      clipboardText,
+    ) as Promise<RuntimeSnapshot>,
   waitForPluginMutations: (options) =>
     ipcRenderer.invoke(ipcChannels.waitForPluginMutations, options) as Promise<RuntimeSnapshot>,
   reloadPlugin: (pluginId) =>

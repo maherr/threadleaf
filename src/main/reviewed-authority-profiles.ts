@@ -52,6 +52,12 @@ import trustedViewFixtureProfileJson from "../../scripts/compatibility/trust/thr
 import workspaceDocksFixtureProfileJson from "../../scripts/compatibility/trust/threadleaf-workspace-docks-fixture-0.1.0.authority-profile.json" with {
   type: "json",
 };
+import urlSelectionProfileJson from "../../scripts/compatibility/trust/url-into-selection-1.11.4.authority-profile.json" with {
+  type: "json",
+};
+import urlSelectionObsidianInstalledProfileJson from "../../scripts/compatibility/trust/url-into-selection-1.11.4-obsidian-installed.authority-profile.json" with {
+  type: "json",
+};
 import {
   type ExactPluginPackageIdentity,
   type PluginCapabilityId,
@@ -297,6 +303,8 @@ const parsedProfiles = [
   parseReviewedAuthorityProfile(trustedStateFixtureProfileJson),
   parseReviewedAuthorityProfile(trustedViewFixtureProfileJson),
   parseReviewedAuthorityProfile(workspaceDocksFixtureProfileJson),
+  parseReviewedAuthorityProfile(urlSelectionProfileJson),
+  parseReviewedAuthorityProfile(urlSelectionObsidianInstalledProfileJson),
 ];
 
 if (

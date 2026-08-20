@@ -26,7 +26,9 @@ import {
   requirePayloadContent,
   requirePayloadString,
   requirePayloadStringArray,
+  requirePluginClipboardText,
   requirePluginConstructionDispatch,
+  requirePluginEditorContext,
   requirePluginRendererEnvironment,
 } from "../shared/plugin-runtime-protocol";
 
@@ -286,6 +288,13 @@ export class PluginRendererService {
           await this.requireHost().runCommand(
             requirePayloadString(request, "commandId"),
             optionalPluginEditorContext(request),
+          ),
+        );
+      case "run-editor-paste":
+        return this.withEnvironment(
+          await this.requireHost().runPluginEditorPaste(
+            requirePluginEditorContext(request),
+            requirePluginClipboardText(request),
           ),
         );
       case "seed-vault-markdown-paths":

@@ -309,7 +309,11 @@
       }
     ],
     "differences": [],
-    "notObserved": ["Plugin.registerMarkdownCodeBlockProcessor"],
+    "notObserved": [
+      "app.workspace.on",
+      "app.workspace.off",
+      "Plugin.registerMarkdownCodeBlockProcessor"
+    ],
     "limitations": [
       "API detection is lexical and conservative; comments, generated code, and dynamic property selection are not resolved.",
       "An unmeasured reference is a review difference, not proof that the corresponding API is absent."

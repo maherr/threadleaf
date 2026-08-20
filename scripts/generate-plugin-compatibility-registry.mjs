@@ -671,9 +671,11 @@ export async function generatePluginCompatibilityRegistry({
       `${right.plugin.id}\0${right.plugin.version}`,
     ),
   );
-  const keys = entries.map((entry) => `${entry.plugin.id}@${entry.plugin.version}`);
+  const keys = entries.map(
+    (entry) => `${entry.plugin.id}@${entry.plugin.version}@${entry.plugin.bundleSha256}`,
+  );
   if (new Set(keys).size !== keys.length) {
-    fail("source contains duplicate plugin and version pairs.");
+    fail("source contains duplicate exact plugin identities.");
   }
   const registryBase = {
     schemaVersion: 2,

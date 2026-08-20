@@ -19,6 +19,7 @@ import type { VaultReadPort } from "../kernel/ports";
 import { authorityJsonSha256 } from "../shared/authority-json";
 import type {
   PluginEditorContext,
+  PluginEditorEventSnapshot,
   PluginEditorUpdate,
   PluginMutationWaitOptions,
   PluginSummary,
@@ -252,6 +253,7 @@ export class PluginHost implements PluginRuntimePort {
   private activeSettingTabContainer: HTMLElement | null = null;
   private activeSettingTabPluginId: string | null = null;
   private editorUpdate: PluginEditorUpdate | null = null;
+  private editorEvent: PluginEditorEventSnapshot | null = null;
   private editorUpdateSequence = 0;
   private lastPluginId: string | null = null;
   private nativeEditorContext: PluginEditorContext | null = null;
@@ -462,6 +464,7 @@ export class PluginHost implements PluginRuntimePort {
     commandId: string,
     editorContext?: PluginEditorContext,
   ): Promise<RuntimeSnapshot> {
+    this.editorEvent = null;
     const command = this.app.commands.list().find(({ id }) => id === commandId);
     const ownerId = this.app.commands.ownerIdFor(commandId);
     try {
@@ -509,6 +512,50 @@ export class PluginHost implements PluginRuntimePort {
         ownerId ? { pluginId: ownerId } : {},
         error,
       );
+    }
+  }
+
+  async runPluginEditorPaste(
+    editorContext: PluginEditorContext,
+    clipboardText: string,
+  ): Promise<RuntimeSnapshot> {
+    try {
+      await this.openNativeEditorContext(editorContext);
+      const view = this.nativeMarkdownView;
+      if (!view || typeof document === "undefined") {
+        throw new Error("Plugin paste delivery requires an active native Markdown editor.");
+      }
+      const EventConstructor = document.defaultView?.Event;
+      if (!EventConstructor) {
+        throw new Error("Plugin paste delivery requires a renderer Event constructor.");
+      }
+      const pasteEvent = new EventConstructor("paste", {
+        bubbles: true,
+        cancelable: true,
+      }) as ClipboardEvent;
+      Object.defineProperty(pasteEvent, "clipboardData", {
+        configurable: false,
+        enumerable: true,
+        value: {
+          getData: (format: string) =>
+            format === "text" || format === "text/plain" ? clipboardText : "",
+          types: ["text/plain"],
+        },
+        writable: false,
+      });
+      await this.app.workspace.triggerAsync("editor-paste", pasteEvent, view.editor, view);
+      await this.vault.waitForSettledMutations(250, 10_000);
+      this.captureEditorUpdate();
+      this.editorEvent = { handled: pasteEvent.defaultPrevented, type: "paste" };
+      this.record(
+        "plugin",
+        pasteEvent.defaultPrevented
+          ? "A compatibility plugin handled the editor paste."
+          : "Compatibility plugins left the editor paste unchanged.",
+      );
+      return this.getSnapshot();
+    } catch (error) {
+      throw pluginDiagnosticError("runtime-command-failed", {}, error);
     }
   }
 
@@ -796,6 +843,7 @@ export class PluginHost implements PluginRuntimePort {
     this.nativeMarkdownView = null;
     this.nativeEditorContext = null;
     this.editorUpdate = null;
+    this.editorEvent = null;
     return this.getSnapshot();
   }
 
@@ -937,8 +985,12 @@ export class PluginHost implements PluginRuntimePort {
       actions: this.app.commands.actions.list(),
       notices: this.app.notices.list(),
       events: this.events.map((event) => ({ ...event })),
-      integrations: this.app.compatibility.snapshot(),
+      integrations: {
+        ...this.app.compatibility.snapshot(),
+        workspaceEvents: this.app.workspace.eventNames(),
+      },
       editorUpdate: this.editorUpdate ? structuredClone(this.editorUpdate) : null,
+      editorEvent: this.editorEvent ? { ...this.editorEvent } : null,
       pluginSurface:
         this.activeSettingTab && this.activeSettingTabPluginId
           ? {

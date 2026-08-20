@@ -1,7 +1,7 @@
-# Measured Markdown processor compatibility
+# Measured plugin compatibility APIs
 
-This document is the public contract for the measured Markdown processor family in the trusted
-desktop compatibility runtime. It is normative for the signatures and observable behavior below.
+This document is the public contract for measured API families in the trusted desktop
+compatibility runtime. It is normative for the signatures and observable behavior below.
 The measured usage inventory in [`compatibility/open-plugin-usage.v1.json`](../../compatibility/open-plugin-usage.v1.json)
 is evidence of why these members are implemented; it is not a claim that every plugin API exists.
 
@@ -202,3 +202,32 @@ receiving a silent no-op shim.
 
 The compatibility host remains trusted. Static capability evidence is a review aid, not a runtime
 sandbox, and a successful processor workflow does not imply universal plugin compatibility.
+
+## Workspace editor paste events
+
+`app.workspace.on(name, callback, context?)` and `app.workspace.off(name, callback)` retain live
+listener identity and owner cleanup in both compatibility topologies. `on` returns a disposable
+event reference; `off`, that reference's `off()`, plugin unload, and runtime teardown each remove
+the matching listener without disturbing sibling registrations.
+
+The measured cross-surface delivery is `editor-paste`. When at least one loaded plugin registers
+that event, `RuntimeSnapshot.integrations.workspaceEvents` advertises it to the native editor. A
+bounded `run-editor-paste` operation then carries the active note path, exact content, SHA-256
+revision, selection offsets, and at most 1 MiB of plain clipboard text to the plugin runtime. The
+runtime constructs a cancelable paste event, supplies the native-compatible `Editor` and
+`MarkdownView`, awaits registered callbacks in load order, and returns both the final editor
+projection and whether any callback called `preventDefault()`.
+
+The native editor prevents the browser paste only after capturing a revision-bound fallback. If no
+plugin handles the event, or plugin delivery fails before the note changes, Threadleaf applies the
+same plain text at the captured selection. If the note, revision, or content changes first, the
+fallback is refused rather than written to a different document. File-backed paste remains owned
+by the attachment workbench and never enters this text-only bridge.
+
+`pnpm test:url-selection-paste` proves the unchanged MIT Paste URL into Selection 1.11.4 release:
+selected text plus a URL becomes a Markdown link, while ordinary text remains an ordinary paste.
+The same gate accepts an explicit operator package directory and has passed the distinct 1.11.4
+bundle installed in the acceptance vault. Each identity has its own reviewed authority profile;
+the shared version string never substitutes for exact bytes. This is evidence for selected-text
+URL paste only. The plugin's clipboard-reading command, every setting combination, and unrelated
+workspace event names remain outside the claim.

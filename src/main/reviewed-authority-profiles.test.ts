@@ -8,7 +8,7 @@ import {
 } from "./reviewed-authority-profiles";
 
 describe("reviewed authority profiles", () => {
-  it("loads the eighteen exact identity-bound records", () => {
+  it("loads the twenty exact identity-bound records", () => {
     const profiles = reviewedAuthorityProfiles();
     expect(profiles.map(({ packageIdentity }) => packageIdentity.pluginId).sort()).toEqual([
       "calendar-beta",
@@ -29,6 +29,8 @@ describe("reviewed authority profiles", () => {
       "threadleaf-trusted-state-fixture",
       "threadleaf-trusted-view-fixture",
       "threadleaf-workspace-docks-fixture",
+      "url-into-selection",
+      "url-into-selection",
     ]);
     const calendar = profiles.find(
       ({ packageIdentity }) => packageIdentity.pluginId === "calendar-beta",
@@ -62,6 +64,14 @@ describe("reviewed authority profiles", () => {
       ],
       executionProfile: "trusted-node-renderer",
     });
+    const urlSelectionProfiles = profiles.filter(
+      ({ packageIdentity }) => packageIdentity.pluginId === "url-into-selection",
+    );
+    expect(urlSelectionProfiles).toHaveLength(2);
+    expect(urlSelectionProfiles.map(({ packageIdentity }) => packageIdentity.mainSha256)).toEqual([
+      "377883d2fc2a1feeb96be868f7110782874206cb3065635281e89fdfdc6e6d77",
+      "8578844689112df74390d7b107a1302b30c8e31a490cadf40bccd73ddeca9aca",
+    ]);
     const excalidraw2253 = profiles.find(
       ({ packageIdentity }) =>
         packageIdentity.pluginId === "obsidian-excalidraw-plugin" &&

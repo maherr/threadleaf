@@ -286,6 +286,13 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
     });
   }
 
+  runPluginEditorPaste(
+    editorContext: PluginEditorContext,
+    clipboardText: string,
+  ): Promise<RuntimeSnapshot> {
+    return this.requestSnapshot("run-editor-paste", { editorContext, clipboardText });
+  }
+
   renderMarkdownProjection(
     pluginId: string,
     sourcePath: string,

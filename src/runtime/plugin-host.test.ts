@@ -1420,6 +1420,89 @@ module.exports = class EditorFixture extends Plugin {
     }
   });
 
+  it("delivers revision-bound editor paste events and reports whether a plugin handled them", async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-paste-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    const dom = new JSDOM("<!doctype html><body></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    const previousWindow = globalThis.window;
+    const previousDocument = globalThis.document;
+    try {
+      installObsidianDomCompatibility(dom.window);
+      Object.assign(globalThis, {
+        window: dom.window,
+        document: dom.window.document,
+      });
+      await fs.mkdir(vaultPath, { recursive: true });
+      await fs.writeFile(path.join(vaultPath, "Welcome.md"), "alpha beta", "utf8");
+      const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "paste-fixture");
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({ id: "paste-fixture", name: "Paste fixture", version: "0.1.0" }),
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        `const { Plugin } = require("obsidian");
+module.exports = class PasteFixture extends Plugin {
+  async onload() {
+    this.registerEvent(this.app.workspace.on("editor-paste", async (event, editor) => {
+      await Promise.resolve();
+      const text = event.clipboardData?.getData("text") ?? "";
+      if (!text.startsWith("https://")) return;
+      event.preventDefault();
+      editor.replaceSelection("[" + editor.getSelection() + "](" + text + ")");
+    }));
+  }
+};
+`,
+        "utf8",
+      );
+
+      const host = new PluginHost(vaultPath);
+      await loadPlugin(host, pluginPath);
+      const revision = "f".repeat(64);
+      const handled = await host.runPluginEditorPaste(
+        {
+          path: "Welcome.md",
+          content: "alpha beta",
+          revision,
+          selection: { anchor: 0, head: 5 },
+        },
+        "https://example.test",
+      );
+      expect(handled.integrations?.workspaceEvents).toContain("editor-paste");
+      expect(handled.editorEvent).toEqual({ handled: true, type: "paste" });
+      expect(handled.editorUpdate).toMatchObject({
+        baseContent: "alpha beta",
+        content: "[alpha](https://example.test) beta",
+        revision,
+        selection: { anchor: 29, head: 29 },
+      });
+
+      const ordinary = await host.runPluginEditorPaste(
+        {
+          path: "Welcome.md",
+          content: "alpha beta",
+          revision,
+          selection: { anchor: 6, head: 10 },
+        },
+        "ordinary text",
+      );
+      expect(ordinary.editorEvent).toEqual({ handled: false, type: "paste" });
+      expect(ordinary.editorUpdate).toMatchObject({ content: "alpha beta" });
+    } finally {
+      if (previousWindow === undefined) Reflect.deleteProperty(globalThis, "window");
+      else globalThis.window = previousWindow;
+      if (previousDocument === undefined) Reflect.deleteProperty(globalThis, "document");
+      else globalThis.document = previousDocument;
+      dom.window.close();
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
   it("rejects plugin directories outside the active vault", async () => {
     const host = new PluginHost(fixtureVault);
     const request = await testConstructionRequest(fixturePlugin);

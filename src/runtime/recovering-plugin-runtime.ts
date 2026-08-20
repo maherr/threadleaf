@@ -235,6 +235,18 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
     );
   }
 
+  runPluginEditorPaste(
+    editorContext: PluginEditorContext,
+    clipboardText: string,
+  ): Promise<RuntimeSnapshot> {
+    return this.runSnapshot({ operation: "run-editor-paste" }, (runtime) => {
+      if (!runtime.runPluginEditorPaste) {
+        throw new Error("The active plugin runtime does not support editor paste delivery.");
+      }
+      return runtime.runPluginEditorPaste(editorContext, clipboardText);
+    });
+  }
+
   waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {
     return this.runSnapshot({ operation: "wait-for-mutations" }, (runtime) =>
       runtime.waitForPluginMutations(options),

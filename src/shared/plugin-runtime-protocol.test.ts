@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  maximumPluginClipboardTextBytes,
   optionalPayloadString,
   optionalPluginEditorContext,
   optionalPluginMutationWaitOptions,
@@ -19,6 +20,8 @@ import {
   parsePluginVaultWriteRequest,
   requirePayloadString,
   requirePayloadStringArray,
+  requirePluginClipboardText,
+  requirePluginEditorContext,
 } from "./plugin-runtime-protocol";
 
 describe("plugin renderer protocol", () => {
@@ -109,6 +112,33 @@ describe("plugin renderer protocol", () => {
 
     expect(requirePayloadString(request, "pluginDirectory")).toBe("/vault/plugin");
     expect(optionalPayloadString(request, "pluginId")).toBeUndefined();
+  });
+
+  it("parses bounded revision-bound plugin editor paste requests", () => {
+    const request = parsePluginRendererRequest({
+      id: "request-paste",
+      operation: "run-editor-paste",
+      payload: {
+        clipboardText: "https://example.test",
+        editorContext: {
+          path: "Welcome.md",
+          content: "alpha",
+          revision: "a".repeat(64),
+          selection: { anchor: 0, head: 5 },
+        },
+      },
+    });
+    expect(requirePluginEditorContext(request).selection).toEqual({ anchor: 0, head: 5 });
+    expect(requirePluginClipboardText(request)).toBe("https://example.test");
+    expect(() =>
+      requirePluginClipboardText(
+        parsePluginRendererRequest({
+          id: "request-large-paste",
+          operation: "run-editor-paste",
+          payload: { clipboardText: "x".repeat(maximumPluginClipboardTextBytes + 1) },
+        }),
+      ),
+    ).toThrow("exceeds its byte limit");
   });
 
   it("accepts bounded vault path inventories and rejects malformed entries", () => {

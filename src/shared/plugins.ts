@@ -452,14 +452,19 @@ export function parsePluginManifest(value: unknown): PluginManifestData {
 }
 
 export function createPluginCompatibilityReport(
-  manifest: Pick<PluginManifestData, "id" | "version">,
+  manifest: Pick<PluginManifestData, "id" | "version"> & { bundleSha256?: string },
 ): PluginCompatibilityReport {
   assertPluginCompatibilityRegistryCoherence();
   const candidates = pluginCompatibilityRegistry.entries.filter(
     (entry) => entry.plugin.id === manifest.id,
   );
-  const evidence = candidates.find((entry) => entry.plugin.version === manifest.version);
-  const reference = evidence ?? candidates.at(-1);
+  const matchingVersion = candidates.filter((entry) => entry.plugin.version === manifest.version);
+  const evidence = manifest.bundleSha256
+    ? matchingVersion.find((entry) => entry.plugin.bundleSha256 === manifest.bundleSha256)
+    : matchingVersion.length === 1
+      ? matchingVersion[0]
+      : undefined;
+  const reference = evidence ?? matchingVersion.at(-1) ?? candidates.at(-1);
   if (evidence) {
     return {
       level: evidence.compatibilityLevel,
@@ -475,6 +480,18 @@ export function createPluginCompatibilityReport(
       })),
       workflows: evidence.workflows.map(({ id, name, status }) => ({ id, name, status })),
       limitations: [...evidence.limitations],
+    };
+  }
+  if (matchingVersion.length > 0) {
+    return {
+      level: 0,
+      status: "unverified",
+      testedVersion: manifest.version,
+      testedThreadleafVersion: reference?.threadleafVersion ?? null,
+      lastTested: reference?.lastTested ?? null,
+      summary: manifest.bundleSha256
+        ? "The plugin ID and version are known, but this exact bundle digest has no matching workflow evidence."
+        : "Multiple exact bundles share this plugin version; a bundle digest is required before compatibility evidence can be selected.",
     };
   }
   if (!reference) {

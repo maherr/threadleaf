@@ -146,6 +146,23 @@ describe("plugin compatibility settings", () => {
       testedThreadleafVersion: "0.1.0",
       lastTested: "2026-08-16",
     });
+    expect(
+      createPluginCompatibilityReport({
+        id: "url-into-selection",
+        version: "1.11.4",
+        bundleSha256: "377883d2fc2a1feeb96be868f7110782874206cb3065635281e89fdfdc6e6d77",
+      }),
+    ).toMatchObject({ level: 3, status: "verified" });
+    expect(
+      createPluginCompatibilityReport({
+        id: "url-into-selection",
+        version: "1.11.4",
+        bundleSha256: "8578844689112df74390d7b107a1302b30c8e31a490cadf40bccd73ddeca9aca",
+      }),
+    ).toMatchObject({ level: 3, status: "verified" });
+    expect(
+      createPluginCompatibilityReport({ id: "url-into-selection", version: "1.11.4" }),
+    ).toMatchObject({ level: 0, status: "unverified" });
     expect(createPluginCompatibilityReport({ id: "unknown-plugin", version: "1.0.0" })).toEqual({
       level: 0,
       status: "unverified",

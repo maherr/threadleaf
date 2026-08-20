@@ -81,6 +81,7 @@ import {
 } from "../shared/plugin-diagnostics";
 import { parsePluginPackagePreviewRequest } from "../shared/plugin-packages";
 import {
+  maximumPluginClipboardTextBytes,
   type PluginRendererEnvironment,
   parsePluginEditorContext,
   parsePluginMutationWaitOptions,
@@ -4256,6 +4257,29 @@ function registerIpcHandlers(): void {
           workspaceController.runPluginCommand(
             commandId,
             editorContext === undefined ? undefined : parsePluginEditorContext(editorContext),
+          ),
+        "runtime-command-failed",
+      );
+    },
+  );
+  handleMainRendererIpc(
+    ipcChannels.runPluginEditorPaste,
+    (event, editorContext: unknown, clipboardText: unknown) => {
+      assertMainRendererPluginIpcSender(
+        isMainRendererSender(event.sender),
+        "Plugin editor paste delivery",
+      );
+      if (
+        typeof clipboardText !== "string" ||
+        new TextEncoder().encode(clipboardText).byteLength > maximumPluginClipboardTextBytes
+      ) {
+        throw new Error("Plugin editor paste requires bounded clipboard text.");
+      }
+      return serializePluginCatalogOperation(
+        () =>
+          workspaceController.runPluginEditorPaste(
+            parsePluginEditorContext(editorContext),
+            clipboardText,
           ),
         "runtime-command-failed",
       );

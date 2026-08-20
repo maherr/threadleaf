@@ -139,6 +139,7 @@ import type {
   PluginPackagePreviewRequest,
   PluginPackageReview,
 } from "../shared/plugin-packages";
+import { maximumPluginClipboardTextBytes } from "../shared/plugin-runtime-protocol";
 import {
   type CompatibilityProfile,
   compatibilityProfileForVaultPluginSettings,
@@ -3895,7 +3896,25 @@ function handleEditorAttachmentPaste(
   event: ClipboardEvent,
 ): boolean {
   const transfer = event.clipboardData;
-  if (!transfer || !hasAttachmentRestoreFileTransfer(transfer.files, transfer.items)) return false;
+  if (!transfer) return false;
+  if (!hasAttachmentRestoreFileTransfer(transfer.files, transfer.items)) {
+    const clipboardText = transfer.getData("text/plain") || transfer.getData("text");
+    if (
+      !currentSnapshot?.integrations?.workspaceEvents?.includes("editor-paste") ||
+      pluginEditorPasteBusy ||
+      busy ||
+      clipboardText.length === 0 ||
+      new TextEncoder().encode(clipboardText).byteLength > maximumPluginClipboardTextBytes
+    ) {
+      return false;
+    }
+    const captured = capturePluginEditorPaste(paneId, view);
+    if (!captured) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    void deliverPluginEditorPaste(paneId, view, captured, clipboardText);
+    return true;
+  }
   event.preventDefault();
   event.stopPropagation();
   const transferred = selectAttachmentBatchRestoreFiles(transfer.files, transfer.items);
@@ -3928,6 +3947,104 @@ function handleEditorAttachmentPaste(
     );
   }
   return true;
+}
+
+interface CapturedPluginEditorPaste {
+  context: PluginEditorContext;
+  from: number;
+  to: number;
+}
+
+let pluginEditorPasteBusy = false;
+
+function capturePluginEditorPaste(
+  paneId: WorkspacePaneId,
+  view: EditorView,
+): CapturedPluginEditorPaste | null {
+  return runInPaneContext(paneId, () => {
+    if (editor !== view || !loadedNote || !loadedVaultId || editorReadOnly || readOnlyVault()) {
+      return null;
+    }
+    const selection = view.state.selection.main;
+    return {
+      context: {
+        content: view.state.doc.toString(),
+        path: loadedNote.path,
+        revision: loadedNote.revision,
+        selection: { anchor: selection.anchor, head: selection.head },
+      },
+      from: selection.from,
+      to: selection.to,
+    };
+  });
+}
+
+function pluginPasteTargetIsCurrent(
+  paneId: WorkspacePaneId,
+  view: EditorView,
+  captured: CapturedPluginEditorPaste,
+): boolean {
+  return runInPaneContext(paneId, () =>
+    Boolean(
+      editor === view &&
+        loadedNote?.path === captured.context.path &&
+        loadedNote.revision === captured.context.revision &&
+        view.state.doc.toString() === captured.context.content,
+    ),
+  );
+}
+
+function applyPlainTextPaste(
+  paneId: WorkspacePaneId,
+  view: EditorView,
+  captured: CapturedPluginEditorPaste,
+  clipboardText: string,
+): boolean {
+  if (!pluginPasteTargetIsCurrent(paneId, view, captured)) return false;
+  runInPaneContext(paneId, () => {
+    view.dispatch({
+      changes: { from: captured.from, to: captured.to, insert: clipboardText },
+      selection: { anchor: captured.from + clipboardText.length },
+      annotations: Transaction.userEvent.of("input.paste"),
+    });
+  });
+  return true;
+}
+
+async function deliverPluginEditorPaste(
+  paneId: WorkspacePaneId,
+  view: EditorView,
+  captured: CapturedPluginEditorPaste,
+  clipboardText: string,
+): Promise<void> {
+  pluginEditorPasteBusy = true;
+  try {
+    if (paneId !== activePaneContextId) {
+      requestWorkspacePaneFocus(paneId);
+      await paneFocusTail;
+    }
+    if (!pluginPasteTargetIsCurrent(paneId, view, captured)) {
+      showToast("The note changed before compatibility plugins could inspect that paste.");
+      return;
+    }
+    const snapshot = await window.threadleaf.runPluginEditorPaste(captured.context, clipboardText);
+    const handled = snapshot.editorEvent?.type === "paste" && snapshot.editorEvent.handled;
+    if (handled) {
+      render(snapshot);
+      return;
+    }
+    if (!applyPlainTextPaste(paneId, view, captured, clipboardText)) {
+      showToast("The note changed before the ordinary paste fallback could be applied.");
+    }
+  } catch (error) {
+    if (applyPlainTextPaste(paneId, view, captured, clipboardText)) {
+      showToast("A compatibility plugin failed, so Threadleaf pasted plain text instead.");
+    } else {
+      showToast(ipcErrorMessage(error));
+    }
+  } finally {
+    pluginEditorPasteBusy = false;
+  }
 }
 
 function attachmentInsertDefaultTarget(sourceNotePath: string, sourceFileName: string): string {

@@ -3457,6 +3457,18 @@ export class WorkspaceRuntime {
     return this.publishSnapshot(pluginSnapshot);
   }
 
+  async runPluginEditorPaste(
+    editorContext: PluginEditorContext,
+    clipboardText: string,
+  ): Promise<RuntimeSnapshot> {
+    if (!this.pluginHost.runPluginEditorPaste) {
+      throw new Error("The active plugin runtime does not support editor paste delivery.");
+    }
+    return this.publishSnapshot(
+      await this.pluginHost.runPluginEditorPaste(editorContext, clipboardText),
+    );
+  }
+
   async waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {
     return this.publishSnapshot(await this.pluginHost.waitForPluginMutations(options));
   }

@@ -397,6 +397,19 @@ export class Workspace extends Events {
     }
   }
 
+  async triggerAsync(name: string, ...args: unknown[]): Promise<void> {
+    for (const callback of [...(this.listeners.get(name) ?? [])]) {
+      await callback(...args);
+    }
+  }
+
+  eventNames(): string[] {
+    return [...this.listeners.entries()]
+      .filter(([, callbacks]) => callbacks.size > 0)
+      .map(([name]) => name)
+      .sort((left, right) => left.localeCompare(right, "en-US"));
+  }
+
   offref(eventRef: CompatibilityEventRef): void {
     eventRef.off();
   }

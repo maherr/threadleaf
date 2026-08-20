@@ -355,6 +355,7 @@ export const pluginRendererOperations = [
   "reload-plugin",
   "render-markdown",
   "run-command",
+  "run-editor-paste",
   "seed-vault-markdown-paths",
   "unload-all",
   "unload-plugin",
@@ -492,6 +493,20 @@ export function optionalPluginEditorContext(
 ): PluginEditorContext | undefined {
   const value = request.payload?.editorContext;
   return value === undefined ? undefined : parsePluginEditorContext(value);
+}
+
+export function requirePluginEditorContext(request: PluginRendererRequest): PluginEditorContext {
+  return parsePluginEditorContext(request.payload?.editorContext);
+}
+
+export const maximumPluginClipboardTextBytes = 1024 * 1024;
+
+export function requirePluginClipboardText(request: PluginRendererRequest): string {
+  const value = requirePayloadContent(request, "clipboardText");
+  if (new TextEncoder().encode(value).byteLength > maximumPluginClipboardTextBytes) {
+    throw new Error("Plugin editor paste clipboard text exceeds its byte limit.");
+  }
+  return value;
 }
 
 function optionalMutationWaitDuration(

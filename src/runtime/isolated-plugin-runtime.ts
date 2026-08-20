@@ -216,6 +216,53 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
     });
   }
 
+  runPluginEditorPaste(
+    editorContext: PluginEditorContext,
+    clipboardText: string,
+  ): Promise<RuntimeSnapshot> {
+    return this.enqueue(async () => {
+      let currentContext = structuredClone(editorContext);
+      let finalEditorUpdate: RuntimeSnapshot["editorUpdate"] = null;
+      let operationSnapshot: RuntimeSnapshot | undefined;
+      let handled = false;
+      for (const [pluginId, slot] of this.slots) {
+        if (!slot.snapshot.integrations?.workspaceEvents?.includes("editor-paste")) {
+          continue;
+        }
+        if (!slot.runtime.runPluginEditorPaste) {
+          throw new Error(`Plugin ${pluginId} cannot receive editor paste events.`);
+        }
+        const snapshot = await slot.runtime.runPluginEditorPaste(currentContext, clipboardText);
+        this.rememberSlotSnapshot(pluginId, snapshot);
+        operationSnapshot = snapshot;
+        handled ||= snapshot.editorEvent?.handled === true;
+        if (snapshot.editorUpdate) {
+          finalEditorUpdate = snapshot.editorUpdate;
+          currentContext = {
+            path: editorContext.path,
+            revision: editorContext.revision,
+            content: snapshot.editorUpdate.content,
+            selection: { ...snapshot.editorUpdate.selection },
+          };
+        }
+      }
+      const mergedOperation = operationSnapshot
+        ? {
+            ...operationSnapshot,
+            editorEvent: { handled, type: "paste" as const },
+            editorUpdate: finalEditorUpdate
+              ? { ...finalEditorUpdate, baseContent: editorContext.content }
+              : null,
+          }
+        : {
+            ...this.baseSnapshot,
+            editorEvent: { handled: false, type: "paste" as const },
+            editorUpdate: null,
+          };
+      return this.mergeSnapshot(this.lastPluginId, mergedOperation);
+    });
+  }
+
   waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {
     return this.enqueue(async () => {
       await this.updateEverySlot((slot) => slot.runtime.waitForPluginMutations(options));
@@ -570,6 +617,7 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
       events: [...this.eventLedger],
       ...(integrations ? { integrations } : {}),
       editorUpdate: operationSnapshot?.editorUpdate ?? null,
+      editorEvent: operationSnapshot?.editorEvent ?? null,
       markdownProjection: operationSnapshot?.markdownProjection ?? null,
       pluginSurface: visibleSurface,
       ...(resourceDiagnostics.length > 0 ? { resourceDiagnostics } : {}),
@@ -631,6 +679,10 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
       viewTypes: uniqueBy(
         integrations.flatMap(({ viewTypes }) => viewTypes),
         (viewType) => viewType,
+      ),
+      workspaceEvents: uniqueBy(
+        integrations.flatMap(({ workspaceEvents }) => workspaceEvents ?? []),
+        (eventName) => eventName,
       ),
     };
   }

@@ -95,6 +95,16 @@ export const measuredApiRegistry = {
       tokens: ["addCommand"],
     },
     {
+      member: "app.workspace.on",
+      contract: "docs/compatibility/open-plugin-api.md#workspace-editor-paste-events",
+      tokens: ["app.workspace.on"],
+    },
+    {
+      member: "app.workspace.off",
+      contract: "docs/compatibility/open-plugin-api.md#workspace-editor-paste-events",
+      tokens: ["app.workspace.off"],
+    },
+    {
       member: "Plugin.registerMarkdownPostProcessor",
       contract: "docs/compatibility/open-plugin-api.md#public-signatures",
       tokens: ["registerMarkdownPostProcessor"],

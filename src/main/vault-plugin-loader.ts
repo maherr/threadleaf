@@ -401,7 +401,10 @@ async function inspectPlugin(
         source: "obsidian-vault",
         packageState: "ready",
         stylesheetDiscovered: stylesheetPath !== null,
-        compatibility: createPluginCompatibilityReport(manifest),
+        compatibility: createPluginCompatibilityReport({
+          ...manifest,
+          bundleSha256: capabilityReport.bundleSha256,
+        }),
         capabilityReport,
         capabilityGrantState: "required",
         error: null,

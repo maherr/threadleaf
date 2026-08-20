@@ -17,7 +17,7 @@ function functionSource(name: string): string {
 }
 
 describe("editor attachment insertion UI", () => {
-  it("leaves ordinary paste and drop to CodeMirror while owning every file-shaped transfer", () => {
+  it("preserves ordinary paste, bridges registered text handlers, and owns file transfers", () => {
     const drop = functionSource("handleEditorAttachmentDrop");
     const paste = functionSource("handleEditorAttachmentPaste");
     expect(rendererSource).toContain("EditorView.domEventHandlers({");
@@ -28,14 +28,20 @@ describe("editor attachment insertion UI", () => {
     expect(drop.indexOf("event.preventDefault()")).toBeGreaterThan(drop.indexOf("return false"));
     expect(drop).toContain("event.stopPropagation()");
     expect(drop).toContain("view.posAtCoords");
-    expect(paste.indexOf("return false")).toBeGreaterThan(
-      paste.indexOf("hasAttachmentRestoreFileTransfer"),
+    expect(paste).toContain('workspaceEvents?.includes("editor-paste")');
+    expect(paste).toContain("capturePluginEditorPaste(paneId, view)");
+    expect(paste).toContain("deliverPluginEditorPaste(paneId, view, captured, clipboardText)");
+    expect(paste.indexOf("event.preventDefault()")).toBeGreaterThan(
+      paste.indexOf("capturePluginEditorPaste"),
     );
-    expect(paste.indexOf("event.preventDefault()")).toBeGreaterThan(paste.indexOf("return false"));
     expect(paste).toContain("view.state.selection.main");
     expect(paste).toContain("selection.from");
     expect(paste).toContain("selection.to");
     expect(paste).toContain("stageEditorAttachmentInsertBatch");
+    expect(functionSource("deliverPluginEditorPaste")).toContain(
+      "window.threadleaf.runPluginEditorPaste(",
+    );
+    expect(functionSource("deliverPluginEditorPaste")).toContain("applyPlainTextPaste(");
   });
 
   it("stages bounded File bytes before autosave and opens a two-step proof dialog", () => {

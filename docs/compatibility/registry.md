@@ -4,7 +4,7 @@ This document is generated from the versioned receipt-aware source [`compatibili
 Discovery in the external community package directory is separate from Threadleaf compatibility evidence.
 A row applies only to the exact plugin and Threadleaf versions shown.
 
-Registry schema: 2. Threadleaf version: 0.1.0. Generation: 4d63dc9b6afa0fc087e3f40817cdb5441f8ad9d0739703eb410d8233ae346908.
+Registry schema: 2. Threadleaf version: 0.1.0. Generation: b87355b288a93a84621e1bbc0740df9873393d648bbe08be959bbfc3fb48781f.
 
 | Plugin | Plugin version | Threadleaf | Level | Evidence | Last tested |
 | --- | --- | --- | ---: | --- | --- |
@@ -12,6 +12,8 @@ Registry schema: 2. Threadleaf version: 0.1.0. Generation: 4d63dc9b6afa0fc087e3f
 | [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) | 2.26.4 | 0.1.0 | 2 | direct | 2026-08-16 |
 | [Style Settings](https://github.com/mgmeyers/obsidian-style-settings) | 1.0.9 | 0.1.0 | 3 | direct | 2026-08-17 |
 | [Threadleaf Compatibility Fixture](https://github.com/maherr/threadleaf) | 0.1.0 | 0.1.0 | 0 | direct | 2026-08-15 |
+| [Paste URL into Selection](https://github.com/denolehov/obsidian-url-into-selection) | 1.11.4 | 0.1.0 | 3 | direct | 2026-08-20 |
+| [Paste URL into Selection](https://github.com/denolehov/obsidian-url-into-selection) | 1.11.4 | 0.1.0 | 3 | direct | 2026-08-20 |
 
 ## Excalidraw 2.25.3
 
@@ -146,6 +148,67 @@ Required static authority review: `workspace-ui`.
 - No reviewed authority profile currently binds this exact package identity; construction is denied with authority-profile-missing.
 - This repository-owned fixture intentionally exercises a narrow API surface.
 - It is not listed in the external community package directory.
+
+## Paste URL into Selection 1.11.4
+
+The unchanged official Paste URL into Selection 1.11.4 release passed exact-package authority review and direct Linux Electron delivery from native editor paste through the trusted compatibility runtime. Selected text became a Markdown link and an unhandled ordinary paste retained its plain text fallback.
+
+Bundle SHA-256: `377883d2fc2a1feeb96be868f7110782874206cb3065635281e89fdfdc6e6d77`. License: MIT.
+
+Required static authority review: `clipboard`, `workspace-ui`.
+
+### Supported workflows
+
+- **Wrap selected text with a pasted URL and preserve ordinary paste fallback** (passed)
+  - `pnpm test:url-selection-paste` via [scripts/check-url-selection-paste.mjs](../../scripts/check-url-selection-paste.mjs)
+  - `pnpm exec vitest run src/runtime/plugin-host.test.ts src/shared/plugin-runtime-protocol.test.ts` via [src/runtime/plugin-host.test.ts](../../src/runtime/plugin-host.test.ts)
+
+### Platform limits
+
+- **linux-x64-electron**: verified. Verified in Linux X11 and Xvfb Electron with the exact upstream release and disposable vault and private state. The runtime is trusted same-user desktop code, not a sandbox.
+- **macos-electron**: unverified. This exact package workflow is not verified on macOS.
+- **windows-x64-electron**: unverified. This exact package workflow is not verified on Windows.
+
+### Known failures
+
+- No reproducible failure is recorded for the supported workflows above.
+
+### Limitations
+
+- The clipboard-reading command, all settings combinations, and workspace events other than editor-paste are outside this claim.
+- File-backed paste remains in Threadleaf's attachment workbench and is not delivered through this text bridge.
+- This is supporting behavior evidence, not Level 4 evidence.
+- No controller-finalized signed production receipt exists for this tuple.
+
+## Paste URL into Selection 1.11.4
+
+The distinct Paste URL into Selection 1.11.4 bundle installed in the acceptance vault passed its own exact-package authority review and the same direct Linux Electron selected-URL and ordinary-paste workflows. Its same version string does not inherit evidence from the upstream release hash.
+
+Bundle SHA-256: `8578844689112df74390d7b107a1302b30c8e31a490cadf40bccd73ddeca9aca`. License: MIT.
+
+Required static authority review: `clipboard`, `workspace-ui`.
+
+### Supported workflows
+
+- **Run the selected-URL and ordinary-paste workflow against an explicit installed package** (passed)
+  - `THREADLEAF_URL_SELECTION_PLUGIN_DIR=$PLUGIN_DIR node scripts/check-url-selection-paste.mjs` via [scripts/check-url-selection-paste.mjs](../../scripts/check-url-selection-paste.mjs)
+
+### Platform limits
+
+- **linux-x64-electron**: verified. Verified from the operator-supplied exact package in Linux X11 and Xvfb Electron with disposable vault and private state. The runtime is trusted same-user desktop code, not a sandbox.
+- **macos-electron**: unverified. This exact package workflow is not verified on macOS.
+- **windows-x64-electron**: unverified. This exact package workflow is not verified on Windows.
+
+### Known failures
+
+- No reproducible failure is recorded for the supported workflows above.
+
+### Limitations
+
+- This identity is operator-supplied and is not substituted for the separately reviewed upstream release hash.
+- The clipboard-reading command, all settings combinations, and workspace events other than editor-paste are outside this claim.
+- This is supporting behavior evidence, not Level 4 evidence.
+- No controller-finalized signed production receipt exists for this tuple.
 
 ## Regeneration
 

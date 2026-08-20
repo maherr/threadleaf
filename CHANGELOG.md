@@ -26,6 +26,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Added an exact-package workflow for the official Dataview 0.5.68 release, including reviewed Blob
   workers, the real CodeMirror 5 mode registry, frontmatter indexing, an in-place Reading-view
   table with contained native file links, both themes, and an explicit disabled-plugin fallback.
+- Added exact reviewed profiles and a production editor-paste workflow for both the official and
+  acceptance-vault Paste URL into Selection 1.11.4 package identities.
 
 ### Changed
 
@@ -99,6 +101,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   presentation fallbacks after the renderer document has loaded.
 - Prevented an occluded Wayland window from leaving a drawing or plugin Options tab permanently
   busy by bounding the visual-frame wait before compatibility-surface attachment.
+- Delivered registered compatibility `editor-paste` callbacks through revision-bound native editor
+  context in isolated and trusted-workspace topologies, while preserving ordinary text paste when
+  no plugin handles it or the compatibility call fails safely.
 
 ## [0.1.0]
 

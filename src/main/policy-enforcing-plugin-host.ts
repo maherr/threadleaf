@@ -55,6 +55,10 @@ export class PolicyEnforcingPluginHost implements PluginRuntimePort {
     return this.host.runCommand(commandId, editorContext);
   }
 
+  runPluginEditorPaste(editorContext: PluginEditorContext, clipboardText: string) {
+    return this.host.runPluginEditorPaste(editorContext, clipboardText);
+  }
+
   waitForPluginMutations(options?: PluginMutationWaitOptions) {
     return this.host.waitForPluginMutations(options);
   }

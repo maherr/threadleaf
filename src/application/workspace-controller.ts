@@ -323,6 +323,10 @@ export interface WorkspaceRuntimePort {
     commandId: string,
     editorContext?: PluginEditorContext,
   ): Promise<RuntimeSnapshot>;
+  runPluginEditorPaste?(
+    editorContext: PluginEditorContext,
+    clipboardText: string,
+  ): Promise<RuntimeSnapshot>;
   waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot>;
   markPluginLayoutReady(): Promise<RuntimeSnapshot>;
   openPluginSettings(pluginId: string): Promise<RuntimeSnapshot>;
@@ -1448,6 +1452,17 @@ export class WorkspaceController {
     editorContext?: PluginEditorContext,
   ): Promise<RuntimeSnapshot> {
     return this.activeRuntime("run a plugin command").runPluginCommand(commandId, editorContext);
+  }
+
+  runPluginEditorPaste(
+    editorContext: PluginEditorContext,
+    clipboardText: string,
+  ): Promise<RuntimeSnapshot> {
+    const runtime = this.activeRuntime("deliver a plugin editor paste");
+    if (!runtime.runPluginEditorPaste) {
+      throw new Error("The active workspace does not support plugin editor paste delivery.");
+    }
+    return runtime.runPluginEditorPaste(editorContext, clipboardText);
   }
 
   waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {
