@@ -2146,6 +2146,23 @@ async function exportPublicFixtures() {
     "document.body?.textContent?.includes('Export Drawing')",
     "Excalidraw export dialog",
   );
+  await waitFor(
+    pluginCdp,
+    `(() => {
+      const modal = [...document.querySelectorAll('.modal')].find((candidate) =>
+        candidate.textContent?.includes('Export Drawing'),
+      );
+      if (!(modal instanceof HTMLElement)) return false;
+      const bounds = modal.getBoundingClientRect();
+      return bounds.width > 0 &&
+        bounds.height > 0 &&
+        bounds.top >= 0 &&
+        bounds.left >= 0 &&
+        bounds.bottom <= window.innerHeight &&
+        bounds.right <= window.innerWidth;
+    })()`,
+    "visible Excalidraw export dialog",
+  );
   await captureCurrentTheme(pluginCdp, "excalidraw-export-dialog-png");
   await clickExportButton("PNG to Vault");
   const png = await completeVaultExport("Drawings/Unicode Scene.excalidraw.png", "PNG export");

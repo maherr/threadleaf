@@ -2306,6 +2306,41 @@ h2 {
   overflow: auto;
 }
 
+body.app-container > .modal-container {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+}
+
+body.app-container > .modal-container > .modal-bg {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 58%);
+}
+
+body.app-container > .modal-container > .modal {
+  position: relative;
+  display: flex;
+  width: min(680px, 100%);
+  max-width: calc(100vw - 56px);
+  max-height: min(80vh, 760px);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--background-modifier-border, var(--line));
+  border-radius: 12px;
+  background: var(--background-primary, var(--surface));
+  box-shadow: 0 22px 70px rgb(0 0 0 / 38%);
+}
+
+body.app-container > .modal-container > .modal > .modal-content {
+  min-height: 0;
+  overflow: auto;
+}
+
 .plugin-surface-loading {
   color: var(--ink-muted);
   font-family: var(--mono);
