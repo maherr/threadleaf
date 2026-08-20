@@ -1976,7 +1976,13 @@ async function createAndEmbed(vaultId) {
       created.snapshot?.workspace?.activeNote?.path) === "Drawings/Created.excalidraw.md",
     "The created drawing was not selected.",
   );
-  await evaluate(cdp, "window.threadleaf.openNote('Notes/Source.md')");
+  const sourceTab = `.note-tab-activate[data-note-path=${JSON.stringify("Notes/Source.md")}]`;
+  await waitFor(
+    cdp,
+    `(() => { const tab = document.querySelector(${JSON.stringify(sourceTab)}); return tab instanceof HTMLButtonElement && !tab.disabled; })()`,
+    "source-note workspace tab",
+  );
+  await clickSelector(cdp, sourceTab);
   await waitFor(
     cdp,
     "document.querySelector('#note-path')?.textContent === 'Notes/Source.md'",
@@ -1984,7 +1990,15 @@ async function createAndEmbed(vaultId) {
   );
   const current = await evaluate(cdp, "window.threadleaf.getSnapshot()");
   const active = current.workspace.activeNote;
-  assert(active?.path === "Notes/Source.md", "The source note was not active for embed insertion.");
+  assert(
+    active?.path === "Notes/Source.md",
+    `The source note was not active for embed insertion: ${JSON.stringify({
+      activeNote: active?.path ?? null,
+      activeCanvas: current.workspace.activeCanvas?.path ?? null,
+      activePluginFile: current.workspace.activePluginFile?.path ?? null,
+      activeUnavailable: current.workspace.activeUnavailable?.path ?? null,
+    })}`,
+  );
   const embedded = `${active.content}\n![[../Drawings/Created.excalidraw.md]]\n`;
   const saved = await evaluate(
     cdp,
@@ -2002,12 +2016,99 @@ async function clickExportButton(label) {
     `Boolean([...document.querySelectorAll('button.excalidraw-export-button')].find((button) => button.textContent?.trim() === ${JSON.stringify(label)}))`,
     `${label} export button`,
   );
-  const selector = await evaluate(
-    pluginCdp,
-    `(() => { document.querySelectorAll('#threadleaf-e2e-export-button').forEach((candidate) => candidate.removeAttribute('id')); const button = [...document.querySelectorAll('button.excalidraw-export-button')].find((candidate) => candidate.textContent?.trim() === ${JSON.stringify(label)}); if (!(button instanceof HTMLButtonElement) || button.disabled) return null; button.id = 'threadleaf-e2e-export-button'; return '#threadleaf-e2e-export-button'; })()`,
-  );
-  assert(selector, `${label} export button is unavailable.`);
-  await clickSelector(pluginCdp, selector);
+  const inspectTarget = () =>
+    evaluate(
+      pluginCdp,
+      `(() => {
+        const button = [...document.querySelectorAll('button.excalidraw-export-button')].find(
+          (candidate) => candidate.textContent?.trim() === ${JSON.stringify(label)}
+        );
+        if (!(button instanceof HTMLButtonElement)) return null;
+        const rect = button.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        const hit = document.elementFromPoint(x, y);
+        const scrollParent = [...(function* () { let node = button.parentElement; while (node) { yield node; node = node.parentElement; } })()].find((node) => {
+          const style = getComputedStyle(node);
+          return node.scrollHeight > node.clientHeight && (style.overflowY === 'auto' || style.overflowY === 'scroll');
+        });
+        const scrollRect = scrollParent?.getBoundingClientRect();
+        const active = document.activeElement;
+        return {
+          activeClass: active instanceof HTMLElement ? active.className : null,
+          activeTag: active?.tagName ?? null,
+          activeText: active?.textContent?.trim().slice(0, 80) ?? null,
+          disabled: button.disabled,
+          height: rect.height,
+          hit: Boolean(hit && (hit === button || button.contains(hit))),
+          hitClass: hit instanceof HTMLElement ? hit.className : null,
+          hitTag: hit?.tagName ?? null,
+          hitText: hit?.textContent?.trim().slice(0, 80) ?? null,
+          scroller: scrollRect ? {
+            x: scrollRect.left + scrollRect.width / 2,
+            y: scrollRect.top + scrollRect.height / 2,
+            scrollTop: scrollParent.scrollTop,
+            scrollHeight: scrollParent.scrollHeight,
+            clientHeight: scrollParent.clientHeight,
+          } : null,
+          width: rect.width,
+          x,
+          y,
+        };
+      })()`,
+    );
+  let target = await inspectTarget();
+  assert(target, `${label} export button is unavailable.`);
+  if (!target.hit) {
+    assert(target.scroller, `${label} export button is outside the viewport without a scroller.`);
+    await pluginCdp.send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      button: "none",
+      x: target.scroller.x,
+      y: target.scroller.y,
+    });
+    for (let attempt = 0; attempt < 8 && !target.hit; attempt += 1) {
+      await pluginCdp.send("Input.dispatchMouseEvent", {
+        type: "mouseWheel",
+        button: "none",
+        deltaX: 0,
+        deltaY: Math.max(120, Math.min(420, target.y - target.scroller.y)),
+        x: target.scroller.x,
+        y: target.scroller.y,
+      });
+      await delay(80);
+      target = await inspectTarget();
+      if (!target) {
+        await captureCurrentTheme(
+          pluginCdp,
+          `excalidraw-export-dialog-${label.toLowerCase().replaceAll(" ", "-")}-lost`,
+        );
+      }
+      assert(target, `${label} export button disappeared while scrolling.`);
+    }
+  }
+  assert(!target.disabled, `${label} export button is disabled.`);
+  assert(target.width > 0 && target.height > 0, `${label} export button is hidden.`);
+  assert(target.hit, `${label} export button is covered: ${JSON.stringify(target)}`);
+  await pluginCdp.send("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    button: "none",
+    x: target.x,
+    y: target.y,
+  });
+  await delay(40);
+  target = await inspectTarget();
+  assert(target?.hit, `${label} export button moved before pointer activation.`);
+  for (const type of ["mousePressed", "mouseReleased"]) {
+    await pluginCdp.send("Input.dispatchMouseEvent", {
+      type,
+      button: "left",
+      buttons: type === "mousePressed" ? 1 : 0,
+      clickCount: 1,
+      x: target.x,
+      y: target.y,
+    });
+  }
 }
 
 async function completeVaultExport(relativePath, label) {
@@ -2035,12 +2136,17 @@ async function completeVaultExport(relativePath, label) {
 
 async function exportPublicFixtures() {
   const drawingPath = "Drawings/Unicode Scene.excalidraw.md";
-  await evaluate(cdp, `window.threadleaf.runCommand("obsidian-excalidraw-plugin:export-image")`);
+  await runPaletteCommand(
+    "obsidian-excalidraw-plugin:export-image",
+    "export image",
+    "plugin.command.obsidian-excalidraw-plugin:export-image",
+  );
   await waitFor(
     pluginCdp,
     "document.body?.textContent?.includes('Export Drawing')",
     "Excalidraw export dialog",
   );
+  await captureCurrentTheme(pluginCdp, "excalidraw-export-dialog-png");
   await clickExportButton("PNG to Vault");
   const png = await completeVaultExport("Drawings/Unicode Scene.excalidraw.png", "PNG export");
   assert(
@@ -2048,7 +2154,11 @@ async function exportPublicFixtures() {
     "Plugin PNG export signature is invalid.",
   );
 
-  await evaluate(cdp, `window.threadleaf.runCommand("obsidian-excalidraw-plugin:export-image")`);
+  await runPaletteCommand(
+    "obsidian-excalidraw-plugin:export-image",
+    "export image",
+    "plugin.command.obsidian-excalidraw-plugin:export-image",
+  );
   await waitFor(
     pluginCdp,
     "document.body?.textContent?.includes('Export Drawing')",

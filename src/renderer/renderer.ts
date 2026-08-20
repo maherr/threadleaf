@@ -7870,6 +7870,10 @@ async function updatePlugins(
       return false;
     }
     applySettingsSnapshot(response.settings);
+    // A compatibility-runtime mutation constructs a fresh plugin host. Layout-ready belongs to
+    // that host instance, not to the vault path, so the replacement must receive the lifecycle
+    // signal even when the user stayed in the same vault.
+    pluginLayoutReadyVaultId = null;
     render(response.snapshot);
     applyPluginCatalog(response.catalog);
     pluginMessage = successMessage;
@@ -11303,11 +11307,15 @@ function render(snapshot: RuntimeSnapshot): void {
     activePluginViewType !== null &&
     snapshot.pluginSurface?.filePath === activePluginFile.path &&
     snapshot.pluginSurface.viewType === activePluginViewType;
+  const pluginOverlayOwnsSurface =
+    snapshot.pluginSurface?.viewType === "threadleaf-plugin-modal" ||
+    snapshot.pluginSurface?.viewType === "threadleaf-plugin-settings";
   if (
     activePluginFile &&
     activePluginViewType &&
     pluginViewSuppressedPath !== activePluginFile.path &&
     !pluginSurfaceMatchesActiveFile &&
+    !pluginOverlayOwnsSurface &&
     pluginSettingsTargetId === null
   ) {
     const request = ++pluginDocumentActivationRequest;
@@ -14239,7 +14247,25 @@ async function openNote(
   const expectedVaultId = currentSnapshot?.vault.id;
   if (!expectedVaultId || !(await tryFlushPaneAutosave(paneId, "note-switch"))) return false;
   if (currentSnapshot?.vault.id !== expectedVaultId) return false;
-  await runAction(() => window.threadleaf.openNote(filePath, paneId, activate));
+  const currentPluginSurface = currentSnapshot?.pluginSurface;
+  const closesCurrentPluginSurface =
+    activate &&
+    currentPluginSurface !== undefined &&
+    currentPluginSurface !== null &&
+    currentPluginSurface.filePath !== filePath;
+  if (closesCurrentPluginSurface) {
+    pluginSurfaceRequest += 1;
+    pluginDocumentActivationRequest += 1;
+    pluginSettingsTargetId = null;
+    documentViewMode = editingViewMode;
+    renderDocumentView();
+  }
+  await runAction(async () => {
+    if (closesCurrentPluginSurface) {
+      await window.threadleaf.closePluginView();
+    }
+    return window.threadleaf.openNote(filePath, paneId, activate);
+  });
   if (!activate) {
     showToast(`Opened ${filePath} in the background.`);
     return true;

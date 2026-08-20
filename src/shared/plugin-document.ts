@@ -25,6 +25,14 @@ export function pluginViewTypeForPath(
   if (lowerPath.endsWith(".excalidraw.md") && viewTypes.includes("excalidraw")) {
     return "excalidraw";
   }
+  // Markdown is a native Threadleaf document. Some compatibility plugins register the broad
+  // `md` extension while selecting only a narrower family through their own leaf state. Letting
+  // that registration win would replace every ordinary note with the plugin view. Explicit
+  // compatibility contracts such as Excalidraw Markdown are resolved above; all other Markdown
+  // stays with the native editor.
+  if (lowerPath.endsWith(".md")) {
+    return null;
+  }
   const extension = lowerPath.includes(".") ? (lowerPath.split(".").at(-1) ?? "") : "";
   const registeredView = integrations?.extensions.find(
     (registration) => registration.extension.toLocaleLowerCase("en-US") === extension,

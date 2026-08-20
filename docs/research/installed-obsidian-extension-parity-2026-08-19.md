@@ -21,6 +21,7 @@ This study covers the five community plugins and one community theme present in 
 |---|---:|---|---|---|---|
 | Data Files Editor | 1.3.0 | [zuktol/obsidian-data-files-editor](https://github.com/zuktol/obsidian-data-files-editor/tree/1.3.0) | MIT | `1f962a44845adad7ea3de6792bbf536f111ee131b0fcd16fa9cf4d18ff0d0676` | Open, edit, save, reopen JSON and YAML through registered file views |
 | Excalidraw | 2.25.3 | [zsviczian/obsidian-excalidraw-plugin](https://github.com/zsviczian/obsidian-excalidraw-plugin/tree/2.25.3) | AGPL-3.0 | `3baa63e288992c910fa5ac10e3811aaea4210211b29781446c07259b6df96391` | Create, draw, embed, export, detach, crash-recover, switch vault, reload, and restart |
+| Excalidraw | 2.26.4 | [zsviczian/obsidian-excalidraw-plugin](https://github.com/zsviczian/obsidian-excalidraw-plugin/tree/2.26.4) | AGPL-3.0 | `b26f3fc8cfa39cfefe8c11c82e43f80afdc642d8ca4d4ece3bdd817f72d4cf5a` | Repeat the full workflow against the exact package in the user's active Threadleaf vault |
 | Iconize | 2.14.7 | [florianwoelki/obsidian-iconize](https://github.com/florianwoelki/obsidian-iconize/tree/2.14.7) | MIT | `b68bcfd318d678892f671736e54396fd72414180736e58f164fb17a3f72a22e1` | Assign and remove file and folder icons, rename, reload, and restart |
 | Minimal Theme Settings | 8.2.3 | [kepano/obsidian-minimal-settings](https://github.com/kepano/obsidian-minimal-settings/tree/8.2.3) | MIT | `70573512ec859fad644e79ca9883d0b6d7dfb5369cde66e366884638317efdf3` | Change representative Minimal controls, verify computed styles, reload, and restart |
 | Omnisearch | 1.30.1 | [scambier/obsidian-omnisearch](https://github.com/scambier/obsidian-omnisearch/tree/1.30.1) | GPL-3.0 | `4ea4d51f5ce283ea0f83ceb1f1db8e8f8c3ae156fab69a5f8f4c4e09d101a314` | Index a fixture vault, search from its command and ribbon surface, open a result, modify, and reindex |
@@ -53,6 +54,12 @@ Disposition: **Adapt** the existing file-view and editor bridge, then **Benchmar
 The package uses file views, workspace layout readiness, editor extensions, settings, vault reads and writes, external navigation, clipboard, network assets, and dynamic module selection. Threadleaf's existing 2.26.4 workflow already exercised the broad surface, but the installed 2.25.3 identity and its recovery path had not been proven.
 
 Disposition: **Adapt** the reviewed identity list and retry state. **Benchmark** the full exact installed workflow. Result on 2026-08-19: passed create, draw-edit, compressed and native scene open, embed, PNG and SVG export, settings, command palette, popout, induced popout and renderer crash recovery, vault switching, visible reload, restart, and byte preservation in isolated mode.
+
+### Excalidraw 2.26.4
+
+The exact package in the active `obsidian-vault` matches the existing reviewed 2.26.4 identity. Its executable workflow exposed three runtime lifecycle faults that activation and the 2.25.3 package did not: a broad `md` registration could replace ordinary Markdown, switching documents could leave a stale plugin surface alive, and plugin-owned modals could be replaced by automatic document-view reactivation. A reloaded plugin host also needs a fresh layout-ready signal even when the vault does not change.
+
+Disposition: **Adapt** native Markdown precedence and plugin-surface lifecycle ownership. **Benchmark** with ordinary workspace-tab switching and real pointer scrolling inside the taller export dialog. Result on 2026-08-19: the exact installed package passed the same full workflow as 2.25.3, including PNG and SVG export, settings and plugin-owned modal retention, crash recovery, reload, restart, and source-byte preservation.
 
 ### Iconize 2.14.7
 
