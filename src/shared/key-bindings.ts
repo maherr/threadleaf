@@ -452,12 +452,19 @@ export function workspaceSettingsForVault(
   return workspace
     ? {
         defaultNoteFolder: workspace.defaultNoteFolder,
+        attachmentFolder: workspace.attachmentFolder,
         linkStyle: workspace.linkStyle,
         automaticLinkUpdates: workspace.automaticLinkUpdates,
         confirmDelete: workspace.confirmDelete,
         newTabBehavior: workspace.newTabBehavior,
         editorMode: workspace.editorMode,
         documentView: workspace.documentView,
+        showInlineTitle: workspace.showInlineTitle,
+        readableLineLength: workspace.readableLineLength,
+        showLineNumbers: workspace.showLineNumbers,
+        spellcheck: workspace.spellcheck,
+        tabSize: workspace.tabSize,
+        showStatusBar: workspace.showStatusBar,
         restorePolicy: workspace.restorePolicy,
       }
     : createDefaultVaultWorkspaceSettings();

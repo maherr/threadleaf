@@ -10,7 +10,10 @@ import { MAX_VAULT_ATTACHMENT_BYTES } from "../shared/attachment-limits";
 import type { RuntimeSnapshot } from "../shared/contracts";
 import { createDefaultVaultNoteWorkflowSettings } from "../shared/note-workflows";
 import { WorkspaceOpenDiagnostics } from "../shared/workspace-open-diagnostics";
-import type { VaultWorkspaceSettings } from "../shared/workspace-settings";
+import {
+  createDefaultVaultWorkspaceSettings,
+  type VaultWorkspaceSettings,
+} from "../shared/workspace-settings";
 import {
   testConstructionRequest,
   testPluginRuntimeFactory,
@@ -259,14 +262,7 @@ async function openRuntime(
     ...(workspaceSettings
       ? {
           workspaceSettings: {
-            defaultNoteFolder: "",
-            linkStyle: "preserve",
-            automaticLinkUpdates: "ask",
-            confirmDelete: "always",
-            newTabBehavior: "focus",
-            editorMode: "live",
-            documentView: "live",
-            restorePolicy: "restore",
+            ...createDefaultVaultWorkspaceSettings(),
             ...workspaceSettings,
           },
         }

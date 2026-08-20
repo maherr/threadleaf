@@ -168,7 +168,9 @@ equivalence through the real writer-to-watcher seam.
         exist.
 - [x] Two independently editable panes, horizontal and vertical splits, tab transfer, pane
       collapse, focused-pane commands, private layout restoration, and native application menus.
-- [ ] Broader workspace settings.
+- [x] Broader private per-vault workspace settings for note and attachment locations, move-link and
+      delete policy, tab and restart behavior, editor and document modes, inline titles, readable
+      line length, line numbers, spellcheck, tab width, and status-bar visibility.
 - [x] Default Live Preview plus explicit Source and Read modes, line-proximate exact-source reveal,
       common Markdown presentation, editable tasks, bounded local images, honest source fallback,
       pane-local state, and isolated virtual-input coverage in both themes.

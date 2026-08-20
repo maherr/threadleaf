@@ -9,6 +9,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Expanded the per-vault Editor and files control center with default attachment placement, inline
+  titles, readable line length, source line numbers, desktop spellcheck, tab width, and status-bar
+  controls, all stored privately outside the vault with a one-click reset.
 - Added a searchable, keyboard-navigable Settings window that indexes core controls and compatible
   plugin rows, restores focus across nested pages, and keeps form typography and density consistent.
 - Added Obsidian 1.13-style declarative plugin settings support for common controls, validation,
@@ -23,6 +26,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Applied workspace controls directly to both editor panes and the visible workbench, including
+  attachment insertion defaults, without requiring an application restart or rewriting vault
+  metadata.
 - Replaced the stacked desktop chrome with one uninterrupted 44-pixel Longstitch workbench rail
   that aligns the file dock, active vault, compact global actions, and native window controls above
   a quieter document-tab and toolbar tier in both themes and at the minimum supported width.

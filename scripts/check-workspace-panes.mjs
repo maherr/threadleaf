@@ -582,6 +582,26 @@ try {
     (await evaluate("document.querySelector('#workspace-default-folder')?.value")) === "Notes",
     "The visible default-folder field did not record real keyboard input.",
   );
+  await evaluate(`(() => {
+    const values = {
+      '#workspace-attachment-folder': 'Attachments',
+      '#workspace-inline-title': 'false',
+      '#workspace-readable-line-length': 'false',
+      '#workspace-line-numbers': 'true',
+      '#workspace-spellcheck': 'false',
+      '#workspace-tab-size': '4',
+      '#workspace-status-bar': 'false',
+    };
+    for (const [selector, value] of Object.entries(values)) {
+      const control = document.querySelector(selector);
+      if (!(control instanceof HTMLInputElement || control instanceof HTMLSelectElement)) {
+        return false;
+      }
+      control.value = value;
+      control.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    return true;
+  })()`);
   await clickSelector("#workspace-settings-save");
   await waitFor(
     () =>
@@ -595,15 +615,43 @@ try {
   );
   assert(
     recordedWorkspaceSettings?.status === "ready" &&
-      recordedWorkspaceSettings.settings?.defaultNoteFolder === "Notes",
+      recordedWorkspaceSettings.settings?.defaultNoteFolder === "Notes" &&
+      recordedWorkspaceSettings.settings?.attachmentFolder === "Attachments" &&
+      recordedWorkspaceSettings.settings?.showInlineTitle === false &&
+      recordedWorkspaceSettings.settings?.readableLineLength === false &&
+      recordedWorkspaceSettings.settings?.showLineNumbers === true &&
+      recordedWorkspaceSettings.settings?.spellcheck === false &&
+      recordedWorkspaceSettings.settings?.tabSize === 4 &&
+      recordedWorkspaceSettings.settings?.showStatusBar === false,
     "The application did not publish the workspace preference it saved.",
   );
   const persistedSettings = JSON.parse(
     await fs.readFile(path.join(userDataPath, "settings.json"), "utf8"),
   );
   assert(
-    persistedSettings.workspaceByVault?.[vaultId]?.defaultNoteFolder === "Notes",
+    persistedSettings.workspaceByVault?.[vaultId]?.defaultNoteFolder === "Notes" &&
+      persistedSettings.workspaceByVault?.[vaultId]?.attachmentFolder === "Attachments" &&
+      persistedSettings.workspaceByVault?.[vaultId]?.spellcheck === false,
     "The private app-settings document did not persist the vault-bound workspace preference.",
+  );
+  assert(
+    await evaluate(`(() => {
+      const root = document.documentElement;
+      const editorContent = document.querySelector('.cm-content');
+      const lineNumbers = document.querySelector('.cm-lineNumbers');
+      const statusbar = document.querySelector('.statusbar');
+      const inlineTitle = document.querySelector('.inline-title');
+      return root.dataset.threadleafShowInlineTitle === 'false' &&
+        root.dataset.threadleafReadableLineLength === 'false' &&
+        root.dataset.threadleafShowLineNumbers === 'true' &&
+        root.dataset.threadleafShowStatusBar === 'false' &&
+        editorContent?.getAttribute('spellcheck') === 'false' &&
+        getComputedStyle(editorContent).tabSize === '4' &&
+        getComputedStyle(lineNumbers).display !== 'none' &&
+        getComputedStyle(statusbar).display === 'none' &&
+        getComputedStyle(inlineTitle).display === 'none';
+    })()`),
+    "The saved workspace controls did not reach the live editor and chrome.",
   );
   assert(
     await evaluate(`(() => {
@@ -645,6 +693,52 @@ try {
     page.style.removeProperty('outline-offset');
     return true;
   })()`);
+  assert(
+    await evaluate(`(() => {
+      const control = document.querySelector('#workspace-inline-title');
+      if (!(control instanceof HTMLSelectElement)) return false;
+      control.scrollIntoView({ block: 'center' });
+      return true;
+    })()`),
+    "The workspace interface controls could not be scrolled into view.",
+  );
+  await delay(50);
+  await captureScreenshot("workspace-settings-interface-dark");
+  await clickSelector("#workspace-settings-reset");
+  await waitFor(
+    () =>
+      evaluate(
+        "document.querySelector('#settings-status')?.textContent === 'Safe workspace defaults restored for this vault.'",
+      ),
+    "The workspace settings reset did not report completion",
+  );
+  const restoredWorkspaceSurface = await evaluate(`(() => {
+      const root = document.documentElement;
+      const editorContent = document.querySelector('.cm-content');
+      const lineNumbers = document.querySelector('.cm-lineNumbers');
+      const statusbar = document.querySelector('.statusbar');
+      return {
+        inlineTitle: root.dataset.threadleafShowInlineTitle,
+        readableLineLength: root.dataset.threadleafReadableLineLength,
+        lineNumbers: root.dataset.threadleafShowLineNumbers,
+        statusBar: root.dataset.threadleafShowStatusBar,
+        spellcheck: editorContent?.getAttribute('spellcheck'),
+        tabSize: getComputedStyle(editorContent).tabSize,
+        lineNumberDisplay: getComputedStyle(lineNumbers).display,
+        statusBarDisplay: getComputedStyle(statusbar).display,
+      };
+    })()`);
+  assert(
+    restoredWorkspaceSurface?.inlineTitle === "true" &&
+      restoredWorkspaceSurface?.readableLineLength === "true" &&
+      restoredWorkspaceSurface?.lineNumbers === "false" &&
+      restoredWorkspaceSurface?.statusBar === "true" &&
+      restoredWorkspaceSurface?.spellcheck === "true" &&
+      restoredWorkspaceSurface?.tabSize === "2" &&
+      restoredWorkspaceSurface?.lineNumberDisplay === "none" &&
+      restoredWorkspaceSurface?.statusBarDisplay !== "none",
+    `Reset workspace defaults did not restore the editor and chrome surface: ${JSON.stringify(restoredWorkspaceSurface)}`,
+  );
   await clickSelector("#settings-close");
   await waitForThemeToggleReady();
   await clickSelector("#theme-toggle");

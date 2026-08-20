@@ -11377,3 +11377,48 @@ a.tag.property-tag {
 .tag-tree-row {
   height: var(--threadleaf-navigator-tag-row-height, 32px);
 }
+
+/* Private per-vault interface preferences. These selectors change only the
+   presentation surface; vault bytes and Obsidian-owned configuration remain
+   untouched. */
+.note-editor .cm-scroller {
+  tab-size: var(--threadleaf-editor-tab-size, 2);
+}
+
+:root[data-threadleaf-show-inline-title="false"] .inline-title {
+  display: none;
+}
+
+:root[data-threadleaf-show-inline-title="false"] .note-header {
+  padding-top: 10px;
+}
+
+:root[data-threadleaf-readable-line-length="false"]
+  .note-editor-shell[data-editor-mode="live"]
+  .cm-content,
+:root[data-threadleaf-readable-line-length="false"] .note-preview .preview-block {
+  width: 100%;
+  max-width: none;
+}
+
+:root[data-threadleaf-show-line-numbers="false"]
+  body
+  .note-editor
+  .cm-gutters
+  .cm-gutter.cm-lineNumbers {
+  /* CodeMirror owns gutter layout with an injected display:flex !important rule. */
+  display: none !important;
+}
+
+:root[data-threadleaf-show-line-numbers="false"] body .note-editor .cm-editor .cm-gutters {
+  min-width: 0;
+  border-right: 0;
+}
+
+:root[data-threadleaf-show-status-bar="false"] .app-frame {
+  grid-template-rows: 44px minmax(0, 1fr) 0;
+}
+
+:root[data-threadleaf-show-status-bar="false"] .statusbar {
+  display: none;
+}

@@ -1369,6 +1369,20 @@
                     placeholder="Vault root"
                   />
                 </label>
+                <label class="note-workflow-field" for="workspace-attachment-folder">
+                  <span>
+                    <strong>Default attachment location</strong>
+                    <small>Leave empty to place new attachments beside the open note</small>
+                  </span>
+                  <input
+                    id="workspace-attachment-folder"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    maxlength="4096"
+                    placeholder="Same folder as the current note"
+                  />
+                </label>
                 <label class="note-workflow-field" for="workspace-link-style">
                   <span>
                     <strong>Link style after a move</strong>
@@ -1440,6 +1454,37 @@
                     <option value="reading">Reading view</option>
                   </select>
                 </label>
+                <label class="note-workflow-field" for="workspace-line-numbers">
+                  <span>
+                    <strong>Line numbers</strong>
+                    <small>Show source line numbers in editable Markdown views</small>
+                  </span>
+                  <select id="workspace-line-numbers">
+                    <option value="false">Off</option>
+                    <option value="true">On</option>
+                  </select>
+                </label>
+                <label class="note-workflow-field" for="workspace-spellcheck">
+                  <span>
+                    <strong>Spellcheck</strong>
+                    <small>Use the desktop spellchecker in source and Live Preview</small>
+                  </span>
+                  <select id="workspace-spellcheck">
+                    <option value="true">On</option>
+                    <option value="false">Off</option>
+                  </select>
+                </label>
+                <label class="note-workflow-field" for="workspace-tab-size">
+                  <span>
+                    <strong>Tab width</strong>
+                    <small>Display tab characters at a consistent editor width</small>
+                  </span>
+                  <select id="workspace-tab-size">
+                    <option value="2">2 spaces</option>
+                    <option value="4">4 spaces</option>
+                    <option value="8">8 spaces</option>
+                  </select>
+                </label>
                 <label class="note-workflow-field" for="workspace-restore-policy">
                   <span>
                     <strong>Restart workspace</strong>
@@ -1448,6 +1493,40 @@
                   <select id="workspace-restore-policy">
                     <option value="restore">Restore open tabs and panes</option>
                     <option value="fresh">Start fresh</option>
+                  </select>
+                </label>
+              </fieldset>
+
+              <fieldset class="note-workflow-group">
+                <legend>Interface</legend>
+                <label class="note-workflow-field" for="workspace-inline-title">
+                  <span>
+                    <strong>Inline title</strong>
+                    <small>Show the note title above its properties and content</small>
+                  </span>
+                  <select id="workspace-inline-title">
+                    <option value="true">On</option>
+                    <option value="false">Off</option>
+                  </select>
+                </label>
+                <label class="note-workflow-field" for="workspace-readable-line-length">
+                  <span>
+                    <strong>Readable line length</strong>
+                    <small>Keep long-form editor and reading content comfortably narrow</small>
+                  </span>
+                  <select id="workspace-readable-line-length">
+                    <option value="true">On</option>
+                    <option value="false">Off</option>
+                  </select>
+                </label>
+                <label class="note-workflow-field" for="workspace-status-bar">
+                  <span>
+                    <strong>Status bar</strong>
+                    <small>Show vault, watcher, and license status at the window edge</small>
+                  </span>
+                  <select id="workspace-status-bar">
+                    <option value="true">On</option>
+                    <option value="false">Off</option>
                   </select>
                 </label>
               </fieldset>

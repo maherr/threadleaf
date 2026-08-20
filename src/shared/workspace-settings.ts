@@ -24,25 +24,42 @@ export interface VaultWorkspaceMode {
 export const restorePolicies = ["restore", "fresh"] as const;
 export type RestorePolicy = (typeof restorePolicies)[number];
 
+export const editorTabSizes = [2, 4, 8] as const;
+export type EditorTabSize = (typeof editorTabSizes)[number];
+
 export interface VaultWorkspaceSettings {
   defaultNoteFolder: string;
+  attachmentFolder: string;
   linkStyle: WorkspaceLinkStyle;
   automaticLinkUpdates: AutomaticLinkUpdatePolicy;
   confirmDelete: DeleteConfirmationPolicy;
   newTabBehavior: NewTabBehavior;
   editorMode: EditorMode;
   documentView: DocumentViewMode;
+  showInlineTitle: boolean;
+  readableLineLength: boolean;
+  showLineNumbers: boolean;
+  spellcheck: boolean;
+  tabSize: EditorTabSize;
+  showStatusBar: boolean;
   restorePolicy: RestorePolicy;
 }
 
 export const defaultVaultWorkspaceSettings: Readonly<VaultWorkspaceSettings> = {
   defaultNoteFolder: "",
+  attachmentFolder: "",
   linkStyle: "preserve",
   automaticLinkUpdates: "ask",
   confirmDelete: "always",
   newTabBehavior: "focus",
   editorMode: "live",
   documentView: "live",
+  showInlineTitle: true,
+  readableLineLength: true,
+  showLineNumbers: false,
+  spellcheck: true,
+  tabSize: 2,
+  showStatusBar: true,
   restorePolicy: "restore",
 };
 
@@ -53,18 +70,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function normalizeVisibleFolder(value: unknown): string {
+function normalizeVisibleFolder(value: unknown, label: string): string {
   if (typeof value !== "string") {
-    throw new Error("Default note folder must be a string.");
+    throw new Error(`${label} must be a string.`);
   }
   if (value.includes("\0") || value.length > maxPathLength) {
-    throw new Error(
-      `Default note folder must contain at most ${maxPathLength} characters and no null bytes.`,
-    );
+    throw new Error(`${label} must contain at most ${maxPathLength} characters and no null bytes.`);
   }
   const portable = value.trim().replaceAll("\\", "/");
   if (/^(?:\/|[a-z]:\/)/i.test(portable)) {
-    throw new Error("Default note folder must be relative to the vault.");
+    throw new Error(`${label} must be relative to the vault.`);
   }
   const segments: string[] = [];
   for (const segment of portable.split("/")) {
@@ -72,7 +87,7 @@ function normalizeVisibleFolder(value: unknown): string {
       continue;
     }
     if (segment === "..") {
-      throw new Error("Default note folder cannot leave the vault.");
+      throw new Error(`${label} cannot leave the vault.`);
     }
     const folded = segment.toLocaleLowerCase("en-US");
     if (
@@ -80,7 +95,7 @@ function normalizeVisibleFolder(value: unknown): string {
       privateSegments.has(folded) ||
       folded.startsWith(".threadleaf-")
     ) {
-      throw new Error("Default note folder cannot use hidden or private vault paths.");
+      throw new Error(`${label} cannot use hidden or private vault paths.`);
     }
     segments.push(segment);
   }
@@ -98,6 +113,26 @@ function parseEnum<T extends readonly string[]>(
   return value as T[number];
 }
 
+function parseBoolean(value: unknown, fallback: boolean, label: string): boolean {
+  if (value === undefined) {
+    return fallback;
+  }
+  if (typeof value !== "boolean") {
+    throw new Error(`${label} must be true or false.`);
+  }
+  return value;
+}
+
+function parseEditorTabSize(value: unknown): EditorTabSize {
+  if (value === undefined) {
+    return defaultVaultWorkspaceSettings.tabSize;
+  }
+  if (typeof value !== "number" || !editorTabSizes.includes(value as EditorTabSize)) {
+    throw new Error(`Editor tab size must be one of: ${editorTabSizes.join(", ")}.`);
+  }
+  return value as EditorTabSize;
+}
+
 export function createDefaultVaultWorkspaceSettings(): VaultWorkspaceSettings {
   return { ...defaultVaultWorkspaceSettings };
 }
@@ -107,7 +142,8 @@ export function parseVaultWorkspaceSettings(value: unknown): VaultWorkspaceSetti
     throw new Error("Workspace settings must be an object.");
   }
   return {
-    defaultNoteFolder: normalizeVisibleFolder(value.defaultNoteFolder),
+    defaultNoteFolder: normalizeVisibleFolder(value.defaultNoteFolder, "Default note folder"),
+    attachmentFolder: normalizeVisibleFolder(value.attachmentFolder ?? "", "Attachment folder"),
     linkStyle: parseEnum(value.linkStyle, workspaceLinkStyles, "Link style"),
     automaticLinkUpdates: parseEnum(
       value.automaticLinkUpdates,
@@ -122,6 +158,32 @@ export function parseVaultWorkspaceSettings(value: unknown): VaultWorkspaceSetti
     newTabBehavior: parseEnum(value.newTabBehavior, newTabBehaviors, "New-tab behavior"),
     editorMode: parseEnum(value.editorMode, editorModes, "Editor mode"),
     documentView: parseEnum(value.documentView, documentViewModes, "Document view"),
+    showInlineTitle: parseBoolean(
+      value.showInlineTitle,
+      defaultVaultWorkspaceSettings.showInlineTitle,
+      "Inline title visibility",
+    ),
+    readableLineLength: parseBoolean(
+      value.readableLineLength,
+      defaultVaultWorkspaceSettings.readableLineLength,
+      "Readable line length",
+    ),
+    showLineNumbers: parseBoolean(
+      value.showLineNumbers,
+      defaultVaultWorkspaceSettings.showLineNumbers,
+      "Line number visibility",
+    ),
+    spellcheck: parseBoolean(
+      value.spellcheck,
+      defaultVaultWorkspaceSettings.spellcheck,
+      "Spellcheck",
+    ),
+    tabSize: parseEditorTabSize(value.tabSize),
+    showStatusBar: parseBoolean(
+      value.showStatusBar,
+      defaultVaultWorkspaceSettings.showStatusBar,
+      "Status bar visibility",
+    ),
     restorePolicy: parseEnum(value.restorePolicy, restorePolicies, "Workspace restore policy"),
   };
 }
@@ -163,7 +225,7 @@ export function updateVaultWorkspaceSettings(
 }
 
 export function defaultNotePath(folder: string, requestedPath: string): string {
-  const normalizedFolder = normalizeVisibleFolder(folder);
+  const normalizedFolder = normalizeVisibleFolder(folder, "Default note folder");
   const normalizedPath = requestedPath.trim().replaceAll("\\", "/");
   if (!normalizedFolder || normalizedPath.includes("/")) {
     return normalizedPath;

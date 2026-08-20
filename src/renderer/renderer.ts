@@ -513,12 +513,19 @@ const elements = {
   workspaceSettingsState: getElement("workspace-settings-state"),
   workspaceSettingsForm: getForm("workspace-settings-form"),
   workspaceDefaultFolder: getInput("workspace-default-folder"),
+  workspaceAttachmentFolder: getInput("workspace-attachment-folder"),
   workspaceLinkStyle: getSelect("workspace-link-style"),
   workspaceAutomaticLinks: getSelect("workspace-automatic-links"),
   workspaceConfirmDelete: getSelect("workspace-confirm-delete"),
   workspaceNewTab: getSelect("workspace-new-tab"),
   workspaceEditorMode: getSelect("workspace-editor-mode"),
   workspaceDocumentView: getSelect("workspace-document-view"),
+  workspaceLineNumbers: getSelect("workspace-line-numbers"),
+  workspaceSpellcheck: getSelect("workspace-spellcheck"),
+  workspaceTabSize: getSelect("workspace-tab-size"),
+  workspaceInlineTitle: getSelect("workspace-inline-title"),
+  workspaceReadableLineLength: getSelect("workspace-readable-line-length"),
+  workspaceStatusBar: getSelect("workspace-status-bar"),
   workspaceRestorePolicy: getSelect("workspace-restore-policy"),
   workspaceSettingsReset: getButton("workspace-settings-reset"),
   workspaceSettingsSave: getButton("workspace-settings-save"),
@@ -1615,6 +1622,10 @@ const editorCompatibilityByPane = new Map<WorkspacePaneId, Compartment>([
   ["primary", new Compartment()],
   ["secondary", new Compartment()],
 ]);
+const editorWorkspacePreferencesByPane = new Map<WorkspacePaneId, Compartment>([
+  ["primary", new Compartment()],
+  ["secondary", new Compartment()],
+]);
 let editorReadOnly = false;
 let trustedEditorExtensions: Extension = [];
 
@@ -1624,6 +1635,27 @@ function editorCompatibilityForPane(paneId: WorkspacePaneId): Compartment {
     throw new Error(`Missing trusted editor compatibility compartment: ${paneId}`);
   }
   return compartment;
+}
+
+function editorWorkspacePreferencesForPane(paneId: WorkspacePaneId): Compartment {
+  const compartment = editorWorkspacePreferencesByPane.get(paneId);
+  if (!compartment) {
+    throw new Error(`Missing editor preference compartment: ${paneId}`);
+  }
+  return compartment;
+}
+
+function editorWorkspacePreferenceExtension(
+  settings: VaultWorkspaceSettings = currentWorkspacePreference(),
+): Extension {
+  return [
+    EditorState.tabSize.of(settings.tabSize),
+    EditorView.contentAttributes.of({
+      "aria-label": "Markdown editor",
+      "aria-multiline": "true",
+      spellcheck: String(settings.spellcheck),
+    }),
+  ];
 }
 
 function livePreviewOptions(paneId: WorkspacePaneId): LivePreviewOptions {
@@ -1752,12 +1784,8 @@ function editorExtensions(paneId: WorkspacePaneId) {
     ]),
     editorPresentation.of(editorPresentationExtension(paneId)),
     editorCompatibilityForPane(paneId).of(trustedEditorExtensions),
+    editorWorkspacePreferencesForPane(paneId).of(editorWorkspacePreferenceExtension()),
     syntaxHighlighting(sourceHighlight),
-    EditorView.contentAttributes.of({
-      "aria-label": "Markdown editor",
-      "aria-multiline": "true",
-      spellcheck: "true",
-    }),
     EditorView.domEventHandlers({
       dragenter: (event, view) => handleEditorAttachmentDrag(paneId, view, event),
       dragover: (event, view) => handleEditorAttachmentDrag(paneId, view, event),
@@ -3201,6 +3229,7 @@ function applyWorkspaceViewDefaults(
   settings: VaultWorkspaceSettings,
   options: { force?: boolean } = {},
 ): void {
+  applyWorkspaceSurfacePreferences(settings);
   const vaultId = currentSnapshot?.vault.id ?? null;
   for (const paneId of ["primary", "secondary"] as const) {
     runInPaneContext(paneId, () => {
@@ -3216,6 +3245,26 @@ function applyWorkspaceViewDefaults(
   }
   activatePaneContext(activePaneContextId);
   renderDocumentView();
+}
+
+function applyWorkspaceSurfacePreferences(settings: VaultWorkspaceSettings): void {
+  const root = document.documentElement;
+  root.dataset.threadleafShowInlineTitle = String(settings.showInlineTitle);
+  root.dataset.threadleafReadableLineLength = String(settings.readableLineLength);
+  root.dataset.threadleafShowLineNumbers = String(settings.showLineNumbers);
+  root.dataset.threadleafShowStatusBar = String(settings.showStatusBar);
+  root.style.setProperty("--threadleaf-editor-tab-size", String(settings.tabSize));
+  for (const paneId of ["primary", "secondary"] as const) {
+    const editorView = paneSession(paneId).editor;
+    if (!editorView) {
+      continue;
+    }
+    editorView.dispatch({
+      effects: editorWorkspacePreferencesForPane(paneId).reconfigure(
+        editorWorkspacePreferenceExtension(settings),
+      ),
+    });
+  }
 }
 
 function toggleDocumentView(): void {
@@ -3765,13 +3814,15 @@ function handleEditorAttachmentPaste(
 }
 
 function attachmentInsertDefaultTarget(sourceNotePath: string, sourceFileName: string): string {
-  const separator = sourceNotePath.lastIndexOf("/");
-  return separator < 0
-    ? sourceFileName
-    : `${sourceNotePath.slice(0, separator + 1)}${sourceFileName}`;
+  const directory = attachmentInsertDefaultDirectory(sourceNotePath);
+  return directory ? `${directory}/${sourceFileName}` : sourceFileName;
 }
 
 function attachmentInsertDefaultDirectory(sourceNotePath: string): string {
+  const configured = currentWorkspacePreference().attachmentFolder;
+  if (configured) {
+    return configured;
+  }
   const separator = sourceNotePath.lastIndexOf("/");
   return separator < 0 ? "" : sourceNotePath.slice(0, separator);
 }
@@ -4892,6 +4943,7 @@ function applySettingsSnapshot(snapshot: AppSettingsSnapshot): void {
   const nextNoteWorkflows = currentNoteWorkflowPreference();
   const nextWorkspaceSettings = currentWorkspacePreference();
   applyColorScheme(nextAppearance.colorScheme);
+  applyWorkspaceSurfacePreferences(nextWorkspaceSettings);
   if (
     vaultId &&
     !workspaceSettingsBusy &&
@@ -6854,12 +6906,19 @@ function workspaceSettingsEqual(
 ): boolean {
   return (
     left.defaultNoteFolder === right.defaultNoteFolder &&
+    left.attachmentFolder === right.attachmentFolder &&
     left.linkStyle === right.linkStyle &&
     left.automaticLinkUpdates === right.automaticLinkUpdates &&
     left.confirmDelete === right.confirmDelete &&
     left.newTabBehavior === right.newTabBehavior &&
     left.editorMode === right.editorMode &&
     left.documentView === right.documentView &&
+    left.showInlineTitle === right.showInlineTitle &&
+    left.readableLineLength === right.readableLineLength &&
+    left.showLineNumbers === right.showLineNumbers &&
+    left.spellcheck === right.spellcheck &&
+    left.tabSize === right.tabSize &&
+    left.showStatusBar === right.showStatusBar &&
     left.restorePolicy === right.restorePolicy
   );
 }
@@ -6905,21 +6964,35 @@ function renderWorkspaceSettings(): void {
   const settings = workspaceSettingsDraft ?? currentWorkspacePreference();
   const disabled = !vaultId || vaultOpening() || workspaceSettingsBusy;
   elements.workspaceDefaultFolder.value = settings.defaultNoteFolder;
+  elements.workspaceAttachmentFolder.value = settings.attachmentFolder;
   elements.workspaceLinkStyle.value = settings.linkStyle;
   elements.workspaceAutomaticLinks.value = settings.automaticLinkUpdates;
   elements.workspaceConfirmDelete.value = settings.confirmDelete;
   elements.workspaceNewTab.value = settings.newTabBehavior;
   elements.workspaceEditorMode.value = settings.editorMode;
   elements.workspaceDocumentView.value = settings.documentView;
+  elements.workspaceLineNumbers.value = String(settings.showLineNumbers);
+  elements.workspaceSpellcheck.value = String(settings.spellcheck);
+  elements.workspaceTabSize.value = String(settings.tabSize);
+  elements.workspaceInlineTitle.value = String(settings.showInlineTitle);
+  elements.workspaceReadableLineLength.value = String(settings.readableLineLength);
+  elements.workspaceStatusBar.value = String(settings.showStatusBar);
   elements.workspaceRestorePolicy.value = settings.restorePolicy;
   for (const control of [
     elements.workspaceDefaultFolder,
+    elements.workspaceAttachmentFolder,
     elements.workspaceLinkStyle,
     elements.workspaceAutomaticLinks,
     elements.workspaceConfirmDelete,
     elements.workspaceNewTab,
     elements.workspaceEditorMode,
     elements.workspaceDocumentView,
+    elements.workspaceLineNumbers,
+    elements.workspaceSpellcheck,
+    elements.workspaceTabSize,
+    elements.workspaceInlineTitle,
+    elements.workspaceReadableLineLength,
+    elements.workspaceStatusBar,
     elements.workspaceRestorePolicy,
   ]) {
     control.disabled = disabled;
@@ -6944,6 +7017,7 @@ function renderWorkspaceSettings(): void {
 function captureWorkspaceSettingsDraft(): VaultWorkspaceSettings {
   const draft: VaultWorkspaceSettings = {
     defaultNoteFolder: elements.workspaceDefaultFolder.value,
+    attachmentFolder: elements.workspaceAttachmentFolder.value,
     linkStyle: elements.workspaceLinkStyle.value as VaultWorkspaceSettings["linkStyle"],
     automaticLinkUpdates: elements.workspaceAutomaticLinks
       .value as VaultWorkspaceSettings["automaticLinkUpdates"],
@@ -6951,6 +7025,12 @@ function captureWorkspaceSettingsDraft(): VaultWorkspaceSettings {
     newTabBehavior: elements.workspaceNewTab.value as VaultWorkspaceSettings["newTabBehavior"],
     editorMode: elements.workspaceEditorMode.value as VaultWorkspaceSettings["editorMode"],
     documentView: elements.workspaceDocumentView.value as VaultWorkspaceSettings["documentView"],
+    showInlineTitle: elements.workspaceInlineTitle.value === "true",
+    readableLineLength: elements.workspaceReadableLineLength.value === "true",
+    showLineNumbers: elements.workspaceLineNumbers.value === "true",
+    spellcheck: elements.workspaceSpellcheck.value === "true",
+    tabSize: Number(elements.workspaceTabSize.value) as VaultWorkspaceSettings["tabSize"],
+    showStatusBar: elements.workspaceStatusBar.value === "true",
     restorePolicy: elements.workspaceRestorePolicy.value as VaultWorkspaceSettings["restorePolicy"],
   };
   workspaceSettingsDraft = draft;

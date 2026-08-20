@@ -245,16 +245,16 @@ describe("AppSettingsController", () => {
     const store = new MemorySettingsStore();
     const controller = await AppSettingsController.open(store);
     const vaultId = "f".repeat(64);
-    const workspace = {
+    const workspace = workspaceSettings({
       defaultNoteFolder: "Notes",
-      linkStyle: "markdown" as const,
-      automaticLinkUpdates: "always" as const,
-      confirmDelete: "when-linked" as const,
-      newTabBehavior: "background" as const,
-      editorMode: "source" as const,
-      documentView: "reading" as const,
-      restorePolicy: "fresh" as const,
-    };
+      linkStyle: "markdown",
+      automaticLinkUpdates: "always",
+      confirmDelete: "when-linked",
+      newTabBehavior: "background",
+      editorMode: "source",
+      documentView: "reading",
+      restorePolicy: "fresh",
+    });
     const observed: string[] = [];
     controller.onSnapshot((snapshot) =>
       observed.push(snapshot.settings.workspaceByVault[vaultId]?.linkStyle ?? "missing"),
@@ -308,7 +308,7 @@ describe("AppSettingsController", () => {
     const firstVault = "a".repeat(64);
     const secondVault = "b".repeat(64);
     const customized = createDefaultAppSettings();
-    customized.workspaceByVault[firstVault] = {
+    customized.workspaceByVault[firstVault] = workspaceSettings({
       defaultNoteFolder: "Notes",
       linkStyle: "markdown",
       automaticLinkUpdates: "always",
@@ -317,8 +317,10 @@ describe("AppSettingsController", () => {
       editorMode: "source",
       documentView: "reading",
       restorePolicy: "fresh",
-    };
-    customized.workspaceByVault[secondVault] = { ...customized.workspaceByVault[firstVault] };
+    });
+    customized.workspaceByVault[secondVault] = workspaceSettings(
+      customized.workspaceByVault[firstVault],
+    );
     const store = new MemorySettingsStore(customized);
     const controller = await AppSettingsController.open(store);
 
