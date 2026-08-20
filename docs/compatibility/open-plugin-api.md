@@ -231,3 +231,25 @@ bundle installed in the acceptance vault. Each identity has its own reviewed aut
 the shared version string never substitutes for exact bytes. This is evidence for selected-text
 URL paste only. The plugin's clipboard-reading command, every setting combination, and unrelated
 workspace event names remain outside the claim.
+
+## Legacy Electron title loading
+
+An exact reviewed plugin may still require Electron's removed `remote.BrowserWindow` title-loading
+path. Threadleaf preserves the native Electron renderer exports and supplies only a bounded hidden
+window facade when the native module has no `remote.BrowserWindow`. The facade accepts HTTP and
+HTTPS, follows at most five redirects, reads at most 2 MiB, and times out after 10 seconds. It
+implements the load events, title read, audio mute, and destroy calls used by the verified workflow;
+it is not a general Electron remote bridge and does not execute page scripts.
+
+Legacy window loads register bounded compatibility activity. Editor paste and editor command
+delivery wait for that activity before capturing the final editor projection. This covers plugins
+that intentionally start a title fetch without returning its promise, without adding a guessed
+delay or letting a temporary placeholder escape to the native editor.
+
+`pnpm test:auto-link-title` proves the unchanged MIT Auto Link Title 1.5.5 release with default
+settings against a deterministic loopback HTTP page. A pasted URL becomes a Markdown link whose
+temporary fetching label is replaced by the page title; undo and unhandled ordinary paste remain
+native. The same gate has passed the distinct 1.5.5 bundle installed in the acceptance vault. Each
+bundle hash has its own authority profile and evidence row. Manual clipboard commands, editor drop,
+non-default settings, authenticated pages, script-rendered titles, and unrelated Electron remote
+members remain outside the claim.

@@ -107,6 +107,7 @@
     "test:excalidraw-roundtrip": "pnpm run build && node scripts/check-excalidraw-roundtrip.mjs",
     "test:dataview-reading": "pnpm run build && node scripts/check-dataview-reading.mjs",
     "test:url-selection-paste": "pnpm run build && node scripts/check-url-selection-paste.mjs",
+    "test:auto-link-title": "pnpm run build && THREADLEAF_AUTO_LINK_TITLE=1 node scripts/check-url-selection-paste.mjs",
     "test:style-settings-snippet-control": "pnpm run build && pnpm run test:style-settings-snippet-control:built",
     "test:style-settings-snippet-control:built": "node scripts/check-style-settings-snippet-control.mjs",
     "test:note-bookmarks": "pnpm run build && node scripts/check-note-bookmarks.mjs",

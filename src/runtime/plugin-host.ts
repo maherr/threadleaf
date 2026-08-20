@@ -61,6 +61,10 @@ import {
 } from "./obsidian-compat";
 import { Component } from "./obsidian-components";
 import type { EditorCompatibilityFields } from "./obsidian-editor-compat";
+import {
+  createElectronCompatibilityModule,
+  ElectronCompatibilityActivity,
+} from "./obsidian-electron-compat";
 import { FileView, MarkdownView, WorkspaceLeaf } from "./obsidian-ui-compat";
 import type { CompatibilitySettingTab } from "./obsidian-workspace-compat";
 import type { PluginRuntimePort } from "./plugin-runtime-port";
@@ -260,6 +264,7 @@ export class PluginHost implements PluginRuntimePort {
   private nativeMarkdownLeaf: WorkspaceLeaf | null = null;
   private nativeMarkdownView: MarkdownView | null = null;
   private readonly pluginModuleResolver: PluginModuleResolver | undefined;
+  private readonly electronCompatibilityActivity = new ElectronCompatibilityActivity();
   private readonly consumedConstructionAttempts = new Set<string>();
   private readonly compatibilityEditorFields: EditorCompatibilityFields | undefined;
   private readonly onEditorExtensionsChange: ((extensions: readonly unknown[]) => void) | undefined;
@@ -491,6 +496,7 @@ export class PluginHost implements PluginRuntimePort {
       if (!ran || !command) {
         throw new Error("command is not available");
       }
+      await this.electronCompatibilityActivity.waitForIdle();
       // Obsidian commands are allowed to start async vault work without returning its Promise.
       // Keep a short post-command quiet window so the returned snapshot reflects that work instead
       // of reporting success against the leaf and file that preceded the command.
@@ -544,6 +550,7 @@ export class PluginHost implements PluginRuntimePort {
         writable: false,
       });
       await this.app.workspace.triggerAsync("editor-paste", pasteEvent, view.editor, view);
+      await this.electronCompatibilityActivity.waitForIdle();
       await this.vault.waitForSettledMutations(250, 10_000);
       this.captureEditorUpdate();
       this.editorEvent = { handled: pasteEvent.defaultPrevented, type: "paste" };
@@ -1049,6 +1056,21 @@ export class PluginHost implements PluginRuntimePort {
           if (request === "obsidian") {
             return compatibilityModule;
           }
+          if (request === "electron") {
+            if (
+              !policy.requiredAuthorities.includes("network") ||
+              !policy.requiredAuthorities.includes("host-environment")
+            ) {
+              throw new Error(
+                "Legacy Electron compatibility requires reviewed network and host authority.",
+              );
+            }
+            const resolver = this.pluginModuleResolver ?? nativeRequire;
+            return createElectronCompatibilityModule(
+              resolver(request),
+              this.electronCompatibilityActivity,
+            );
+          }
           if (this.pluginModuleResolver && isCompatibilityHostModule(request)) {
             return this.pluginModuleResolver(request);
           }
@@ -1065,6 +1087,9 @@ export class PluginHost implements PluginRuntimePort {
         pluginRequire.resolve = ((request: string, options?: { paths?: string[] }) => {
           if (request === "obsidian") {
             return "obsidian";
+          }
+          if (request === "electron") {
+            return "electron";
           }
           if (this.pluginModuleResolver && isCompatibilityHostModule(request)) {
             return this.pluginModuleResolver.resolve(request, options);

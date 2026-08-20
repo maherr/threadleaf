@@ -375,6 +375,18 @@
   ],
   "registryEntries": [
     {
+      "id": "obsidian-auto-link-title",
+      "version": "1.5.5",
+      "threadleafVersion": "0.1.0",
+      "compatibilityLevel": 3
+    },
+    {
+      "id": "obsidian-auto-link-title",
+      "version": "1.5.5",
+      "threadleafVersion": "0.1.0",
+      "compatibilityLevel": 3
+    },
+    {
       "id": "obsidian-excalidraw-plugin",
       "version": "2.25.3",
       "threadleafVersion": "0.1.0",

@@ -305,6 +305,22 @@ rename reference rewrites, exact-byte versus semantic comparisons, and a revisio
 Its packaged Electron gate is separate because it requires an explicit X11 Xvfb display, temporary
 profile, CDP, and the unchanged public plugin release at runtime.
 
+## Auto Link Title fixture
+
+The unchanged MIT Auto Link Title 1.5.5 release and the distinct bundle installed in the acceptance
+vault each have an exact reviewed identity. The Linux Electron gate uses an empty disposable note,
+a real cancelable editor paste event, and a deterministic loopback HTTP page. It requires the
+plugin's default legacy hidden-window path to replace its temporary fetching label with the page
+title, then proves undo and ordinary paste fallback.
+
+The legacy window facade is deliberately smaller than Electron remote. It accepts only HTTP and
+HTTPS, follows five redirects at most, reads at most 2 MiB, times out after 10 seconds, does not run
+remote scripts, and exposes only the calls required by this workflow. Compatibility activity is
+awaited before Threadleaf captures the editor projection, covering the plugin's fire-and-forget
+title conversion without a timing guess. The evidence remains Level 3 supporting behavior until a
+controller-finalized production receipt exists. It does not cover manual clipboard commands,
+editor drop, non-default settings, authenticated pages, or other Electron remote APIs.
+
 ## Phase 0 fixture
 
 The first fixture is an unchanged CommonJS bundle that:

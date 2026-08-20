@@ -163,6 +163,23 @@ describe("plugin compatibility settings", () => {
     expect(
       createPluginCompatibilityReport({ id: "url-into-selection", version: "1.11.4" }),
     ).toMatchObject({ level: 0, status: "unverified" });
+    expect(
+      createPluginCompatibilityReport({
+        id: "obsidian-auto-link-title",
+        version: "1.5.5",
+        bundleSha256: "eb27498bfd05dc5c3847dd072f555ed4c02aece24451042c2edb25fc961f38be",
+      }),
+    ).toMatchObject({ level: 3, status: "verified" });
+    expect(
+      createPluginCompatibilityReport({
+        id: "obsidian-auto-link-title",
+        version: "1.5.5",
+        bundleSha256: "b1da7a8b9b98b4c7daeae1286db2cd7fc5e24bef2903d3e326adcfc7db146f32",
+      }),
+    ).toMatchObject({ level: 3, status: "verified" });
+    expect(
+      createPluginCompatibilityReport({ id: "obsidian-auto-link-title", version: "1.5.5" }),
+    ).toMatchObject({ level: 0, status: "unverified" });
     expect(createPluginCompatibilityReport({ id: "unknown-plugin", version: "1.0.0" })).toEqual({
       level: 0,
       status: "unverified",

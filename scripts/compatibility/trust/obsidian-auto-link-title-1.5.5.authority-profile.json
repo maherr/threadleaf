@@ -1,0 +1,29 @@
+{
+  "$schema": "./reviewed-authority-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profileId": "obsidian-auto-link-title-1.5.5",
+  "profileRevision": 1,
+  "packageIdentity": {
+    "pluginId": "obsidian-auto-link-title",
+    "manifestVersion": "1.5.5",
+    "distributionTag": "1.5.5",
+    "manifestSha256": "21916c8c8fa1996d38fc79e6064b61f41c6b34d5d4eaddaf36f18432b3f49a11",
+    "mainSha256": "eb27498bfd05dc5c3847dd072f555ed4c02aece24451042c2edb25fc961f38be",
+    "stylesSha256": "040d99c787acf90dba4374c21b67417dde43acc59ed4ab9bcee510bfbc4508b2",
+    "packageTreeSha256": "4cf2644407ff54fd774cb7be2d147bf6e710f19f79d586e33aa3e5a6c1d07814"
+  },
+  "packageIdentityDigest": "f812c0828850d6eb767cdb623ea18fdd6915e28a44cbe72e28089cbb1f250496",
+  "expectedStaticCapabilities": ["network", "clipboard", "workspace-ui"],
+  "requiredAuthorities": [
+    "network",
+    "filesystem",
+    "subprocess",
+    "host-environment",
+    "clipboard",
+    "workspace-ui",
+    "dynamic-code"
+  ],
+  "executionProfile": "trusted-node-renderer",
+  "allowedPlatforms": ["linux", "darwin", "win32"],
+  "authorityDigest": "3b4533c87fda31d5ed3d9028b3866eba123fdae568f335cf1c5a5fc82d24fa30"
+}

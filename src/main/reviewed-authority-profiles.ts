@@ -19,6 +19,12 @@ import inspectionSafeProfileJson from "../../scripts/compatibility/trust/inspect
 import inspectionTeardownProfileJson from "../../scripts/compatibility/trust/inspection-teardown-0.1.0.authority-profile.json" with {
   type: "json",
 };
+import autoLinkTitleProfileJson from "../../scripts/compatibility/trust/obsidian-auto-link-title-1.5.5.authority-profile.json" with {
+  type: "json",
+};
+import autoLinkTitleObsidianInstalledProfileJson from "../../scripts/compatibility/trust/obsidian-auto-link-title-1.5.5-obsidian-installed.authority-profile.json" with {
+  type: "json",
+};
 import excalidraw2253ProfileJson from "../../scripts/compatibility/trust/obsidian-excalidraw-plugin-2.25.3.authority-profile.json" with {
   type: "json",
 };
@@ -300,6 +306,8 @@ const parsedProfiles = [
   parseReviewedAuthorityProfile(iconize2147ObsidianInstalledProfileJson),
   parseReviewedAuthorityProfile(minimalSettings823ObsidianInstalledProfileJson),
   parseReviewedAuthorityProfile(omnisearch1301ObsidianInstalledProfileJson),
+  parseReviewedAuthorityProfile(autoLinkTitleProfileJson),
+  parseReviewedAuthorityProfile(autoLinkTitleObsidianInstalledProfileJson),
   parseReviewedAuthorityProfile(trustedStateFixtureProfileJson),
   parseReviewedAuthorityProfile(trustedViewFixtureProfileJson),
   parseReviewedAuthorityProfile(workspaceDocksFixtureProfileJson),

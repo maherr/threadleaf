@@ -64,6 +64,14 @@ rotation, profile or package drift, history corruption, stale epochs, and mutabl
 fail closed before construction or force unload during reconciliation. This is a same-user trust and
 reproducibility boundary, not isolation from Node-capable plugin I/O.
 
+Legacy plugins that import Electron receive the native renderer module plus one independently
+implemented fallback only when `remote.BrowserWindow` is absent. That fallback models a bounded
+hidden title-loading window, not general Electron remote authority: HTTP(S) only, five redirects,
+2 MiB, 10 seconds, no remote script execution, and only the load, title, mute, and destroy members
+used by the verified workflow. Its pending loads are host-owned compatibility resources. Editor
+commands and paste delivery await those resources before capturing a native editor update, so a
+plugin's fire-and-forget title fetch cannot leak its temporary placeholder across the process seam.
+
 ### Trusted-workspace topology
 
 Compatibility settings are per vault and have two orthogonal fields: `restricted | enabled`

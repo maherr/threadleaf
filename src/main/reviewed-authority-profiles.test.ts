@@ -8,7 +8,7 @@ import {
 } from "./reviewed-authority-profiles";
 
 describe("reviewed authority profiles", () => {
-  it("loads the twenty exact identity-bound records", () => {
+  it("loads the twenty-two exact identity-bound records", () => {
     const profiles = reviewedAuthorityProfiles();
     expect(profiles.map(({ packageIdentity }) => packageIdentity.pluginId).sort()).toEqual([
       "calendar-beta",
@@ -18,6 +18,8 @@ describe("reviewed authority profiles", () => {
       "inspection-runaway",
       "inspection-safe",
       "inspection-teardown",
+      "obsidian-auto-link-title",
+      "obsidian-auto-link-title",
       "obsidian-excalidraw-plugin",
       "obsidian-excalidraw-plugin",
       "obsidian-excalidraw-plugin",
@@ -71,6 +73,14 @@ describe("reviewed authority profiles", () => {
     expect(urlSelectionProfiles.map(({ packageIdentity }) => packageIdentity.mainSha256)).toEqual([
       "377883d2fc2a1feeb96be868f7110782874206cb3065635281e89fdfdc6e6d77",
       "8578844689112df74390d7b107a1302b30c8e31a490cadf40bccd73ddeca9aca",
+    ]);
+    const autoLinkTitleProfiles = profiles.filter(
+      ({ packageIdentity }) => packageIdentity.pluginId === "obsidian-auto-link-title",
+    );
+    expect(autoLinkTitleProfiles).toHaveLength(2);
+    expect(autoLinkTitleProfiles.map(({ packageIdentity }) => packageIdentity.mainSha256)).toEqual([
+      "eb27498bfd05dc5c3847dd072f555ed4c02aece24451042c2edb25fc961f38be",
+      "b1da7a8b9b98b4c7daeae1286db2cd7fc5e24bef2903d3e326adcfc7db146f32",
     ]);
     const excalidraw2253 = profiles.find(
       ({ packageIdentity }) =>

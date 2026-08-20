@@ -4,16 +4,80 @@ This document is generated from the versioned receipt-aware source [`compatibili
 Discovery in the external community package directory is separate from Threadleaf compatibility evidence.
 A row applies only to the exact plugin and Threadleaf versions shown.
 
-Registry schema: 2. Threadleaf version: 0.1.0. Generation: b87355b288a93a84621e1bbc0740df9873393d648bbe08be959bbfc3fb48781f.
+Registry schema: 2. Threadleaf version: 0.1.0. Generation: b4856a969abc552bb6ba1344af4969c5fa86f6f1f30123224960aef0f0f2458e.
 
 | Plugin | Plugin version | Threadleaf | Level | Evidence | Last tested |
 | --- | --- | --- | ---: | --- | --- |
+| [Auto Link Title](https://github.com/zolrath/obsidian-auto-link-title) | 1.5.5 | 0.1.0 | 3 | direct | 2026-08-20 |
+| [Auto Link Title](https://github.com/zolrath/obsidian-auto-link-title) | 1.5.5 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) | 2.25.3 | 0.1.0 | 0 | composed | 2026-08-16 |
 | [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) | 2.26.4 | 0.1.0 | 2 | direct | 2026-08-16 |
 | [Style Settings](https://github.com/mgmeyers/obsidian-style-settings) | 1.0.9 | 0.1.0 | 3 | direct | 2026-08-17 |
 | [Threadleaf Compatibility Fixture](https://github.com/maherr/threadleaf) | 0.1.0 | 0.1.0 | 0 | direct | 2026-08-15 |
 | [Paste URL into Selection](https://github.com/denolehov/obsidian-url-into-selection) | 1.11.4 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Paste URL into Selection](https://github.com/denolehov/obsidian-url-into-selection) | 1.11.4 | 0.1.0 | 3 | direct | 2026-08-20 |
+
+## Auto Link Title 1.5.5
+
+The unchanged official Auto Link Title 1.5.5 release passed exact-package authority review and direct Linux Electron URL paste through the trusted compatibility runtime. Its default legacy hidden-window path fetched a deterministic HTTP page title, replaced the temporary link placeholder, and preserved undo and ordinary paste.
+
+Bundle SHA-256: `eb27498bfd05dc5c3847dd072f555ed4c02aece24451042c2edb25fc961f38be`. License: MIT.
+
+Required static authority review: `network`, `clipboard`, `workspace-ui`.
+
+### Supported workflows
+
+- **Fetch a pasted URL title through the default legacy Electron path and preserve ordinary paste** (passed)
+  - `pnpm test:auto-link-title` via [scripts/check-url-selection-paste.mjs](../../scripts/check-url-selection-paste.mjs)
+  - `pnpm exec vitest run src/runtime/obsidian-electron-compat.test.ts src/runtime/plugin-host.test.ts` via [src/runtime/obsidian-electron-compat.test.ts](../../src/runtime/obsidian-electron-compat.test.ts)
+
+### Platform limits
+
+- **linux-x64-electron**: verified. Verified in Linux X11 and Xvfb Electron with the exact upstream release, a deterministic loopback HTTP page, and disposable vault and private state. The runtime is trusted same-user desktop code, not a sandbox.
+- **macos-electron**: unverified. This exact package workflow is not verified on macOS.
+- **windows-x64-electron**: unverified. This exact package workflow is not verified on Windows.
+
+### Known failures
+
+- No reproducible failure is recorded for the supported workflows above.
+
+### Limitations
+
+- The verified legacy title loader accepts HTTP and HTTPS only, follows at most five redirects, reads at most 2 MiB, and times out after 10 seconds.
+- The manual clipboard commands, editor-drop, non-default settings, authenticated sites, arbitrary remote scripts, and every unrelated Electron remote API are outside this claim.
+- This is supporting behavior evidence, not Level 4 evidence.
+- No controller-finalized signed production receipt exists for this tuple.
+
+## Auto Link Title 1.5.5
+
+The distinct Auto Link Title 1.5.5 bundle installed in the acceptance vault passed its own exact-package authority review and the same default title-fetch, placeholder replacement, undo, and ordinary-paste workflow. Its same version string does not inherit evidence from the upstream release hash.
+
+Bundle SHA-256: `b1da7a8b9b98b4c7daeae1286db2cd7fc5e24bef2903d3e326adcfc7db146f32`. License: MIT.
+
+Required static authority review: `network`, `clipboard`, `workspace-ui`.
+
+### Supported workflows
+
+- **Run the default title-fetch and ordinary-paste workflow against an explicit installed package** (passed)
+  - `THREADLEAF_AUTO_LINK_TITLE=1 THREADLEAF_AUTO_LINK_TITLE_PLUGIN_DIR=$PLUGIN_DIR node scripts/check-url-selection-paste.mjs` via [scripts/check-url-selection-paste.mjs](../../scripts/check-url-selection-paste.mjs)
+
+### Platform limits
+
+- **linux-x64-electron**: verified. Verified from the operator-supplied exact package in Linux X11 and Xvfb Electron with a deterministic loopback HTTP page and disposable vault and private state. The runtime is trusted same-user desktop code, not a sandbox.
+- **macos-electron**: unverified. This exact package workflow is not verified on macOS.
+- **windows-x64-electron**: unverified. This exact package workflow is not verified on Windows.
+
+### Known failures
+
+- No reproducible failure is recorded for the supported workflows above.
+
+### Limitations
+
+- This identity is operator-supplied and is not substituted for the separately reviewed upstream release hash.
+- The verified legacy title loader accepts HTTP and HTTPS only, follows at most five redirects, reads at most 2 MiB, and times out after 10 seconds.
+- The manual clipboard commands, editor-drop, non-default settings, authenticated sites, arbitrary remote scripts, and every unrelated Electron remote API are outside this claim.
+- This is supporting behavior evidence, not Level 4 evidence.
+- No controller-finalized signed production receipt exists for this tuple.
 
 ## Excalidraw 2.25.3
 

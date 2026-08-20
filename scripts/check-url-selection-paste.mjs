@@ -7,29 +7,53 @@ import path from "node:path";
 
 const appRoot = process.cwd();
 const electronPath = path.join(appRoot, "node_modules", ".bin", "electron");
-const sourcePluginPath = process.env.THREADLEAF_URL_SELECTION_PLUGIN_DIR;
+const autoLinkTitleMode = process.env.THREADLEAF_AUTO_LINK_TITLE === "1";
+const pluginId = autoLinkTitleMode ? "obsidian-auto-link-title" : "url-into-selection";
+const pluginVersion = autoLinkTitleMode ? "1.5.5" : "1.11.4";
+const sourcePluginPath = autoLinkTitleMode
+  ? process.env.THREADLEAF_AUTO_LINK_TITLE_PLUGIN_DIR
+  : process.env.THREADLEAF_URL_SELECTION_PLUGIN_DIR;
 const screenshotDirectory = process.env.THREADLEAF_URL_SELECTION_SCREENSHOT_DIR;
 const testRoot = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-url-selection-"));
 const vaultPath = path.join(testRoot, "vault");
 const userDataPath = path.join(testRoot, "user-data");
-const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "url-into-selection");
+const pluginPath = path.join(vaultPath, ".obsidian", "plugins", pluginId);
 const output = [];
 let child;
 let cdp;
 let exited;
+let titleServer;
 
-const officialAssets = [
-  {
-    name: "manifest.json",
-    url: "https://github.com/denolehov/obsidian-url-into-selection/releases/download/1.11.4/manifest.json",
-    sha256: "6573c0ef277b0eb366e19acd558445a46473a5fccf0b7e80b9e07dc95f8b0443",
-  },
-  {
-    name: "main.js",
-    url: "https://github.com/denolehov/obsidian-url-into-selection/releases/download/1.11.4/main.js",
-    sha256: "377883d2fc2a1feeb96be868f7110782874206cb3065635281e89fdfdc6e6d77",
-  },
-];
+const officialAssets = autoLinkTitleMode
+  ? [
+      {
+        name: "manifest.json",
+        url: "https://github.com/zolrath/obsidian-auto-link-title/releases/download/1.5.5/manifest.json",
+        sha256: "21916c8c8fa1996d38fc79e6064b61f41c6b34d5d4eaddaf36f18432b3f49a11",
+      },
+      {
+        name: "main.js",
+        url: "https://github.com/zolrath/obsidian-auto-link-title/releases/download/1.5.5/main.js",
+        sha256: "eb27498bfd05dc5c3847dd072f555ed4c02aece24451042c2edb25fc961f38be",
+      },
+      {
+        name: "styles.css",
+        url: "https://github.com/zolrath/obsidian-auto-link-title/releases/download/1.5.5/styles.css",
+        sha256: "040d99c787acf90dba4374c21b67417dde43acc59ed4ab9bcee510bfbc4508b2",
+      },
+    ]
+  : [
+      {
+        name: "manifest.json",
+        url: "https://github.com/denolehov/obsidian-url-into-selection/releases/download/1.11.4/manifest.json",
+        sha256: "6573c0ef277b0eb366e19acd558445a46473a5fccf0b7e80b9e07dc95f8b0443",
+      },
+      {
+        name: "main.js",
+        url: "https://github.com/denolehov/obsidian-url-into-selection/releases/download/1.11.4/main.js",
+        sha256: "377883d2fc2a1feeb96be868f7110782874206cb3065635281e89fdfdc6e6d77",
+      },
+    ];
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -147,7 +171,7 @@ async function waitFor(probe, message, timeoutMs = 10_000) {
 async function stagePluginPackage() {
   await fs.mkdir(pluginPath, { recursive: true });
   if (sourcePluginPath) {
-    for (const name of ["manifest.json", "main.js", "data.json"]) {
+    for (const name of ["manifest.json", "main.js", "styles.css", "data.json"]) {
       const source = path.join(sourcePluginPath, name);
       const bytes = await fs.readFile(source).catch(() => null);
       if (bytes) await fs.writeFile(path.join(pluginPath, name), bytes);
@@ -165,9 +189,30 @@ async function stagePluginPackage() {
     }
   }
   const manifest = JSON.parse(await fs.readFile(path.join(pluginPath, "manifest.json"), "utf8"));
-  assert(manifest.id === "url-into-selection", "The staged package has the wrong plugin ID.");
-  assert(manifest.version === "1.11.4", "The staged package has the wrong plugin version.");
+  assert(manifest.id === pluginId, "The staged package has the wrong plugin ID.");
+  assert(manifest.version === pluginVersion, "The staged package has the wrong plugin version.");
   return sha256(await fs.readFile(path.join(pluginPath, "main.js")));
+}
+
+async function startTitleServer() {
+  const port = await availablePort();
+  titleServer = net.createServer((socket) => {
+    socket.once("data", (request) => {
+      const method = String(request).split(" ", 1)[0];
+      const body =
+        "<!doctype html><html><head><title>Threadleaf Compatibility Page</title></head><body>fixture</body></html>";
+      socket.end(
+        method === "HEAD"
+          ? "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+          : `HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`,
+      );
+    });
+  });
+  await new Promise((resolve, reject) => {
+    titleServer.once("error", reject);
+    titleServer.listen(port, "127.0.0.1", resolve);
+  });
+  return `http://127.0.0.1:${port}/article`;
 }
 
 async function focusAndSelectAllEditor() {
@@ -215,14 +260,29 @@ async function editorText() {
   ].map((line) => line.textContent ?? "").join("\\n")`);
 }
 
+async function captureScreenshot(name) {
+  if (!screenshotDirectory) return;
+  await fs.mkdir(screenshotDirectory, { recursive: true });
+  const screenshot = await cdp.send("Page.captureScreenshot", {
+    format: "png",
+    fromSurface: true,
+  });
+  await fs.writeFile(path.join(screenshotDirectory, name), Buffer.from(screenshot.data, "base64"));
+}
+
 try {
   if (process.platform !== "linux") {
     throw new Error("The URL selection paste check currently requires Linux and Xvfb.");
   }
   await fs.access(electronPath);
   const bundleSha256 = await stagePluginPackage();
+  const titleUrl = autoLinkTitleMode ? await startTitleServer() : "https://example.test/path";
   await fs.mkdir(userDataPath, { recursive: true });
-  await fs.writeFile(path.join(vaultPath, "Welcome.md"), "Threadleaf", "utf8");
+  await fs.writeFile(
+    path.join(vaultPath, "Welcome.md"),
+    autoLinkTitleMode ? "" : "Threadleaf",
+    "utf8",
+  );
   const canonicalVaultPath = await fs.realpath(vaultPath);
   const vaultId = sha256(Buffer.from(canonicalVaultPath));
   await fs.writeFile(
@@ -238,7 +298,7 @@ try {
           [vaultId]: {
             compatibilityMode: "enabled",
             compatibilityTopology: "trusted-workspace",
-            enabledPluginIds: ["url-into-selection"],
+            enabledPluginIds: [pluginId],
             capabilityGrantsByPlugin: {},
           },
         },
@@ -317,16 +377,14 @@ try {
         snapshot,
         catalog: await window.threadleaf.getPlugins(snapshot.vault?.id),
       }))`);
-      const plugin = state?.catalog?.catalog?.plugins?.find(
-        ({ id }) => id === "url-into-selection",
-      );
+      const plugin = state?.catalog?.catalog?.plugins?.find(({ id }) => id === pluginId);
       return !state?.snapshot?.startup &&
         state?.snapshot?.workspace?.state === "ready" &&
         plugin?.packageState === "ready"
         ? { plugin, vaultId: state.snapshot.vault.id }
         : null;
     },
-    "The exact URL selection package did not appear in the ready vault catalog",
+    `The exact ${pluginId} package did not appear in the ready vault catalog`,
     15_000,
   );
   assert(
@@ -334,32 +392,66 @@ try {
     "The discovered package did not retain the staged main bundle identity.",
   );
   await evaluate(
-    `window.threadleaf.setPluginCapabilityGrant(${JSON.stringify(catalog.vaultId)}, "url-into-selection", ${JSON.stringify(bundleSha256)}, true)`,
+    `window.threadleaf.setPluginCapabilityGrant(${JSON.stringify(catalog.vaultId)}, ${JSON.stringify(pluginId)}, ${JSON.stringify(bundleSha256)}, true)`,
   );
-  await waitFor(
-    () =>
-      evaluate(`window.threadleaf.getSnapshot().then((snapshot) => ({
-        loaded: snapshot.plugins?.some((plugin) =>
-          plugin.id === "url-into-selection" &&
-          plugin.state === "loaded" &&
-          plugin.compatibilityLevel === 3
-        ),
-        pasteRegistered: snapshot.integrations?.workspaceEvents?.includes("editor-paste") === true,
-      }))`).then((state) => state.loaded && state.pasteRegistered),
-    "The exact plugin did not load and register editor-paste",
-    20_000,
-  );
+  try {
+    await waitFor(
+      () =>
+        evaluate(`window.threadleaf.getSnapshot().then((snapshot) => ({
+          loaded: snapshot.plugins?.some((plugin) =>
+            plugin.id === ${JSON.stringify(pluginId)} &&
+            plugin.state === "loaded" &&
+            plugin.compatibilityLevel === 3
+          ),
+          pasteRegistered: snapshot.integrations?.workspaceEvents?.includes("editor-paste") === true,
+        }))`).then((state) => state.loaded && state.pasteRegistered),
+      "The exact plugin did not load and register editor-paste",
+      20_000,
+    );
+  } catch (error) {
+    const diagnostic = await evaluate(`window.threadleaf.getSnapshot().then(async (snapshot) => ({
+      plugins: snapshot.plugins,
+      events: snapshot.events.slice(-20),
+      catalog: (await window.threadleaf.getPlugins(snapshot.vault?.id)).catalog?.plugins?.find(
+        (plugin) => plugin.id === ${JSON.stringify(pluginId)}
+      )
+    }))`);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}: ${JSON.stringify(diagnostic)}`,
+    );
+  }
 
   await focusAndSelectAllEditor();
-  const urlPaste = await dispatchTextPaste("https://example.test/path");
+  const urlPaste = await dispatchTextPaste(titleUrl);
   assert(
     urlPaste.dispatched && urlPaste.focused && urlPaste.defaultPrevented,
     `The URL paste did not enter the compatibility path: ${JSON.stringify(urlPaste)}`,
   );
-  await waitFor(
-    async () => (await editorText()) === "[Threadleaf](https://example.test/path)",
-    "The exact plugin did not wrap selected text with the pasted URL",
-  );
+  try {
+    await waitFor(
+      async () =>
+        (await editorText()) ===
+        (autoLinkTitleMode
+          ? `[Threadleaf Compatibility Page](${titleUrl})`
+          : "[Threadleaf](https://example.test/path)"),
+      autoLinkTitleMode
+        ? "The exact plugin did not replace its fetching placeholder with the remote title"
+        : "The exact plugin did not wrap selected text with the pasted URL",
+    );
+  } catch (error) {
+    const diagnostic = await evaluate(`window.threadleaf.getSnapshot().then((snapshot) => ({
+      events: snapshot.events.slice(-20),
+      editorUpdate: snapshot.editorUpdate,
+      editorEvent: snapshot.editorEvent,
+      toast: document.querySelector("#toast")?.textContent ?? ""
+    }))`);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}: editor=${JSON.stringify(await editorText())} state=${JSON.stringify(diagnostic)}`,
+    );
+  }
+  if (autoLinkTitleMode) {
+    await captureScreenshot("auto-link-title-link.png");
+  }
 
   for (const type of ["keyDown", "keyUp"]) {
     await cdp.send("Input.dispatchKeyEvent", {
@@ -370,7 +462,10 @@ try {
       windowsVirtualKeyCode: 90,
     });
   }
-  await waitFor(async () => (await editorText()) === "Threadleaf", "Undo did not reset the editor");
+  await waitFor(
+    async () => (await editorText()) === (autoLinkTitleMode ? "" : "Threadleaf"),
+    "Undo did not reset the editor",
+  );
   await focusAndSelectAllEditor();
   const ordinaryPaste = await dispatchTextPaste("ordinary text");
   assert(
@@ -390,26 +485,20 @@ try {
     `The ordinary fallback exposed a compatibility failure: ${JSON.stringify(ordinaryState)}`,
   );
 
-  if (screenshotDirectory) {
-    await fs.mkdir(screenshotDirectory, { recursive: true });
-    const screenshot = await cdp.send("Page.captureScreenshot", {
-      format: "png",
-      fromSurface: true,
-    });
-    await fs.writeFile(
-      path.join(screenshotDirectory, "url-selection-paste-final.png"),
-      Buffer.from(screenshot.data, "base64"),
-    );
-  }
+  await captureScreenshot(
+    autoLinkTitleMode ? "auto-link-title-paste-final.png" : "url-selection-paste-final.png",
+  );
   console.log(
     JSON.stringify({
       verified: true,
-      pluginId: "url-into-selection",
-      version: "1.11.4",
+      pluginId,
+      version: pluginVersion,
       bundleSha256,
       source: sourcePluginPath ? "operator-package" : "official-release",
       workflows: {
-        selectedUrlPaste: "[Threadleaf](https://example.test/path)",
+        selectedUrlPaste: autoLinkTitleMode
+          ? `[Threadleaf Compatibility Page](${titleUrl})`
+          : "[Threadleaf](https://example.test/path)",
         ordinaryPasteFallback: "ordinary text",
       },
     }),
@@ -423,6 +512,9 @@ try {
     await Promise.race([exited, delay(5_000)]);
     if (child.exitCode === null) child.kill("SIGTERM");
     cdp.close();
+  }
+  if (titleServer) {
+    await new Promise((resolve) => titleServer.close(resolve)).catch(() => undefined);
   }
   await fs.rm(testRoot, { recursive: true, force: true }).catch(() => undefined);
 }
