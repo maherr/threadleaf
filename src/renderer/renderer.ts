@@ -3116,6 +3116,21 @@ async function restoreDocumentPluginView(
   await activatePluginView();
 }
 
+function waitForVisualFrameOrTimeout(timeoutMs = 100): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer = 0;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      resolve();
+    };
+    timer = window.setTimeout(finish, timeoutMs);
+    window.requestAnimationFrame(finish);
+  });
+}
+
 async function updatePluginSurfaceBounds(): Promise<void> {
   if (elements.pluginSurfaceHost.hidden) {
     return;
@@ -3142,7 +3157,7 @@ async function activatePluginView(): Promise<void> {
   renderDocumentView();
   setActionState(true);
   try {
-    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    await waitForVisualFrameOrTimeout();
     await updatePluginSurfaceBounds();
     await ensurePluginLayoutReady();
     const snapshot = await window.threadleaf.openPluginView(viewType, filePath);
@@ -3193,7 +3208,7 @@ async function activatePluginSettings(pluginId: string): Promise<void> {
   renderDocumentView();
   setActionState(true);
   try {
-    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    await waitForVisualFrameOrTimeout();
     await updatePluginSurfaceBounds();
     await ensurePluginLayoutReady();
     const snapshot = await window.threadleaf.openPluginSettings(pluginId);

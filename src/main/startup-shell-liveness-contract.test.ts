@@ -28,4 +28,26 @@ describe("startup shell liveness contract", () => {
     expect(fallback).toBeGreaterThan(loaded);
     expect(preferred).toBeGreaterThan(fallback);
   });
+
+  it("does not make plugin view attachment depend on an unoccluded animation frame", () => {
+    const helper = renderer.indexOf("function waitForVisualFrameOrTimeout(");
+    const timer = renderer.indexOf("window.setTimeout(finish, timeoutMs)", helper);
+    const pluginView = renderer.indexOf("async function activatePluginView()", timer);
+    const pluginViewWait = renderer.indexOf("await waitForVisualFrameOrTimeout()", pluginView);
+    const pluginSettings = renderer.indexOf(
+      "async function activatePluginSettings(",
+      pluginViewWait,
+    );
+    const pluginSettingsWait = renderer.indexOf(
+      "await waitForVisualFrameOrTimeout()",
+      pluginSettings,
+    );
+
+    expect(helper).toBeGreaterThanOrEqual(0);
+    expect(timer).toBeGreaterThan(helper);
+    expect(pluginView).toBeGreaterThan(timer);
+    expect(pluginViewWait).toBeGreaterThan(pluginView);
+    expect(pluginSettings).toBeGreaterThan(pluginViewWait);
+    expect(pluginSettingsWait).toBeGreaterThan(pluginSettings);
+  });
 });

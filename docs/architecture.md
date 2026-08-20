@@ -239,11 +239,14 @@ before it opens the configured or restored vault. The renderer announces shell r
 first animation frame or a bounded idempotent timer when a hidden compositor suspends frames. The
 main process prefers `ready-to-show` and presents the loaded document through a bounded
 `did-finish-load` fallback if that event is suspended too. A startup snapshot names the real target
-and disables bootstrap writes and search while the target builds its derived index. Open vault remains
-available. After the first bootstrap render, the sandboxed renderer sends a one-way shell-ready
-signal; only then may the main process begin restored-vault activation. A generation guard prevents
-a late restore from replacing a vault picked while it was opening. A deferred runtime restores only
-the saved active-note snapshots needed for its first workspace and returns before the full census.
+and disables bootstrap writes and search while the target builds its derived index. Open vault
+remains available. After the first bootstrap render, the sandboxed renderer sends a one-way
+shell-ready signal; only then may the main process begin restored-vault activation. A generation
+guard prevents a late restore from replacing a vault picked while it was opening. A deferred runtime
+restores only the saved active-note snapshots needed for its first workspace and returns before the
+full census.
+Compatibility-surface attachment likewise waits for a visual frame or a bounded timer, so an
+occluded desktop window cannot strand a drawing or plugin Options tab in its busy state.
 The background census starts watcher buffering, then opens the private versioned SQLite derived-index
 cache when available. Cached fingerprints and parsed metadata hydrate concurrently with a current
 filesystem snapshot; their diff reparses only changed notes before the new index is published. The

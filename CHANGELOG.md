@@ -97,6 +97,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Prevented a hidden Wayland first window from deadlocking restored-vault activation when animation
   frames and `ready-to-show` were both suspended, using idempotent bounded shell-ready and window
   presentation fallbacks after the renderer document has loaded.
+- Prevented an occluded Wayland window from leaving a drawing or plugin Options tab permanently
+  busy by bounding the visual-frame wait before compatibility-surface attachment.
 
 ## [0.1.0]
 
