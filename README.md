@@ -342,6 +342,12 @@ malformed or rejected mappings use source fallbacks. Completing rendered and edi
 tables, math, diagrams, and large-document editing beyond the current partial behavior remains open.
 Broad community-plugin compatibility remains measured per plugin rather than assumed.
 
+Visible `.base` files now open as native, searchable property tables with multiple named views,
+recursive filters, sorting, one-property grouping, row limits, configured columns, and direct note
+navigation. Unsupported formula or filter syntax is reported explicitly instead of producing a
+possibly incorrect table. The first slice is bounded and read-only; its exact supported syntax and
+limitations are documented in [Bases](docs/bases.md).
+
 Unsigned Linux x64 AppImage and RPM artifacts now exercise the real packaged application rather
 than a development server. A fresh package opens an external, read-only demo vault, keeps the
 license beside the application resources, rejects forged demo-vault mutations in the backend, and

@@ -35,6 +35,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   Theme Settings 8.2.3 with Minimal 8.2.0, and Omnisearch 1.30.1 in one isolated-renderer matrix.
 - Added bounded reverse projections for plugin-authored native Files decorations, body classes, and
   CSS variables, including visible Iconize stars and Minimal's measured editor font setting.
+- Added first-class `.base` files with native property tables, multiple views, bounded filtering,
+  sorting, grouping, search, direct note navigation, and explicit unsupported-syntax diagnostics.
 
 ### Changed
 

@@ -1896,10 +1896,227 @@ h2 {
 
 .note-empty[hidden],
 .note-view[hidden],
+.base-view[hidden],
 .canvas-view[hidden],
+.editor-controls[hidden],
 .plugin-surface-host[hidden],
 .edit-notice[hidden] {
   display: none;
+}
+
+.base-view {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.base-view-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  min-width: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-raised);
+}
+
+.base-view-identity {
+  display: grid;
+  min-width: 120px;
+  margin-right: auto;
+}
+
+.base-view-identity h2 {
+  margin: 1px 0 0;
+  overflow: hidden;
+  font-size: calc(16px * var(--threadleaf-ui-font-scale));
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.base-view-tabs {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-sunken);
+}
+
+.base-view-tab {
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--ink-muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: calc(12px * var(--threadleaf-ui-font-scale));
+}
+
+.base-view-tab[aria-selected="true"] {
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line-strong);
+}
+
+.base-view-tab:focus-visible,
+.base-note-link:focus-visible,
+.base-view-tools input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.base-view-tools input {
+  width: min(230px, 42vw);
+  min-height: 30px;
+  padding: 4px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+  font-size: calc(12px * var(--threadleaf-ui-font-scale));
+}
+
+.base-view-summary {
+  margin: 0;
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-muted);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: calc(10.5px * var(--threadleaf-ui-font-scale));
+}
+
+.base-view-diagnostics {
+  display: grid;
+  gap: 3px;
+  max-height: 120px;
+  overflow: auto;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  border-left: 4px solid var(--signal);
+  color: var(--ink-soft);
+  background: var(--signal-soft);
+  font-size: calc(11px * var(--threadleaf-ui-font-scale));
+}
+
+.base-view-diagnostics p {
+  margin: 0;
+}
+
+.base-table-scroller {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.base-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: calc(13px * var(--threadleaf-ui-font-scale));
+}
+
+.base-table th,
+.base-table td {
+  min-width: 120px;
+  max-width: 360px;
+  padding: 8px 12px;
+  overflow: hidden;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.base-table thead th {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  color: var(--ink-soft);
+  background: var(--surface-raised);
+  font-size: calc(11px * var(--threadleaf-ui-font-scale));
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.base-table tbody tr:not(.base-table-group):hover td {
+  background: var(--accent-soft);
+}
+
+.base-table-group th {
+  position: sticky;
+  z-index: 1;
+  left: 0;
+  color: var(--accent-strong);
+  background: var(--surface-sunken);
+  font-size: calc(11px * var(--threadleaf-ui-font-scale));
+  font-weight: 650;
+}
+
+.base-note-link {
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  color: var(--accent-strong);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 620;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.base-note-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.base-table-empty-value {
+  color: var(--ink-muted);
+  font-style: italic;
+}
+
+.base-view-empty,
+.base-view-empty-results {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 28px;
+  color: var(--ink-muted);
+}
+
+.base-view-empty strong {
+  color: var(--ink);
+}
+
+@media (max-width: 760px) {
+  .base-view-header {
+    align-items: stretch;
+  }
+
+  .base-view-tabs {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .base-view-tools input {
+    width: min(220px, 48vw);
+  }
 }
 
 .canvas-view {
@@ -11487,4 +11704,28 @@ a.tag.property-tag {
 
 :root[data-threadleaf-show-status-bar="false"] .statusbar {
   display: none;
+}
+
+/* A Base already owns the full metadata surface. Hide the note-only inspector instead of filling
+   a third column with empty Properties, Outline, Links, and plugin-host cards. */
+.workspace[data-active-document-kind="base"] {
+  grid-template-columns: 268px minmax(0, 1fr);
+}
+
+.workspace[data-active-document-kind="base"][data-left-dock-collapsed="true"] {
+  grid-template-columns: 38px minmax(0, 1fr);
+}
+
+.workspace[data-active-document-kind="base"] > .inspector {
+  display: none;
+}
+
+@media (max-width: 1120px) {
+  .workspace[data-active-document-kind="base"] {
+    grid-template-columns: 238px minmax(0, 1fr);
+  }
+
+  .workspace[data-active-document-kind="base"][data-left-dock-collapsed="true"] {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
 }

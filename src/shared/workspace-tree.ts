@@ -177,13 +177,17 @@ export function buildWorkspaceTreeIndex(input: WorkspaceVisiblePathsInput): Work
       ? "note"
       : lowerName.endsWith(".canvas")
         ? "canvas"
-        : "file";
+        : lowerName.endsWith(".base")
+          ? "base"
+          : "file";
     const title =
       kind === "note"
         ? baseName.slice(0, -3)
         : kind === "canvas"
           ? baseName.slice(0, -7)
-          : baseName;
+          : kind === "base"
+            ? baseName.slice(0, -5)
+            : baseName;
     childEntries(childrenByParent, parentPath).push({ kind, path: filePath, title });
   }
 

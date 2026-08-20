@@ -1,0 +1,32 @@
+filters:
+  and:
+    - file.inFolder("Books")
+    - file.hasTag("book")
+properties:
+  note.author:
+    displayName: Author
+  note.rating:
+    displayName: Score
+views:
+  - type: table
+    name: Reading
+    filters:
+      and:
+        - status != "done"
+    order:
+      - file.name
+      - note.author
+      - note.rating
+      - note.status
+    sort:
+      - property: note.rating
+        direction: DESC
+    groupBy:
+      property: note.status
+      direction: ASC
+  - type: list
+    name: All books
+    order:
+      - file.name
+      - note.author
+      - note.status

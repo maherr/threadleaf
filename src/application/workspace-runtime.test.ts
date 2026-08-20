@@ -6114,6 +6114,41 @@ describe("WorkspaceRuntime absence confirmation at the sink", () => {
     );
   });
 
+  it("opens a Base as a native property table and retains direct note paths", async () => {
+    await fs.writeFile(
+      path.join(vaultPath, "Library.base"),
+      `views:\n  - type: table\n    name: Notes\n    order:\n      - file.name\n      - file.path\n`,
+      "utf8",
+    );
+    const workspace = await openRuntime(new MemoryWorkspaceStateStore());
+
+    const opened = await workspace.openNote("Library.base");
+    expect(opened.workspace?.baseFiles).toContainEqual({ path: "Library.base", title: "Library" });
+    expect(opened.workspace?.panes[0]?.activeBase).toMatchObject({
+      path: "Library.base",
+      title: "Library",
+      readOnly: true,
+      diagnostics: [],
+      views: [
+        {
+          name: "Notes",
+          type: "table",
+          columns: [
+            { property: "file.name", label: "Name" },
+            { property: "file.path", label: "file.path" },
+          ],
+        },
+      ],
+    });
+    expect(opened.workspace?.panes[0]?.activeBase?.views[0]?.rows).toContainEqual(
+      expect.objectContaining({ path: "Welcome.md", title: "Welcome" }),
+    );
+    expect(opened.workspace?.panes[0]?.activeNote).toBeNull();
+    expect(opened.workspace?.tabs).toContainEqual(
+      expect.objectContaining({ path: "Library.base", title: "Library", active: true }),
+    );
+  });
+
   it("observes a canvas going missing even though the watcher never diffs one", async () => {
     // The watcher snapshots Markdown only, so a canvas rename produces no diff
     // and no batch of its own. Anything that decided when to look at the vault

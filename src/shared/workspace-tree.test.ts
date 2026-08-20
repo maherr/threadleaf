@@ -10,6 +10,7 @@ describe("workspace visible-inventory tree", () => {
         "Projects/item10.md",
         "Projects/item2.md",
         "Projects/Board.canvas",
+        "Projects/Library.base",
         "Projects/image.PNG",
         "Alpha.md",
       ],
@@ -18,7 +19,7 @@ describe("workspace visible-inventory tree", () => {
     expect(index.childrenByParent.get(null)).toEqual([
       { kind: "folder", path: "Archive", title: "Archive", childCount: 0 },
       { kind: "folder", path: "Empty", title: "Empty", childCount: 0 },
-      { kind: "folder", path: "Projects", title: "Projects", childCount: 5 },
+      { kind: "folder", path: "Projects", title: "Projects", childCount: 6 },
       { kind: "note", path: "Alpha.md", title: "Alpha" },
       { kind: "note", path: "zeta.md", title: "zeta" },
     ]);
@@ -28,6 +29,7 @@ describe("workspace visible-inventory tree", () => {
       { kind: "file", path: "Projects/image.PNG", title: "image.PNG" },
       { kind: "note", path: "Projects/item2.md", title: "item2" },
       { kind: "note", path: "Projects/item10.md", title: "item10" },
+      { kind: "base", path: "Projects/Library.base", title: "Library" },
     ]);
 
     for (const entries of index.childrenByParent.values()) {

@@ -403,7 +403,7 @@ export type WorkspaceTreeEntry =
       childCount: number;
     }
   | {
-      kind: "note" | "canvas" | "file";
+      kind: "note" | "canvas" | "base" | "file";
       path: string;
       title: string;
     };
@@ -597,6 +597,47 @@ export interface WorkspaceCanvasSnapshot {
   readOnly: boolean;
 }
 
+export interface WorkspaceBaseSummary {
+  path: string;
+  title: string;
+}
+
+export interface WorkspaceBaseDiagnostic {
+  code: "invalid-yaml" | "invalid-shape" | "unsupported-filter" | "unsupported-formula";
+  path: string;
+  message: string;
+}
+
+export interface WorkspaceBaseColumn {
+  property: string;
+  label: string;
+}
+
+export interface WorkspaceBaseRow {
+  path: string;
+  title: string;
+  group: string | null;
+  values: Record<string, string>;
+}
+
+export interface WorkspaceBaseViewSnapshot {
+  name: string;
+  type: string;
+  columns: WorkspaceBaseColumn[];
+  rows: WorkspaceBaseRow[];
+  totalRows: number;
+  truncated: boolean;
+}
+
+export interface WorkspaceBaseSnapshot {
+  path: string;
+  title: string;
+  revision: string;
+  views: WorkspaceBaseViewSnapshot[];
+  diagnostics: WorkspaceBaseDiagnostic[];
+  readOnly: true;
+}
+
 /**
  * A visible non-Markdown file owned by a loaded compatibility plugin's registered view.
  * The primary renderer receives identity and revision only; the trusted plugin realm reads and
@@ -732,6 +773,7 @@ export interface WorkspaceSnapshot {
   /** Physical visible-vault authority for the Files navigator. */
   inventory: WorkspaceVisibleInventorySnapshot;
   canvasFiles?: WorkspaceCanvasSummary[];
+  baseFiles?: WorkspaceBaseSummary[];
   panes: WorkspacePaneSnapshot[];
   activePaneId: WorkspacePaneId;
   splitDirection: WorkspaceSplitDirection | null;
@@ -759,10 +801,11 @@ export interface WorkspacePaneSnapshot {
   canGoBack?: boolean;
   canGoForward?: boolean;
   activeCanvas?: WorkspaceCanvasSnapshot | null;
+  activeBase?: WorkspaceBaseSnapshot | null;
   /** A non-Markdown file whose content surface belongs to a registered compatibility view. */
   activePluginFile?: WorkspacePluginFileSnapshot | null;
   /**
-   * Set instead of `activeNote`, `activeCanvas`, or `activePluginFile` when the selected tab's file
+   * Set instead of `activeNote`, `activeCanvas`, `activeBase`, or `activePluginFile` when the selected tab's file
    * is not on disk right now and nothing readable has been published for it in
    * this session. The workspace keeps such a tab rather than closing it on an
    * absence it has not confirmed, so the pane has to be able to say what it is

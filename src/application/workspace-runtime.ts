@@ -86,6 +86,8 @@ import type {
   VaultSearchResponse,
   VaultSelectionSource,
   VaultTrashResponse,
+  WorkspaceBaseSnapshot,
+  WorkspaceBaseSummary,
   WorkspaceCanvasSnapshot,
   WorkspaceCanvasSummary,
   WorkspaceCensusSnapshot,
@@ -137,6 +139,12 @@ import {
 import { moveBinaryAttachment, movedAttachmentPath } from "./attachment-move";
 import { inspectMissingAttachmentRelinkOffer, relinkMissingAttachment } from "./attachment-relink";
 import { restoreMissingAttachment } from "./attachment-restore";
+import {
+  buildWorkspaceBaseSnapshot,
+  isBasePath,
+  maximumBaseBytes,
+  titleForBasePath,
+} from "./base-service";
 import { loadCanvasAttachment } from "./canvas-attachment-service";
 import {
   isCanvasPath,
@@ -397,6 +405,7 @@ interface WorkspaceSnapshotIndexCapture {
   watcherError: string | null;
   lastWatchSequence: number;
   lastRescanReason: string | null;
+  baseFiles: WorkspaceBaseSummary[];
   canvasFiles: WorkspaceCanvasSummary[];
   pluginFileViewTypes: ReadonlyMap<string, string>;
   renderablePaths: ReadonlySet<string>;
@@ -1397,6 +1406,8 @@ export class WorkspaceRuntime {
    * exactly as it was rather than emptied and rebuilt for a gap nobody caused.
    */
   readonly #retainedCanvases = new Map<string, WorkspaceCanvasSnapshot>();
+  /** The last complete table projection for an active Base across short replace gaps. */
+  readonly #retainedBases = new Map<string, WorkspaceBaseSnapshot>();
   /**
    * The same receipt for a registered-extension file. The plugin owns its live view state, so a
    * short replace gap republishes the file identity instead of tearing down the custom surface.
@@ -3578,6 +3589,7 @@ export class WorkspaceRuntime {
     this.#unconfirmedAbsences.clear();
     this.#retainedNotes.clear();
     this.#retainedCanvases.clear();
+    this.#retainedBases.clear();
     this.#retainedPluginFiles.clear();
     this.#confirmedRemovalPaths.clear();
     await Promise.all([this.watcher.close(), this.pluginHost.close()]);
@@ -3793,6 +3805,15 @@ export class WorkspaceRuntime {
         throw new Error(`Canvas is not present in the active vault: ${filePath}`);
       }
       await this.kernel.readBinary(filePath, 8 * 1024 * 1024);
+      this.#warmingVisiblePaths.add(filePath);
+    } else if (isBasePath(filePath)) {
+      if (!(await this.visibleFileExists(filePath))) {
+        throw new Error(`Base is not present in the active vault: ${filePath}`);
+      }
+      const source = await this.kernel.readBinary(filePath, maximumBaseBytes);
+      if (source.status !== "ready") {
+        throw new Error(`Base exceeds the ${maximumBaseBytes} byte workspace limit: ${filePath}`);
+      }
       this.#warmingVisiblePaths.add(filePath);
     } else if (isMarkdownPath(filePath)) {
       if (!captured.indexedPaths.has(filePath)) {
@@ -5317,6 +5338,11 @@ export class WorkspaceRuntime {
           const inventory = this.inventorySnapshot();
           const indexGeneration = this.workspaceIndexGeneration();
           const visibleFiles = this.#inventoryProjection?.files ?? [...this.#warmingVisiblePaths];
+          const basePaths = visibleFiles.filter(isBasePath);
+          const baseFiles: WorkspaceBaseSummary[] = basePaths.map((filePath) => ({
+            path: filePath,
+            title: titleForBasePath(filePath),
+          }));
           const canvasPaths = visibleFiles.filter(isCanvasPath);
           const canvasFiles: WorkspaceCanvasSummary[] = canvasPaths.map((filePath) => ({
             path: filePath,
@@ -5329,6 +5355,7 @@ export class WorkspaceRuntime {
           );
           const availablePaths = new Set([
             ...projection.documents.keys(),
+            ...basePaths,
             ...canvasPaths,
             ...visibleFiles.filter((filePath) => pluginFileViewTypes.has(filePath)),
           ]);
@@ -5368,6 +5395,7 @@ export class WorkspaceRuntime {
                   ...trackedMissing.filter(
                     (filePath) =>
                       this.#retainedNotes.has(filePath) ||
+                      this.#retainedBases.has(filePath) ||
                       this.#retainedCanvases.has(filePath) ||
                       (this.#retainedPluginFiles.has(filePath) &&
                         pluginFileViewTypes.has(filePath)),
@@ -5416,6 +5444,7 @@ export class WorkspaceRuntime {
             watcherError: this.#watcherError,
             lastWatchSequence: this.#lastWatchSequence,
             lastRescanReason: this.#lastRescanReason,
+            baseFiles,
             canvasFiles,
             pluginFileViewTypes,
             renderablePaths,
@@ -5460,6 +5489,7 @@ export class WorkspaceRuntime {
       watcherError,
       lastWatchSequence,
       lastRescanReason,
+      baseFiles,
       canvasFiles,
       pluginFileViewTypes,
       renderablePaths,
@@ -5573,6 +5603,31 @@ export class WorkspaceRuntime {
       canvasSnapshots.set(filePath, pending);
       return pending;
     };
+    const baseSnapshots = new Map<string, Promise<WorkspaceBaseSnapshot>>();
+    const loadedBaseSnapshots = new Map<string, WorkspaceBaseSnapshot>();
+    const loadBaseSnapshot = (filePath: string): Promise<WorkspaceBaseSnapshot> => {
+      const cached = baseSnapshots.get(filePath);
+      if (cached) return cached;
+      const retained = this.#retainedBases.get(filePath);
+      const pending = this.kernel.readText(filePath).then(
+        (source) => {
+          const snapshot = buildWorkspaceBaseSnapshot(
+            source.path,
+            source.content,
+            source.revision,
+            [...documents.values()],
+          );
+          loadedBaseSnapshots.set(filePath, snapshot);
+          return snapshot;
+        },
+        (error: unknown) => {
+          if (retained) return retained;
+          throw error;
+        },
+      );
+      baseSnapshots.set(filePath, pending);
+      return pending;
+    };
     const pluginFileSnapshots = new Map<string, Promise<WorkspacePluginFileSnapshot>>();
     const loadedPluginFileSnapshots = new Map<string, WorkspacePluginFileSnapshot>();
     const loadPluginFileSnapshot = (
@@ -5615,19 +5670,23 @@ export class WorkspaceRuntime {
         // whole publish, so the pane names what it is waiting for instead.
         const unavailablePath =
           pane.activePath && !renderablePaths.has(pane.activePath) ? pane.activePath : null;
+        const activeBase =
+          !unavailablePath && pane.activePath && isBasePath(pane.activePath)
+            ? await loadBaseSnapshot(pane.activePath)
+            : null;
         const activeCanvas =
-          !unavailablePath && pane.activePath && isCanvasPath(pane.activePath)
+          !unavailablePath && pane.activePath && !activeBase && isCanvasPath(pane.activePath)
             ? await loadCanvasSnapshot(pane.activePath)
             : null;
         const pluginFileViewType = pane.activePath
           ? (pluginFileViewTypes.get(pane.activePath) ?? null)
           : null;
         const activePluginFile =
-          !unavailablePath && pane.activePath && !activeCanvas && pluginFileViewType
+          !unavailablePath && pane.activePath && !activeBase && !activeCanvas && pluginFileViewType
             ? await loadPluginFileSnapshot(pane.activePath, pluginFileViewType)
             : null;
         const activeNote =
-          !unavailablePath && pane.activePath && !activeCanvas && !activePluginFile
+          !unavailablePath && pane.activePath && !activeBase && !activeCanvas && !activePluginFile
             ? await loadNoteSnapshot(pane.activePath)
             : null;
         return {
@@ -5635,9 +5694,11 @@ export class WorkspaceRuntime {
           active: pane.id === snapshotState.activePaneId,
           tabs: pane.openPaths.map((filePath) => ({
             path: filePath,
-            title: isCanvasPath(filePath)
-              ? titleForJsonCanvasPath(filePath)
-              : displayTitleFromVaultPath(filePath),
+            title: isBasePath(filePath)
+              ? titleForBasePath(filePath)
+              : isCanvasPath(filePath)
+                ? titleForJsonCanvasPath(filePath)
+                : displayTitleFromVaultPath(filePath),
             active: filePath === pane.activePath,
             pinned: pane.pinnedPaths.includes(filePath),
           })),
@@ -5645,14 +5706,17 @@ export class WorkspaceRuntime {
           canGoBack: Boolean(pane.navigationHistory?.back.length),
           canGoForward: Boolean(pane.navigationHistory?.forward.length),
           ...(activeCanvas ? { activeCanvas } : {}),
+          ...(activeBase ? { activeBase } : {}),
           ...(activePluginFile ? { activePluginFile } : {}),
           ...(unavailablePath
             ? {
                 activeUnavailable: {
                   path: unavailablePath,
-                  title: isCanvasPath(unavailablePath)
-                    ? titleForJsonCanvasPath(unavailablePath)
-                    : displayTitleFromVaultPath(unavailablePath),
+                  title: isBasePath(unavailablePath)
+                    ? titleForBasePath(unavailablePath)
+                    : isCanvasPath(unavailablePath)
+                      ? titleForJsonCanvasPath(unavailablePath)
+                      : displayTitleFromVaultPath(unavailablePath),
                 },
               }
             : {}),
@@ -5688,6 +5752,7 @@ export class WorkspaceRuntime {
       },
       census,
       inventory,
+      ...(baseFiles.length > 0 ? { baseFiles } : {}),
       ...(canvasFiles.length > 0 ? { canvasFiles } : {}),
       panes,
       activePaneId: snapshotState.activePaneId,
@@ -5712,6 +5777,9 @@ export class WorkspaceRuntime {
         for (const [filePath, canvas] of loadedCanvasSnapshots) {
           this.#retainedCanvases.set(filePath, canvas);
         }
+        for (const [filePath, base] of loadedBaseSnapshots) {
+          this.#retainedBases.set(filePath, base);
+        }
         for (const [filePath, pluginFile] of loadedPluginFileSnapshots) {
           this.#retainedPluginFiles.set(filePath, pluginFile);
         }
@@ -5723,6 +5791,11 @@ export class WorkspaceRuntime {
         for (const filePath of this.#retainedCanvases.keys()) {
           if (!republishable.has(filePath) && !this.#unconfirmedAbsences.has(filePath)) {
             this.#retainedCanvases.delete(filePath);
+          }
+        }
+        for (const filePath of this.#retainedBases.keys()) {
+          if (!republishable.has(filePath) && !this.#unconfirmedAbsences.has(filePath)) {
+            this.#retainedBases.delete(filePath);
           }
         }
         for (const filePath of this.#retainedPluginFiles.keys()) {

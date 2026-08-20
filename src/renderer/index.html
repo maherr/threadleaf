@@ -250,7 +250,7 @@
               <span class="thread-mark" aria-hidden="true"></span>
               <span id="note-path">No note selected</span>
             </div>
-            <div class="editor-controls">
+            <div class="editor-controls" id="editor-controls">
               <fieldset class="document-view-switch">
                 <legend class="sr-only">Document view</legend>
                 <button id="edit-view" type="button" aria-pressed="true">Live</button>
@@ -342,6 +342,12 @@
             class="canvas-view workspace-leaf-content"
             id="canvas-view"
             aria-label="JSON Canvas editor"
+            hidden
+          ></section>
+          <section
+            class="base-view workspace-leaf-content"
+            id="base-view"
+            aria-label="Base data view"
             hidden
           ></section>
           <section

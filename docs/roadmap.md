@@ -420,6 +420,10 @@ Exit gate: selected high-value plugins complete named workflows against public f
           source-note write after all attachment bytes publish.
 - [x] Core daily-driver templates, daily notes, backlinks, outgoing links, tags, properties, tasks,
       search, and outline.
+- [x] First-class bounded `.base` opening with multiple view tabs, recursive supported filters,
+      property columns, sorting, grouping, limits, in-view search, direct note navigation, and
+      explicit diagnostics for unsupported formulas or filters. Editing and richer layouts remain
+      open in the documented Bases boundary.
 - [x] Headless daily path/read/append/prepend, contained template listing and reads, and random-note
   reads with explicit vaults, bounded offline fixtures, recoverable mutations, and honest argument or
   behavior compatibility claims rather than active-GUI or byte-identical output claims.
