@@ -2327,7 +2327,7 @@ body.app-container > .modal-container > .modal {
   display: flex;
   width: min(680px, 100%);
   max-width: calc(100vw - 56px);
-  max-height: min(80vh, 760px);
+  max-height: min(calc(100vh - 48px), 820px);
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--background-modifier-border, var(--line));
@@ -2338,7 +2338,139 @@ body.app-container > .modal-container > .modal {
 
 body.app-container > .modal-container > .modal > .modal-content {
   min-height: 0;
+  padding: 18px 24px 24px;
   overflow: auto;
+  color: var(--text-normal, var(--ink));
+  line-height: 1.5;
+}
+
+body.app-container > .modal-container > .modal > .modal-header {
+  padding: 20px 24px 0;
+}
+
+body.app-container > .modal-container > .modal .modal-title {
+  color: var(--text-normal, var(--ink));
+  font-size: 20px;
+  font-weight: 650;
+}
+
+body.app-container > .modal-container > .modal .modal-content h1 {
+  margin: 0 0 8px;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+body.app-container > .modal-container > .modal .modal-content p {
+  margin: 0 0 14px;
+  color: var(--text-muted, var(--ink-muted));
+}
+
+body.app-container > .modal-container > .modal .setting-item {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 13px 0;
+  border-top: 1px solid var(--background-modifier-border, var(--line));
+}
+
+body.app-container > .modal-container > .modal .setting-item[hidden] {
+  display: none;
+}
+
+body.app-container > .modal-container > .modal .setting-item-info {
+  min-width: 0;
+  flex: 1;
+}
+
+body.app-container > .modal-container > .modal .setting-item-name {
+  color: var(--text-normal, var(--ink));
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+body.app-container > .modal-container > .modal .setting-item-description {
+  margin-top: 3px;
+  color: var(--text-muted, var(--ink-muted));
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+body.app-container > .modal-container > .modal .setting-item-control {
+  display: flex;
+  max-width: 56%;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+body.app-container > .modal-container > .modal .modal-content button,
+body.app-container > .modal-container > .modal .setting-item-control button {
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid var(--background-modifier-border, var(--line));
+  border-radius: 7px;
+  color: var(--text-normal, var(--ink));
+  background: var(--interactive-normal, var(--surface-raised));
+  font: 600 12px var(--font-interface-theme, var(--sans));
+}
+
+body.app-container > .modal-container > .modal .modal-content button:hover,
+body.app-container > .modal-container > .modal .setting-item-control button:hover {
+  background: var(--interactive-hover, var(--surface-hover));
+}
+
+body.app-container > .modal-container > .modal .setting-item-control select,
+body.app-container
+  > .modal-container
+  > .modal
+  .setting-item-control
+  input:not([type="checkbox"]):not([type="range"]):not([type="color"]) {
+  box-sizing: border-box;
+  min-height: 32px;
+  max-width: 100%;
+  padding: 5px 9px;
+  border: 1px solid var(--background-modifier-border, var(--line));
+  border-radius: 6px;
+  outline: 0;
+  color: var(--text-normal, var(--ink));
+  background: var(--background-modifier-form-field, var(--surface-raised));
+  font: 12px var(--font-interface-theme, var(--sans));
+}
+
+body.app-container > .modal-container > .modal .setting-item-control .checkbox-container {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--interactive-accent, var(--accent));
+}
+
+body.app-container > .modal-container > .modal .setting-item-control .slider {
+  width: min(220px, 30vw);
+  accent-color: var(--interactive-accent, var(--accent));
+}
+
+body.app-container > .modal-container > .modal .setting-item-control .slider-value {
+  color: var(--text-muted, var(--ink-muted));
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+@media (max-width: 680px) {
+  body.app-container > .modal-container > .modal .setting-item {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  body.app-container > .modal-container > .modal .setting-item-control {
+    width: 100%;
+    max-width: none;
+    justify-content: flex-start;
+  }
 }
 
 .plugin-surface-loading {
