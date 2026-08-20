@@ -36,6 +36,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   exact Natural Language Dates 0.6.2 `@to` workflow.
 - Added exact installed-package workflows for Data Files Editor 1.3.0, Iconize 2.14.7, Minimal
   Theme Settings 8.2.3 with Minimal 8.2.0, and Omnisearch 1.30.1 in one isolated-renderer matrix.
+- Added exact active-vault parity for Minimal Theme Settings 8.1.1, including all 52 registered
+  commands, paired Minimal 8.2.0 typography projection, both themes, and restart persistence.
 - Added exact Calendar 2.0.0-beta.2 compatibility with a physical right-dock month grid, native
   Daily Notes settings, templated note creation, marker updates, both themes, and restart recovery.
 - Added bounded reverse projections for plugin-authored native Files decorations, body classes, and

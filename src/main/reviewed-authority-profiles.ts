@@ -40,6 +40,9 @@ import excalidraw2264ProfileJson from "../../scripts/compatibility/trust/obsidia
 import iconize2147ObsidianInstalledProfileJson from "../../scripts/compatibility/trust/obsidian-icon-folder-2.14.7-obsidian-installed.authority-profile.json" with {
   type: "json",
 };
+import minimalSettings811ObsidianInstalledProfileJson from "../../scripts/compatibility/trust/obsidian-minimal-settings-8.1.1-obsidian-installed.authority-profile.json" with {
+  type: "json",
+};
 import minimalSettings823ObsidianInstalledProfileJson from "../../scripts/compatibility/trust/obsidian-minimal-settings-8.2.3-obsidian-installed.authority-profile.json" with {
   type: "json",
 };
@@ -311,6 +314,7 @@ const parsedProfiles = [
   parseReviewedAuthorityProfile(excalidraw2253ObsidianInstalledProfileJson),
   parseReviewedAuthorityProfile(excalidraw2264ProfileJson),
   parseReviewedAuthorityProfile(iconize2147ObsidianInstalledProfileJson),
+  parseReviewedAuthorityProfile(minimalSettings811ObsidianInstalledProfileJson),
   parseReviewedAuthorityProfile(minimalSettings823ObsidianInstalledProfileJson),
   parseReviewedAuthorityProfile(naturalLanguageDatesProfileJson),
   parseReviewedAuthorityProfile(omnisearch1301ObsidianInstalledProfileJson),

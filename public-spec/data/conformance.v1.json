@@ -424,6 +424,12 @@
     },
     {
       "id": "obsidian-minimal-settings",
+      "version": "8.1.1",
+      "threadleafVersion": "0.1.0",
+      "compatibilityLevel": 3
+    },
+    {
+      "id": "obsidian-minimal-settings",
       "version": "8.2.3",
       "threadleafVersion": "0.1.0",
       "compatibilityLevel": 3

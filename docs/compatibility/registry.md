@@ -4,7 +4,7 @@ This document is generated from the versioned receipt-aware source [`compatibili
 Discovery in the external community package directory is separate from Threadleaf compatibility evidence.
 A row applies only to the exact plugin and Threadleaf versions shown.
 
-Registry schema: 2. Threadleaf version: 0.1.0. Generation: 7ed9e4d87ffa93cb93a486595c3438512e499a4f7d7568843124273d318712a0.
+Registry schema: 2. Threadleaf version: 0.1.0. Generation: 3ee3d383f745826181d946536279a710e9e464ddf3bdbaed0c9f9b360c391021.
 
 | Plugin | Plugin version | Threadleaf | Level | Evidence | Last tested |
 | --- | --- | --- | ---: | --- | --- |
@@ -16,6 +16,7 @@ Registry schema: 2. Threadleaf version: 0.1.0. Generation: 7ed9e4d87ffa93cb93a48
 | [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) | 2.25.3 | 0.1.0 | 0 | composed | 2026-08-16 |
 | [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) | 2.26.4 | 0.1.0 | 2 | direct | 2026-08-16 |
 | [Iconize](https://github.com/florianwoelki/obsidian-iconize) | 2.14.7 | 0.1.0 | 3 | direct | 2026-08-20 |
+| [Minimal Theme Settings](https://github.com/kepano/obsidian-minimal-settings) | 8.1.1 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Minimal Theme Settings](https://github.com/kepano/obsidian-minimal-settings) | 8.2.3 | 0.1.0 | 3 | direct | 2026-08-20 |
 | [Style Settings](https://github.com/mgmeyers/obsidian-style-settings) | 1.0.9 | 0.1.0 | 3 | direct | 2026-08-17 |
 | [Omnisearch](https://github.com/scambier/obsidian-omnisearch) | 1.30.1 | 0.1.0 | 3 | direct | 2026-08-20 |
@@ -278,6 +279,37 @@ Required static authority review: `vault-read`, `network`, `editor-extension`, `
 ### Limitations
 
 - This workflow proves one emoji decoration. SVG icon packs, custom rules, folder and tab icons, color controls, remove, rename, and explicit plugin reload remain outside this claim.
+- This is supporting behavior evidence, not Level 4 evidence.
+- No controller-finalized signed production receipt exists for this tuple.
+
+## Minimal Theme Settings 8.1.1
+
+The exact active-vault Minimal Theme Settings 8.1.1 bundle passed reviewed authority beside the official-matching Minimal 8.2.0 theme, registered 52 owned commands, increased the native editor font to a measured 16.5px, persisted the value through both plugin and app APIs, rendered in light and dark, and restored the same computed size after a full application restart while seven other community plugins repeated their accepted workflows.
+
+Bundle SHA-256: `a092f66342eb46dd93d96ffd75c9dc5e4f398d8547c41fa51b38f9edb59f4df6`. License: MIT.
+
+Required static authority review: `workspace-ui`, `network`, `filesystem`, `subprocess`, `host-environment`.
+
+### Supported workflows
+
+- **Change, project, measure, and persist the Minimal native editor font size** (passed)
+  - `THREADLEAF_MINIMAL_SETTINGS_PLUGIN_PATH=$MINIMAL_SETTINGS_811 THREADLEAF_MINIMAL_SETTINGS_VERSION=8.1.1 THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT=$PLUGIN_ROOT THREADLEAF_INSTALLED_THEME_MATRIX_ROOT=$MINIMAL_THEME pnpm test:excalidraw-roundtrip` via [scripts/check-excalidraw-roundtrip.mjs](../../scripts/check-excalidraw-roundtrip.mjs)
+  - `pnpm community-theme:check` via [scripts/check-community-theme-matrix.mjs](../../scripts/check-community-theme-matrix.mjs)
+
+### Platform limits
+
+- **linux-x64-electron**: verified. Verified under Xvfb Electron with the exact active-vault plugin and official-matching Minimal 8.2.0 theme, isolated plugin renderer, disposable vault, private state, computed style, and light and dark screenshots. The runtime is trusted same-user desktop code, not a sandbox.
+- **macos-electron**: unverified. This exact package workflow is not verified on macOS.
+- **windows-x64-electron**: unverified. This exact package workflow is not verified on Windows.
+
+### Known failures
+
+- No reproducible failure is recorded for the supported workflows above.
+
+### Limitations
+
+- This workflow proves one of 52 commands and the paired theme's existing visual matrix. The remaining commands, settings controls, non-default schemes, and explicit plugin reload remain outside this claim.
+- A non-default Threadleaf accessibility editor-font preference takes precedence over the plugin's body-font projection.
 - This is supporting behavior evidence, not Level 4 evidence.
 - No controller-finalized signed production receipt exists for this tuple.
 

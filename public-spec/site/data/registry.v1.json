@@ -590,6 +590,72 @@
       "plugin": {
         "id": "obsidian-minimal-settings",
         "name": "Minimal Theme Settings",
+        "version": "8.1.1",
+        "repository": "https://github.com/kepano/obsidian-minimal-settings",
+        "license": "MIT",
+        "bundleSha256": "a092f66342eb46dd93d96ffd75c9dc5e4f398d8547c41fa51b38f9edb59f4df6"
+      },
+      "threadleafVersion": "0.1.0",
+      "lastTested": "2026-08-20",
+      "compatibilityLevel": 3,
+      "summary": "The exact active-vault Minimal Theme Settings 8.1.1 bundle passed reviewed authority beside the official-matching Minimal 8.2.0 theme, registered 52 owned commands, increased the native editor font to a measured 16.5px, persisted the value through both plugin and app APIs, rendered in light and dark, and restored the same computed size after a full application restart while seven other community plugins repeated their accepted workflows.",
+      "evidenceMode": "direct",
+      "requiredCapabilities": [
+        "workspace-ui",
+        "network",
+        "filesystem",
+        "subprocess",
+        "host-environment"
+      ],
+      "platforms": [
+        {
+          "id": "linux-x64-electron",
+          "status": "verified",
+          "limits": [
+            "Verified under Xvfb Electron with the exact active-vault plugin and official-matching Minimal 8.2.0 theme, isolated plugin renderer, disposable vault, private state, computed style, and light and dark screenshots.",
+            "The runtime is trusted same-user desktop code, not a sandbox."
+          ]
+        },
+        {
+          "id": "macos-electron",
+          "status": "unverified",
+          "limits": ["This exact package workflow is not verified on macOS."]
+        },
+        {
+          "id": "windows-x64-electron",
+          "status": "unverified",
+          "limits": ["This exact package workflow is not verified on Windows."]
+        }
+      ],
+      "workflows": [
+        {
+          "id": "minimal-settings.native-font-command-persist.v1",
+          "name": "Change, project, measure, and persist the Minimal native editor font size",
+          "status": "passed",
+          "gates": [
+            {
+              "path": "scripts/check-excalidraw-roundtrip.mjs",
+              "command": "THREADLEAF_MINIMAL_SETTINGS_PLUGIN_PATH=$MINIMAL_SETTINGS_811 THREADLEAF_MINIMAL_SETTINGS_VERSION=8.1.1 THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT=$PLUGIN_ROOT THREADLEAF_INSTALLED_THEME_MATRIX_ROOT=$MINIMAL_THEME pnpm test:excalidraw-roundtrip"
+            },
+            {
+              "path": "scripts/check-community-theme-matrix.mjs",
+              "command": "pnpm community-theme:check"
+            }
+          ]
+        }
+      ],
+      "failures": [],
+      "limitations": [
+        "This workflow proves one of 52 commands and the paired theme's existing visual matrix. The remaining commands, settings controls, non-default schemes, and explicit plugin reload remain outside this claim.",
+        "A non-default Threadleaf accessibility editor-font preference takes precedence over the plugin's body-font projection.",
+        "This is supporting behavior evidence, not Level 4 evidence.",
+        "No controller-finalized signed production receipt exists for this tuple."
+      ]
+    },
+    {
+      "plugin": {
+        "id": "obsidian-minimal-settings",
+        "name": "Minimal Theme Settings",
         "version": "8.2.3",
         "repository": "https://github.com/kepano/obsidian-minimal-settings",
         "license": "MIT",
@@ -1104,5 +1170,5 @@
       ]
     }
   ],
-  "generationId": "7ed9e4d87ffa93cb93a486595c3438512e499a4f7d7568843124273d318712a0"
+  "generationId": "3ee3d383f745826181d946536279a710e9e464ddf3bdbaed0c9f9b360c391021"
 }

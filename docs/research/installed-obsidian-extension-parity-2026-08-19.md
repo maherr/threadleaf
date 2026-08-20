@@ -6,7 +6,7 @@
 
 Threadleaf must treat an Obsidian-installed plugin bundle as a distinct exact distribution identity when its bytes differ from the publisher's release asset. It must not weaken exact-package authority or silently rewrite a user's installed plugin. Reviewed identities may cover both the publisher asset and the deterministic Obsidian-installed form, but compatibility still requires a named executable workflow for each exact version.
 
-This study covers the five community plugins and one community theme present in the acceptance vault on 2026-08-19, plus the exact official Calendar release selected as the next sidebar compatibility proof. It is a bounded first compatibility corpus, not evidence of universal plugin or theme parity.
+This study covers the initial community-plugin and theme acceptance corpus, the active vault's exact Minimal Theme Settings 8.1.1 distribution, and the official Calendar release selected as the next sidebar compatibility proof. It is bounded executable evidence, not evidence of universal plugin or theme parity.
 
 ## Rights and evidence boundary
 
@@ -24,6 +24,7 @@ This study covers the five community plugins and one community theme present in 
 | Excalidraw | 2.25.3 | [zsviczian/obsidian-excalidraw-plugin](https://github.com/zsviczian/obsidian-excalidraw-plugin/tree/2.25.3) | AGPL-3.0 | `3baa63e288992c910fa5ac10e3811aaea4210211b29781446c07259b6df96391` | Create, draw, embed, export, detach, crash-recover, switch vault, reload, and restart |
 | Excalidraw | 2.26.4 | [zsviczian/obsidian-excalidraw-plugin](https://github.com/zsviczian/obsidian-excalidraw-plugin/tree/2.26.4) | AGPL-3.0 | `b26f3fc8cfa39cfefe8c11c82e43f80afdc642d8ca4d4ece3bdd817f72d4cf5a` | Repeat the full workflow against the exact package in the user's active Threadleaf vault |
 | Iconize | 2.14.7 | [florianwoelki/obsidian-iconize](https://github.com/florianwoelki/obsidian-iconize/tree/2.14.7) | MIT | `b68bcfd318d678892f671736e54396fd72414180736e58f164fb17a3f72a22e1` | Assign and remove file and folder icons, rename, reload, and restart |
+| Minimal Theme Settings | 8.1.1 | [kepano/obsidian-minimal-settings](https://github.com/kepano/obsidian-minimal-settings/tree/8.1.1) | MIT | `a092f66342eb46dd93d96ffd75c9dc5e4f398d8547c41fa51b38f9edb59f4df6` | Repeat the paired theme, computed-style, persistence, and restart workflow against the active vault's exact package |
 | Minimal Theme Settings | 8.2.3 | [kepano/obsidian-minimal-settings](https://github.com/kepano/obsidian-minimal-settings/tree/8.2.3) | MIT | `70573512ec859fad644e79ca9883d0b6d7dfb5369cde66e366884638317efdf3` | Change representative Minimal controls, verify computed styles, reload, and restart |
 | Omnisearch | 1.30.1 | [scambier/obsidian-omnisearch](https://github.com/scambier/obsidian-omnisearch/tree/1.30.1) | GPL-3.0 | `4ea4d51f5ce283ea0f83ceb1f1db8e8f8c3ae156fab69a5f8f4c4e09d101a314` | Index a fixture vault, search from its command and ribbon surface, open a result, modify, and reindex |
 | Minimal theme | 8.2.0 | [kepano/obsidian-minimal](https://github.com/kepano/obsidian-minimal/tree/8.2.0) | MIT | `theme.css` is `c75b6043bb8e7de95efaf835b509c3e995fe5fd49c43d7639a6b4a9efe934bdd` | Apply with Minimal Settings, verify representative components in light and dark, reload, and restart |
@@ -109,6 +110,20 @@ registered 51 owned commands, changed and persisted the body font through both A
 the result into the native editor at a measured 16.5px in light and dark. A second application launch
 read the persisted vault preference and restored the same 16.5px computed native editor size. Other
 controls and explicit plugin reload remain outside this claim.
+
+### Minimal Theme Settings 8.1.1
+
+The active vault carries 8.1.1 rather than the separately proven 8.2.3 distribution. Threadleaf
+therefore binds a second reviewed authority profile to the active package's exact manifest, main,
+styles, and package-tree hashes instead of treating nearby versions as interchangeable.
+
+Disposition: **Depend** on the unchanged MIT package and paired Minimal theme. **Benchmark** the
+same native typography and persistence seam using version-selected matrix input. Result on
+2026-08-20: the exact 8.1.1 package registered 52 owned commands, projected a 16.5px body font into
+the native editor in light and dark, persisted it through a full application restart, and remained
+loaded while Calendar, Data Files Editor, Iconize, Omnisearch, Advanced Tables, Templater, and
+Excalidraw repeated their accepted workflows. The remaining 51 commands, non-default schemes, and
+explicit plugin reload remain outside this claim.
 
 ### Omnisearch 1.30.1
 

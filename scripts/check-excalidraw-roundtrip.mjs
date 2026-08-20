@@ -15,6 +15,9 @@ const sourceVaultOverride = process.env.THREADLEAF_EXCALIDRAW_SOURCE_VAULT?.trim
 const sourceVault = sourceVaultOverride ? path.resolve(sourceVaultOverride) : fixtureVault;
 const installedPluginMatrixRoot = process.env.THREADLEAF_INSTALLED_PLUGIN_MATRIX_ROOT?.trim();
 const installedThemeMatrixRoot = process.env.THREADLEAF_INSTALLED_THEME_MATRIX_ROOT?.trim();
+const minimalSettingsPluginPath = process.env.THREADLEAF_MINIMAL_SETTINGS_PLUGIN_PATH?.trim();
+const minimalSettingsPluginVersion =
+  process.env.THREADLEAF_MINIMAL_SETTINGS_VERSION?.trim() || "8.2.3";
 const templaterPluginPath = process.env.THREADLEAF_TEMPLATER_PLUGIN_PATH?.trim();
 const advancedTablesPluginPath = process.env.THREADLEAF_ADVANCED_TABLES_PLUGIN_PATH?.trim();
 const installedPluginMatrixClean = process.env.THREADLEAF_INSTALLED_PLUGIN_MATRIX_CLEAN === "1";
@@ -68,7 +71,7 @@ const installedMatrixPlugins = [
   { id: "calendar-beta", version: "2.0.0" },
   { id: "data-files-editor", version: "1.3.0" },
   { id: "obsidian-icon-folder", version: "2.14.7" },
-  { id: "obsidian-minimal-settings", version: "8.2.3" },
+  { id: "obsidian-minimal-settings", version: minimalSettingsPluginVersion },
   { id: "omnisearch", version: "1.30.1" },
   ...(advancedTablesPluginPath ? [{ id: "table-editor-obsidian", version: "0.22.1" }] : []),
   ...(templaterPluginPath ? [{ id: "templater-obsidian", version: "2.25.0" }] : []),
@@ -738,11 +741,13 @@ async function prepareInstalledPluginMatrix() {
   if (!installedPluginMatrixRoot) return;
   for (const plugin of installedMatrixPlugins) {
     const source =
-      plugin.id === "templater-obsidian" && templaterPluginPath
-        ? path.resolve(templaterPluginPath)
-        : plugin.id === "table-editor-obsidian" && advancedTablesPluginPath
-          ? path.resolve(advancedTablesPluginPath)
-          : path.join(path.resolve(installedPluginMatrixRoot), plugin.id);
+      plugin.id === "obsidian-minimal-settings" && minimalSettingsPluginPath
+        ? path.resolve(minimalSettingsPluginPath)
+        : plugin.id === "templater-obsidian" && templaterPluginPath
+          ? path.resolve(templaterPluginPath)
+          : plugin.id === "table-editor-obsidian" && advancedTablesPluginPath
+            ? path.resolve(advancedTablesPluginPath)
+            : path.join(path.resolve(installedPluginMatrixRoot), plugin.id);
     const target = path.join(vaultPath, ".obsidian", "plugins", plugin.id);
     assert(await exists(source), `Installed matrix source is missing: ${plugin.id}`);
     await fs.cp(source, target, { recursive: true });
