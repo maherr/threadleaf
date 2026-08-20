@@ -270,6 +270,42 @@ export class RecoveringPluginRuntime<T extends PluginRuntimePort = PluginRuntime
     });
   }
 
+  queryPluginFileMenu(filePath: string): Promise<RuntimeSnapshot> {
+    return this.runSnapshot({ operation: "query-file-menu" }, (runtime) => {
+      if (!runtime.queryPluginFileMenu) {
+        throw new Error("The active plugin runtime does not support file menus.");
+      }
+      return runtime.queryPluginFileMenu(filePath);
+    });
+  }
+
+  selectPluginFileMenu(sessionId: string, itemId: string): Promise<RuntimeSnapshot> {
+    return this.runSnapshot({ operation: "select-file-menu" }, (runtime) => {
+      if (!runtime.selectPluginFileMenu) {
+        throw new Error("The active plugin runtime does not support file menus.");
+      }
+      return runtime.selectPluginFileMenu(sessionId, itemId);
+    });
+  }
+
+  dismissPluginFileMenu(sessionId: string): Promise<RuntimeSnapshot> {
+    return this.runSnapshot({ operation: "dismiss-file-menu" }, (runtime) => {
+      if (!runtime.dismissPluginFileMenu) {
+        throw new Error("The active plugin runtime does not support file menus.");
+      }
+      return runtime.dismissPluginFileMenu(sessionId);
+    });
+  }
+
+  notifyVaultRename(sourcePath: string, targetPath: string): Promise<RuntimeSnapshot> {
+    return this.runSnapshot({ operation: "notify-vault-rename" }, (runtime) => {
+      if (!runtime.notifyVaultRename) {
+        throw new Error("The active plugin runtime does not support vault rename events.");
+      }
+      return runtime.notifyVaultRename(sourcePath, targetPath);
+    });
+  }
+
   waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {
     return this.runSnapshot({ operation: "wait-for-mutations" }, (runtime) =>
       runtime.waitForPluginMutations(options),

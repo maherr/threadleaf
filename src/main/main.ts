@@ -4419,6 +4419,52 @@ function registerIpcHandlers(): void {
       );
     },
   );
+  handleMainRendererIpc(ipcChannels.queryPluginFileMenu, (event, filePath: unknown) => {
+    assertMainRendererPluginIpcSender(isMainRendererSender(event.sender), "Plugin file menu query");
+    if (typeof filePath !== "string" || filePath.length === 0 || filePath.length > 4_096) {
+      throw new Error("Plugin file menu queries require a bounded file path.");
+    }
+    return serializePluginCatalogOperation(
+      () => workspaceController.queryPluginFileMenu(filePath),
+      "runtime-command-failed",
+    );
+  });
+  handleMainRendererIpc(
+    ipcChannels.selectPluginFileMenu,
+    (event, sessionId: unknown, itemId: unknown) => {
+      assertMainRendererPluginIpcSender(
+        isMainRendererSender(event.sender),
+        "Plugin file menu selection",
+      );
+      if (
+        typeof sessionId !== "string" ||
+        sessionId.length === 0 ||
+        sessionId.length > 128 ||
+        typeof itemId !== "string" ||
+        itemId.length === 0 ||
+        itemId.length > 192
+      ) {
+        throw new Error("Plugin file menu selection is invalid.");
+      }
+      return serializePluginCatalogOperation(
+        () => workspaceController.selectPluginFileMenu(sessionId, itemId),
+        "runtime-command-failed",
+      );
+    },
+  );
+  handleMainRendererIpc(ipcChannels.dismissPluginFileMenu, (event, sessionId: unknown) => {
+    assertMainRendererPluginIpcSender(
+      isMainRendererSender(event.sender),
+      "Plugin file menu dismissal",
+    );
+    if (typeof sessionId !== "string" || sessionId.length === 0 || sessionId.length > 128) {
+      throw new Error("Plugin file menu dismissal is invalid.");
+    }
+    return serializePluginCatalogOperation(
+      () => workspaceController.dismissPluginFileMenu(sessionId),
+      "runtime-command-failed",
+    );
+  });
   handleMainRendererIpc(ipcChannels.waitForPluginMutations, (event, optionsValue: unknown) => {
     assertMainRendererPluginIpcSender(
       isMainRendererSender(event.sender),

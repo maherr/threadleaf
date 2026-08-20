@@ -713,6 +713,16 @@ const bridge: ThreadleafBridge = {
       itemIndex,
       shiftKey,
     ) as Promise<RuntimeSnapshot>,
+  queryPluginFileMenu: (filePath) =>
+    ipcRenderer.invoke(ipcChannels.queryPluginFileMenu, filePath) as Promise<RuntimeSnapshot>,
+  selectPluginFileMenu: (sessionId, itemId) =>
+    ipcRenderer.invoke(
+      ipcChannels.selectPluginFileMenu,
+      sessionId,
+      itemId,
+    ) as Promise<RuntimeSnapshot>,
+  dismissPluginFileMenu: (sessionId) =>
+    ipcRenderer.invoke(ipcChannels.dismissPluginFileMenu, sessionId) as Promise<RuntimeSnapshot>,
   waitForPluginMutations: (options) =>
     ipcRenderer.invoke(ipcChannels.waitForPluginMutations, options) as Promise<RuntimeSnapshot>,
   reloadPlugin: (pluginId) =>

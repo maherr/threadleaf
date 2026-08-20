@@ -731,6 +731,39 @@ export class Vault extends Events {
     this.replaceReaderFiles(paths);
   }
 
+  async applyExternalRename(
+    sourcePath: string,
+    targetPath: string,
+    knownFile?: TFile,
+  ): Promise<TFile | null> {
+    await this.initialize();
+    const source = normalizePath(sourcePath);
+    const target = normalizePath(targetPath);
+    const file = this.getFileByPath(source) ?? (knownFile?.path === source ? knownFile : null);
+    if (!file || source === target) return null;
+    const mutableFile = file as unknown as {
+      basename: string;
+      extension: string;
+      name: string;
+      path: string;
+    };
+    mutableFile.path = target;
+    mutableFile.name = path.posix.basename(target);
+    mutableFile.extension = path.posix.extname(target).slice(1);
+    mutableFile.basename = mutableFile.extension
+      ? mutableFile.name.slice(0, -(mutableFile.extension.length + 1))
+      : mutableFile.name;
+    const revision = this.revisions.get(source);
+    this.revisions.delete(source);
+    if (revision) this.revisions.set(target, revision);
+    if (this.readerFiles) {
+      this.readerFiles.sort((left, right) => left.path.localeCompare(right.path));
+      this.readerFolders = new Set([""]);
+      for (const candidate of this.readerFiles) this.rememberReaderParentFolders(candidate.path);
+    }
+    return file;
+  }
+
   rememberFolderPath(folderPath: string): void {
     if (!this.readerFolders) return;
     let current = normalizePath(folderPath);

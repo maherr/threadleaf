@@ -28,6 +28,12 @@ interface PluginRuntimeSlot<T extends PluginRuntimePort> {
   snapshot: RuntimeSnapshot;
 }
 
+interface IsolatedFileMenuRoute {
+  ownerId: string;
+  ownerItemId: string;
+  ownerSessionId: string;
+}
+
 function pluginList(snapshot: RuntimeSnapshot): PluginSummary[] {
   return snapshot.plugins ?? (snapshot.plugin ? [snapshot.plugin] : []);
 }
@@ -78,6 +84,9 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
   private operationTail: Promise<void> = Promise.resolve();
   private readonly seenEvents = new Set<string>();
   private editorSuggestOwner: string | null = null;
+  private activeFileMenuRoutes = new Map<string, IsolatedFileMenuRoute>();
+  private activeFileMenuSessions = new Map<string, string>();
+  private fileMenuSequence = 0;
   private readonly slots = new Map<string, PluginRuntimeSlot<T>>();
   private closed = false;
   private closePromise: Promise<void> | null = null;
@@ -321,6 +330,83 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
       } finally {
         this.editorSuggestOwner = null;
       }
+    });
+  }
+
+  queryPluginFileMenu(filePath: string): Promise<RuntimeSnapshot> {
+    return this.enqueue(async () => {
+      await this.dismissActiveFileMenus();
+      const mergedSessionId = `isolated-file-menu-${++this.fileMenuSequence}`;
+      const items: NonNullable<RuntimeSnapshot["fileMenu"]>["items"] = [];
+      for (const [pluginId, slot] of this.slots) {
+        if (!slot.snapshot.integrations?.workspaceEvents?.includes("file-menu")) continue;
+        if (!slot.runtime.queryPluginFileMenu) {
+          throw new Error(`Plugin ${pluginId} cannot provide file menu items.`);
+        }
+        const snapshot = await slot.runtime.queryPluginFileMenu(filePath);
+        this.rememberSlotSnapshot(pluginId, snapshot);
+        const menu = snapshot.fileMenu;
+        if (!menu || menu.items.length === 0) continue;
+        this.activeFileMenuSessions.set(pluginId, menu.id);
+        for (const ownerItem of menu.items) {
+          const id = `${mergedSessionId}:${items.length}`;
+          this.activeFileMenuRoutes.set(id, {
+            ownerId: pluginId,
+            ownerItemId: ownerItem.id,
+            ownerSessionId: menu.id,
+          });
+          items.push({ ...ownerItem, id });
+        }
+      }
+      return this.mergeSnapshot(this.lastPluginId, {
+        ...this.baseSnapshot,
+        fileMenu: items.length > 0 ? { id: mergedSessionId, items, path: filePath } : null,
+      });
+    });
+  }
+
+  selectPluginFileMenu(sessionId: string, itemId: string): Promise<RuntimeSnapshot> {
+    return this.enqueue(async () => {
+      const route = this.activeFileMenuRoutes.get(itemId);
+      if (!route || !itemId.startsWith(`${sessionId}:`)) {
+        throw new Error("The isolated plugin file menu is stale.");
+      }
+      const slot = this.requireSlot(route.ownerId);
+      if (!slot.runtime.selectPluginFileMenu) {
+        throw new Error(`Plugin ${route.ownerId} cannot select file menu items.`);
+      }
+      let selectedSnapshot: RuntimeSnapshot;
+      try {
+        selectedSnapshot = await slot.runtime.selectPluginFileMenu(
+          route.ownerSessionId,
+          route.ownerItemId,
+        );
+        this.rememberSlotSnapshot(route.ownerId, selectedSnapshot);
+        this.lastPluginId = route.ownerId;
+      } finally {
+        await this.dismissActiveFileMenus(route.ownerId);
+      }
+      return this.mergeSnapshot(route.ownerId, { ...selectedSnapshot, fileMenu: null });
+    });
+  }
+
+  dismissPluginFileMenu(sessionId: string): Promise<RuntimeSnapshot> {
+    return this.enqueue(async () => {
+      if (![...this.activeFileMenuRoutes].some(([id]) => id.startsWith(`${sessionId}:`))) {
+        return this.mergeSnapshot();
+      }
+      await this.dismissActiveFileMenus();
+      return this.mergeSnapshot(this.lastPluginId, { ...this.baseSnapshot, fileMenu: null });
+    });
+  }
+
+  notifyVaultRename(sourcePath: string, targetPath: string): Promise<RuntimeSnapshot> {
+    return this.enqueue(async () => {
+      await this.updateEverySlot(async (slot) => {
+        if (!slot.runtime.notifyVaultRename) return slot.snapshot;
+        return slot.runtime.notifyVaultRename(sourcePath, targetPath);
+      });
+      return this.mergeSnapshot();
     });
   }
 
@@ -640,6 +726,22 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
     this.ingestEvents(pluginId, slot.generation, snapshot);
   }
 
+  private async dismissActiveFileMenus(exceptOwnerId?: string): Promise<void> {
+    const sessions = [...this.activeFileMenuSessions.entries()];
+    this.activeFileMenuSessions.clear();
+    this.activeFileMenuRoutes.clear();
+    await Promise.all(
+      sessions
+        .filter(([pluginId]) => pluginId !== exceptOwnerId)
+        .map(async ([pluginId, sessionId]) => {
+          const slot = this.slots.get(pluginId);
+          if (!slot?.runtime.dismissPluginFileMenu) return;
+          const snapshot = await slot.runtime.dismissPluginFileMenu(sessionId);
+          this.rememberSlotSnapshot(pluginId, snapshot);
+        }),
+    );
+  }
+
   private ingestEvents(ownerId: string, generation: number, snapshot: RuntimeSnapshot): void {
     for (const event of snapshot.events) {
       const runtimeOpening = event.kind === "runtime" && event.message.startsWith("Opened ");
@@ -732,6 +834,7 @@ export class IsolatedPluginRuntime<T extends PluginRuntimePort = PluginRuntimePo
       editorUpdate: operationSnapshot?.editorUpdate ?? null,
       editorEvent: operationSnapshot?.editorEvent ?? null,
       editorSuggest: operationSnapshot?.editorSuggest ?? null,
+      fileMenu: operationSnapshot?.fileMenu ?? null,
       navigatorDecorations,
       pluginAppearance,
       markdownProjection: operationSnapshot?.markdownProjection ?? null,

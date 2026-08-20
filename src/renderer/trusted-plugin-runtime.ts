@@ -86,6 +86,10 @@ interface PluginHostLike {
     itemIndex: number,
     shiftKey: boolean,
   ): Promise<unknown>;
+  queryPluginFileMenu(filePath: string): Promise<unknown>;
+  selectPluginFileMenu(sessionId: string, itemId: string): Promise<unknown>;
+  dismissPluginFileMenu(sessionId: string): Promise<unknown>;
+  notifyVaultRename(sourcePath: string, targetPath: string): Promise<unknown>;
   unloadAllPlugins(): Promise<unknown>;
   unloadPlugin(pluginId?: string): Promise<unknown>;
   vault: { rootPath: string };
@@ -370,6 +374,20 @@ class TrustedPluginRendererService {
           requirePluginEditorSuggestSessionId(request),
           requirePluginEditorSuggestItemIndex(request),
           requirePluginEditorSuggestShiftKey(request),
+        );
+      case "query-file-menu":
+        return this.requireHost().queryPluginFileMenu(requirePayloadString(request, "filePath"));
+      case "select-file-menu":
+        return this.requireHost().selectPluginFileMenu(
+          requirePayloadString(request, "sessionId"),
+          requirePayloadString(request, "itemId"),
+        );
+      case "dismiss-file-menu":
+        return this.requireHost().dismissPluginFileMenu(requirePayloadString(request, "sessionId"));
+      case "notify-vault-rename":
+        return this.requireHost().notifyVaultRename(
+          requirePayloadString(request, "sourcePath"),
+          requirePayloadString(request, "targetPath"),
         );
       case "wait-for-mutations":
         return this.requireHost().waitForPluginMutations(

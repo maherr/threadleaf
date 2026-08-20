@@ -295,6 +295,22 @@ export interface PluginNavigatorDecoration {
   title: string | null;
 }
 
+export interface PluginFileMenuItemSnapshot {
+  checked: boolean | null;
+  disabled: boolean;
+  icon: string | null;
+  id: string;
+  section: string;
+  title: string;
+  warning: boolean;
+}
+
+export interface PluginFileMenuSnapshot {
+  id: string;
+  items: PluginFileMenuItemSnapshot[];
+  path: string;
+}
+
 export interface PluginAppearanceSnapshot {
   bodyClasses: string[];
   variables: Record<string, string>;
@@ -330,6 +346,7 @@ export interface RuntimeSnapshot {
   editorUpdate?: PluginEditorUpdate | null;
   editorEvent?: PluginEditorEventSnapshot | null;
   editorSuggest?: PluginEditorSuggestSnapshot | null;
+  fileMenu?: PluginFileMenuSnapshot | null;
   navigatorDecorations?: PluginNavigatorDecoration[];
   pluginAppearance?: PluginAppearanceSnapshot;
   markdownProjection?: PluginMarkdownProjectionSnapshot | null;
@@ -1962,6 +1979,9 @@ export interface ThreadleafBridge {
     itemIndex: number,
     shiftKey: boolean,
   ): Promise<RuntimeSnapshot>;
+  queryPluginFileMenu(filePath: string): Promise<RuntimeSnapshot>;
+  selectPluginFileMenu(sessionId: string, itemId: string): Promise<RuntimeSnapshot>;
+  dismissPluginFileMenu(sessionId: string): Promise<RuntimeSnapshot>;
   waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot>;
   reloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;
   unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;

@@ -334,6 +334,9 @@ export interface WorkspaceRuntimePort {
     itemIndex: number,
     shiftKey: boolean,
   ): Promise<RuntimeSnapshot>;
+  queryPluginFileMenu?(filePath: string): Promise<RuntimeSnapshot>;
+  selectPluginFileMenu?(sessionId: string, itemId: string): Promise<RuntimeSnapshot>;
+  dismissPluginFileMenu?(sessionId: string): Promise<RuntimeSnapshot>;
   waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot>;
   markPluginLayoutReady(): Promise<RuntimeSnapshot>;
   openPluginSettings(pluginId: string): Promise<RuntimeSnapshot>;
@@ -1491,6 +1494,30 @@ export class WorkspaceController {
       throw new Error("The active workspace does not support plugin editor suggestions.");
     }
     return runtime.selectPluginEditorSuggest(editorContext, sessionId, itemIndex, shiftKey);
+  }
+
+  queryPluginFileMenu(filePath: string): Promise<RuntimeSnapshot> {
+    const runtime = this.activeRuntime("query a plugin file menu");
+    if (!runtime.queryPluginFileMenu) {
+      throw new Error("The active workspace does not support plugin file menus.");
+    }
+    return runtime.queryPluginFileMenu(filePath);
+  }
+
+  selectPluginFileMenu(sessionId: string, itemId: string): Promise<RuntimeSnapshot> {
+    const runtime = this.activeRuntime("select a plugin file menu item");
+    if (!runtime.selectPluginFileMenu) {
+      throw new Error("The active workspace does not support plugin file menus.");
+    }
+    return runtime.selectPluginFileMenu(sessionId, itemId);
+  }
+
+  dismissPluginFileMenu(sessionId: string): Promise<RuntimeSnapshot> {
+    const runtime = this.activeRuntime("dismiss a plugin file menu");
+    if (!runtime.dismissPluginFileMenu) {
+      throw new Error("The active workspace does not support plugin file menus.");
+    }
+    return runtime.dismissPluginFileMenu(sessionId);
   }
 
   waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {

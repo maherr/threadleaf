@@ -358,17 +358,53 @@ async function targetCenter(connection, selector) {
 }
 
 async function clickSelector(connection, selector) {
-  await targetCenter(connection, selector);
-  await evaluate(
-    connection,
-    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
-  );
-  const target = await targetCenter(connection, selector);
+  let target;
+  let failure;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await targetCenter(connection, selector);
+      await evaluate(
+        connection,
+        "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+      );
+      target = await targetCenter(connection, selector);
+      break;
+    } catch (error) {
+      failure = error;
+      await delay(80);
+    }
+  }
+  if (!target) throw failure;
   for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
     await connection.send("Input.dispatchMouseEvent", {
       type,
       button: type === "mouseMoved" ? "none" : "left",
       buttons: type === "mousePressed" ? 1 : 0,
+      clickCount: type === "mouseMoved" ? 0 : 1,
+      x: target.x,
+      y: target.y,
+    });
+  }
+}
+
+async function rightClickSelector(connection, selector) {
+  let target;
+  let failure;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      target = await targetCenter(connection, selector);
+      break;
+    } catch (error) {
+      failure = error;
+      await delay(80);
+    }
+  }
+  if (!target) throw failure;
+  for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
+    await connection.send("Input.dispatchMouseEvent", {
+      type,
+      button: type === "mouseMoved" ? "none" : "right",
+      buttons: type === "mousePressed" ? 2 : 0,
       clickCount: type === "mouseMoved" ? 0 : 1,
       x: target.x,
       y: target.y,
@@ -389,10 +425,11 @@ async function closeVisibleSettingsSurface(label) {
           dialog.open &&
           close instanceof HTMLButtonElement &&
           !close.hidden,
-        pluginSettings:
-          pluginHost instanceof HTMLElement &&
-          !pluginHost.hidden &&
-          Boolean(pluginHost.querySelector('.threadleaf-plugin-settings-surface')),
+        // The plugin surface host is an empty bounds placeholder that an Electron view is
+        // positioned over in the isolated topology, so the surface element itself never appears
+        // inside it in this document. Host visibility is the topology-independent signal that a
+        // plugin surface is covering the editor; the renderer un-hides it only when one is shown.
+        pluginSettings: pluginHost instanceof HTMLElement && !pluginHost.hidden,
       };
     })()`,
   );
@@ -422,10 +459,47 @@ async function closeVisibleSettingsSurface(label) {
   return "already-closed";
 }
 
+async function revealNavigatorRow(filePath, label) {
+  // #reveal-active-note is a one-shot action. If it lands while the workspace is still settling, the
+  // tree never expands and the caller simply burns its timeout waiting for a row that will never be
+  // rendered (observed: the parent folder stayed collapsed while a sibling folder was expanded).
+  // Re-assert the active note and retry the click and the expansion together.
+  const rowSelector = `.navigator-tree-row[data-tree-path=${JSON.stringify(filePath)}]`;
+  let failure = null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      await waitFor(
+        cdp,
+        `(async () => (await window.threadleaf.getSnapshot()).workspace?.activeNote?.path === ${JSON.stringify(filePath)})()`,
+        `${label} active note`,
+        10_000,
+      );
+      await clickSelector(cdp, "#reveal-active-note");
+      await waitFor(
+        cdp,
+        `Boolean(document.querySelector(${JSON.stringify(rowSelector)}))`,
+        `${label} navigator row`,
+        8_000,
+      );
+      return;
+    } catch (error) {
+      failure = error;
+      await delay(200);
+    }
+  }
+  throw failure;
+}
+
 async function clickRowAction(connection, containerSelector, label) {
-  const selector = await evaluate(
-    connection,
-    `(() => {
+  // The settings panel re-renders its plugin rows freely, which destroys the node carrying the
+  // marker id. Marking and clicking must therefore be retried as a single unit: clickSelector's own
+  // retry loop only re-resolves the selector, so a re-render between the two leaves it retrying an
+  // id that no longer exists in the document at all.
+  let failure = null;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const selector = await evaluate(
+      connection,
+      `(() => {
       document.querySelectorAll('#threadleaf-e2e-row-action').forEach((candidate) => candidate.removeAttribute('id'));
       const container = document.querySelector(${JSON.stringify(containerSelector)});
       const button = [...(container?.querySelectorAll('button') ?? [])].find(
@@ -435,9 +509,23 @@ async function clickRowAction(connection, containerSelector, label) {
       button.id = 'threadleaf-e2e-row-action';
       return '#threadleaf-e2e-row-action';
     })()`,
+    );
+    if (!selector) {
+      failure = new Error(`Row action is unavailable: ${label}`);
+      await delay(120);
+      continue;
+    }
+    try {
+      await clickSelector(connection, selector);
+      return;
+    } catch (error) {
+      failure = error;
+      await delay(120);
+    }
+  }
+  throw new Error(
+    `Row action click failed for ${label} in ${containerSelector}: ${failure instanceof Error ? failure.message : String(failure)}`,
   );
-  assert(selector, `Row action is unavailable: ${label}`);
-  await clickSelector(connection, selector);
 }
 
 async function pressKey(connection, key, code, modifiers = 0) {
@@ -537,6 +625,11 @@ async function capture(connection, label, theme) {
   );
   if (hasThemeToggle) {
     if (currentTheme !== theme) {
+      await waitFor(
+        connection,
+        "document.querySelector('#theme-toggle') instanceof HTMLButtonElement && document.querySelector('#theme-toggle').disabled === false",
+        `${label} enabled theme control`,
+      );
       await evaluate(connection, "document.querySelector('#theme-toggle')?.click(); true");
     }
   } else {
@@ -913,7 +1006,14 @@ async function grantAndEnableInstalledPlugin(candidate) {
   return activation;
 }
 
-async function verifyInstalledPluginMatrixRestart(vaultId, port) {
+async function verifyInstalledPluginMatrixRestart(vaultId, port, iconName) {
+  // The icon is whatever Iconize's own picker returned for the "star" query, so it must be carried
+  // from the workflow that assigned it. Hard-coding a literal here silently rots whenever the
+  // plugin's icon set reorders its suggestions.
+  assert(
+    typeof iconName === "string" && iconName.length > 0,
+    "Installed plugin matrix restart requires the icon assigned by the Iconize workflow.",
+  );
   let snapshot;
   try {
     snapshot = await waitFor(
@@ -977,14 +1077,22 @@ async function verifyInstalledPluginMatrixRestart(vaultId, port) {
   await evaluate(cdp, 'window.threadleaf.openNote("Notes/Source.md")');
   await waitFor(
     cdp,
-    `(async () => (await window.threadleaf.getSnapshot()).navigatorDecorations?.some((decoration) => decoration.path === 'Notes/Source.md' && decoration.text === '🌟') === true)()`,
+    `(async () => (await window.threadleaf.getSnapshot()).navigatorDecorations?.some((decoration) => decoration.path === 'Notes/Source.md' && decoration.text === ${JSON.stringify(iconName)}) === true)()`,
     "restarted Iconize navigator projection",
     30_000,
-  );
-  await clickSelector(cdp, "#reveal-active-note");
+  ).catch(async (error) => {
+    const diagnostic = await evaluate(
+      cdp,
+      "(async () => { const snapshot = await window.threadleaf.getSnapshot(); return { decorations: snapshot.navigatorDecorations, iconPlugin: snapshot.plugins?.find((plugin) => plugin.id === 'obsidian-icon-folder')?.state ?? null }; })()",
+    ).catch(() => null);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}: ${JSON.stringify(diagnostic)}`,
+    );
+  });
+  await revealNavigatorRow("Notes/Source.md", "restarted Iconize");
   await waitFor(
     cdp,
-    `document.querySelector('.navigator-tree-row[data-tree-path="Notes/Source.md"] .navigator-plugin-decoration')?.textContent === '🌟'`,
+    `document.querySelector('.navigator-tree-row[data-tree-path="Notes/Source.md"] .navigator-plugin-decoration')?.textContent === ${JSON.stringify(iconName)}`,
     "restarted Iconize native navigator decoration",
     20_000,
   );
@@ -1008,7 +1116,7 @@ async function verifyInstalledPluginMatrixRestart(vaultId, port) {
   }
   const omnisearch = await verifyOmnisearchWorkflow(vaultId, port);
   const advancedTables = advancedTablesPluginPath
-    ? await verifyAdvancedTablesRestartWorkflow(vaultId)
+    ? await verifyAdvancedTablesRestartWorkflow(vaultId, port)
     : undefined;
   const templater = templaterPluginPath ? await verifyTemplaterRestartWorkflow(vaultId) : undefined;
   return {
@@ -1018,7 +1126,7 @@ async function verifyInstalledPluginMatrixRestart(vaultId, port) {
     })),
     calendar,
     dataFile: "Data/sample.json",
-    icon: "🌟",
+    icon: iconName,
     minimal,
     omnisearch,
     ...(advancedTables ? { advancedTables } : {}),
@@ -1090,8 +1198,8 @@ async function runInstalledPluginMatrix(vaultId, port, pluginState) {
     await verifyMinimalSettingsWorkflow(vaultId, port),
     await verifyOmnisearchWorkflow(vaultId, port),
     ...(quickSwitcherPlusPluginPath ? [await verifyQuickSwitcherPlusWorkflow(vaultId, port)] : []),
-    ...(advancedTablesPluginPath ? [await verifyAdvancedTablesWorkflow(vaultId)] : []),
-    ...(templaterPluginPath ? [await verifyTemplaterWorkflow(vaultId)] : []),
+    ...(advancedTablesPluginPath ? [await verifyAdvancedTablesWorkflow(vaultId, port)] : []),
+    ...(templaterPluginPath ? [await verifyTemplaterWorkflow(vaultId, port)] : []),
   ];
   await closeApp();
   const restartPort = await availablePort();
@@ -1100,7 +1208,12 @@ async function runInstalledPluginMatrix(vaultId, port, pluginState) {
     restarted.vaultId === vaultId,
     "Installed plugin matrix restart changed the vault identity.",
   );
-  const restart = await verifyInstalledPluginMatrixRestart(restarted.vaultId, restartPort);
+  const iconizeSummary = workflowSummary.find((entry) => entry.pluginId === "obsidian-icon-folder");
+  const restart = await verifyInstalledPluginMatrixRestart(
+    restarted.vaultId,
+    restartPort,
+    iconizeSummary?.iconName,
+  );
   console.log(
     JSON.stringify(
       {
@@ -1162,19 +1275,19 @@ async function connectPluginSurfaceBySelector(
   throw new Error(`${label} did not expose ${selector} in an isolated plugin renderer.`);
 }
 
-async function replaceFocusedText(selector, text) {
+async function replaceFocusedText(connection, selector, text) {
   const focused = await evaluate(
-    cdp,
+    connection,
     `(() => { const input = document.querySelector(${JSON.stringify(selector)}); if (!(input instanceof HTMLInputElement)) return false; input.focus(); input.select(); return true; })()`,
   );
   assert(focused, `Could not focus the text control: ${selector}`);
-  await pressKey(cdp, "a", "KeyA", 2);
-  await cdp.send("Input.insertText", { text });
+  await pressKey(connection, "a", "KeyA", 2);
+  await connection.send("Input.insertText", { text });
 }
 
-async function markTemplaterSettingControl(name, controlSelector = "input") {
+async function markTemplaterSettingControl(connection, name, controlSelector = "input") {
   return evaluate(
-    cdp,
+    connection,
     `(() => {
       document.querySelector('#threadleaf-e2e-templater-control')?.removeAttribute('id');
       const item = [...document.querySelectorAll('.setting-item')].find((candidate) =>
@@ -1271,7 +1384,7 @@ async function runAdvancedTablesFormat(vaultId, notePath) {
   };
 }
 
-async function verifyAdvancedTablesOptions(captureThemes) {
+async function verifyAdvancedTablesOptions(port, captureThemes) {
   await clickSelector(cdp, "#settings-trigger");
   await waitFor(
     cdp,
@@ -1280,9 +1393,22 @@ async function verifyAdvancedTablesOptions(captureThemes) {
   );
   await clickSelector(cdp, "#settings-nav-plugins");
   await clickRowAction(cdp, '.plugin-row[data-plugin-id="table-editor-obsidian"]', "Options");
-  const names = await waitFor(
-    cdp,
-    `(() => {
+  // In the isolated topology the plugin renders its settings inside its own plugin-host renderer,
+  // and `#plugin-surface-host` in the main document is only an empty bounds placeholder that an
+  // Electron view is positioned over. The controls are therefore never reachable from `cdp` there.
+  // connectPluginSurfaceBySelector resolves the correct document for both topologies.
+  const surface = await connectPluginSurfaceBySelector(
+    port,
+    ".threadleaf-plugin-settings-surface",
+    "Advanced Tables settings surface",
+    30_000,
+    false,
+  );
+  let names;
+  try {
+    names = await waitFor(
+      surface.connection,
+      `(() => {
       const names = [...document.querySelectorAll('.setting-item-name')].map((item) => item.textContent?.trim() ?? '');
       const expected = ${JSON.stringify([
         "Bind enter to table navigation",
@@ -1292,9 +1418,27 @@ async function verifyAdvancedTablesOptions(captureThemes) {
       ])};
       return expected.every((name) => names.includes(name)) ? names : null;
     })()`,
-    "Advanced Tables four-control settings surface",
-    30_000,
-  );
+      "Advanced Tables four-control settings surface",
+      30_000,
+    ).catch(async (error) => {
+      // Report what the surface actually rendered; a bare timeout cannot distinguish "Options never
+      // opened" from "opened but showed a different control set".
+      const diagnostic = await evaluate(
+        surface.connection,
+        `(() => ({
+        names: [...document.querySelectorAll('.setting-item-name')].map((item) => item.textContent?.trim() ?? ''),
+        headings: [...document.querySelectorAll('h1, h2, h3')].map((item) => item.textContent?.trim() ?? '').slice(0, 20),
+        pluginSurfaces: document.querySelectorAll('.threadleaf-plugin-settings-surface').length,
+        surfaceHtml: document.querySelector('.threadleaf-plugin-settings-surface')?.innerHTML?.slice(0, 400) ?? null,
+      }))()`,
+      ).catch(() => null);
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)}: ${JSON.stringify(diagnostic)}`,
+      );
+    });
+  } finally {
+    surface.connection.close();
+  }
   const settingsScreenshots = captureThemes
     ? [
         await capture(cdp, "advanced-tables-settings", "dark"),
@@ -1308,20 +1452,20 @@ async function verifyAdvancedTablesOptions(captureThemes) {
   };
 }
 
-async function verifyAdvancedTablesWorkflow(vaultId) {
+async function verifyAdvancedTablesWorkflow(vaultId, port) {
   return {
     pluginId: "table-editor-obsidian",
     workflow: "format-table-through-command-palette",
-    settings: await verifyAdvancedTablesOptions(true),
+    settings: await verifyAdvancedTablesOptions(port, true),
     note: await runAdvancedTablesFormat(vaultId, "Notes/Advanced Tables.md"),
   };
 }
 
-async function verifyAdvancedTablesRestartWorkflow(vaultId) {
+async function verifyAdvancedTablesRestartWorkflow(vaultId, port) {
   return {
     pluginId: "table-editor-obsidian",
     workflow: "format-table-after-application-restart",
-    settings: await verifyAdvancedTablesOptions(false),
+    settings: await verifyAdvancedTablesOptions(port, false),
     note: await runAdvancedTablesFormat(vaultId, "Notes/Advanced Tables Restart.md"),
   };
 }
@@ -1378,7 +1522,7 @@ async function runTemplaterHotkeyOnNote(vaultId, notePath, initialText) {
   };
 }
 
-async function verifyTemplaterWorkflow(vaultId) {
+async function verifyTemplaterWorkflow(vaultId, port) {
   await clickSelector(cdp, "#settings-trigger");
   await waitFor(
     cdp,
@@ -1387,52 +1531,63 @@ async function verifyTemplaterWorkflow(vaultId) {
   );
   await clickSelector(cdp, "#settings-nav-plugins");
   await clickRowAction(cdp, '.plugin-row[data-plugin-id="templater-obsidian"]', "Options");
+  // Templater renders its settings, and the modal it opens, inside the plugin host. Only the
+  // Threadleaf chrome below (settings nav, hotkeys, snapshot APIs) belongs to the main document.
+  const settings = await connectPluginSurfaceBySelector(
+    port,
+    ".threadleaf-plugin-settings-surface",
+    "Templater settings surface",
+    30_000,
+    false,
+  );
+  const plugin = settings.connection;
   await waitFor(
-    cdp,
+    plugin,
     `([...document.querySelectorAll('.setting-item-name')].some((item) => item.textContent?.trim() === 'Template folder location'))`,
     "Templater declarative options",
   );
-  const folderControl = await markTemplaterSettingControl("Template folder location");
+  const folderControl = await markTemplaterSettingControl(plugin, "Template folder location");
   assert(folderControl, "Templater template-folder control was unavailable.");
-  await replaceFocusedText(folderControl, "Templates");
+  await replaceFocusedText(plugin, folderControl, "Templates");
   await waitForTemplaterData(
     (data) => data.templates_folder === "Templates",
     "Templater template folder",
   );
 
   const hotkeyPageOpened = await evaluate(
-    cdp,
+    plugin,
     `(() => { const item = [...document.querySelectorAll('.setting-item')].find((candidate) => candidate.querySelector('.setting-item-name')?.textContent?.trim() === 'Template hotkeys'); if (!(item instanceof HTMLElement)) return false; item.click(); return true; })()`,
   );
   assert(hotkeyPageOpened, "Templater hotkey page was unavailable.");
   await waitFor(
-    cdp,
+    plugin,
     "document.querySelector('.setting-page-titlebar')?.textContent?.includes('Template hotkeys') === true",
     "Templater hotkey page",
   );
   const addButton = await evaluate(
-    cdp,
+    plugin,
     `(() => { const button = document.querySelector('button[title="Add template hotkey"]'); if (!(button instanceof HTMLButtonElement)) return null; button.id = 'threadleaf-e2e-templater-add'; return '#threadleaf-e2e-templater-add'; })()`,
   );
   assert(addButton, "Templater add-hotkey control was unavailable.");
-  await clickSelector(cdp, addButton);
+  await clickSelector(plugin, addButton);
   await waitFor(
-    cdp,
+    plugin,
     "Boolean(document.querySelector('.modal-container input'))",
     "Templater template picker",
   );
   const pickerInput = await evaluate(
-    cdp,
+    plugin,
     `(() => { const input = document.querySelector('.modal-container input'); if (!(input instanceof HTMLInputElement)) return null; input.id = 'threadleaf-e2e-templater-picker'; return '#threadleaf-e2e-templater-picker'; })()`,
   );
   assert(pickerInput, "Templater template picker input was unavailable.");
-  await replaceFocusedText(pickerInput, "Templates/Hotkey.md");
+  await replaceFocusedText(plugin, pickerInput, "Templates/Hotkey.md");
   const doneButton = await evaluate(
-    cdp,
+    plugin,
     `(() => { const button = [...document.querySelectorAll('.modal-container button')].find((candidate) => candidate.textContent?.trim() === 'Done'); if (!(button instanceof HTMLButtonElement) || button.disabled) return null; button.id = 'threadleaf-e2e-templater-done'; return '#threadleaf-e2e-templater-done'; })()`,
   );
   assert(doneButton, "Templater template picker did not expose Done.");
-  await clickSelector(cdp, doneButton);
+  await clickSelector(plugin, doneButton);
+  settings.connection.close();
   await waitForTemplaterData(
     (data) => data.enabled_templates_hotkeys?.includes("Templates/Hotkey.md"),
     "Templater dynamic command persistence",
@@ -1809,13 +1964,33 @@ async function verifyIconizeWorkflow(vaultId, port) {
     "Iconize navigator decoration projection",
     20_000,
   );
-  await clickSelector(cdp, "#reveal-active-note");
+  await revealNavigatorRow(filePath, "Iconize");
   await waitFor(
     cdp,
     `(() => { const row = document.querySelector(${JSON.stringify(`.navigator-tree-row[data-tree-path="${filePath}"]`)}); return row?.getAttribute('data-plugin-decorated') === 'true' && row.querySelector('.navigator-plugin-decoration')?.textContent === ${JSON.stringify(iconName)}; })()`,
     "Iconize visible native navigator decoration",
     20_000,
-  );
+  ).catch(async (error) => {
+    // The snapshot projection already passed, so distinguish "row is not rendered at all" from
+    // "row rendered without the decoration attribute/text".
+    const diagnostic = await evaluate(
+      cdp,
+      `(() => {
+        const row = document.querySelector(${JSON.stringify(`.navigator-tree-row[data-tree-path="${filePath}"]`)});
+        return {
+          rowPresent: Boolean(row),
+          decorated: row?.getAttribute('data-plugin-decorated') ?? null,
+          decorationText: row?.querySelector('.navigator-plugin-decoration')?.textContent ?? null,
+          rowHtml: row instanceof HTMLElement ? row.outerHTML.slice(0, 400) : null,
+          renderedPaths: [...document.querySelectorAll('.navigator-tree-row')].map((candidate) => candidate.getAttribute('data-tree-path')).slice(0, 40),
+          decoratedRows: [...document.querySelectorAll('.navigator-tree-row[data-plugin-decorated="true"]')].map((candidate) => candidate.getAttribute('data-tree-path')),
+        };
+      })()`,
+    ).catch(() => null);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}: ${JSON.stringify(diagnostic)}`,
+    );
+  });
   const navigatorShots = [
     await capture(cdp, "iconize-navigator", "dark"),
     await capture(cdp, "iconize-navigator", "light"),
@@ -1824,12 +1999,186 @@ async function verifyIconizeWorkflow(vaultId, port) {
     navigatorShots[0].digest !== navigatorShots[1].digest,
     "Iconize navigator theme screenshots are identical.",
   );
+
+  const rowSelector = `.navigator-tree-row[data-tree-path="${filePath}"]`;
+  await rightClickSelector(cdp, rowSelector);
+  await waitFor(
+    cdp,
+    `[...document.querySelectorAll('#navigator-context-plugin-items button')].some((button) => button.textContent?.includes('Remove icon'))`,
+    "Iconize native Remove icon menu item",
+    20_000,
+  );
+  const contextMenuShots = [await capture(cdp, "iconize-context-menu", "dark")];
+  await pressKey(cdp, "Escape", "Escape");
+  await capture(cdp, "iconize-context-menu-light-preparation", "light");
+  await rightClickSelector(cdp, rowSelector);
+  await waitFor(
+    cdp,
+    `[...document.querySelectorAll('#navigator-context-plugin-items button')].some((button) => button.textContent?.includes('Remove icon'))`,
+    "Iconize native Remove icon menu item in light theme",
+    20_000,
+  );
+  contextMenuShots.push(await capture(cdp, "iconize-context-menu", "light"));
+  assert(
+    contextMenuShots[0].digest !== contextMenuShots[1].digest,
+    "Iconize context menu theme screenshots are identical.",
+  );
+  await clickSelector(cdp, "#navigator-context-plugin-items button:nth-last-child(1)");
+  await waitFor(
+    cdp,
+    `(async () => !(await window.threadleaf.getSnapshot()).navigatorDecorations?.some((decoration) => decoration.path === ${JSON.stringify(filePath)}) && !document.querySelector(${JSON.stringify(`${rowSelector} .navigator-plugin-decoration`)}))()`,
+    "Iconize native remove projection",
+    20_000,
+  ).catch(async (error) => {
+    const [snapshot, rendered, persisted] = await Promise.all([
+      evaluate(cdp, "window.threadleaf.getSnapshot()").catch(() => null),
+      evaluate(
+        cdp,
+        `(() => ({ row: document.querySelector(${JSON.stringify(rowSelector)})?.outerHTML ?? null, menu: document.querySelector('#navigator-context-menu')?.outerHTML ?? null, toast: document.querySelector('#toast')?.textContent ?? null }))()`,
+      ).catch(() => null),
+      fs
+        .readFile(dataPath, "utf8")
+        .then((bytes) => JSON.parse(bytes))
+        .catch(() => null),
+    ]);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}: ${JSON.stringify({ decorations: snapshot?.navigatorDecorations, persistedKeys: persisted ? Object.keys(persisted) : null, rendered })}`,
+    );
+  });
+  let removePersisted = false;
+  const removeDeadline = Date.now() + 20_000;
+  while (Date.now() < removeDeadline) {
+    const removedData = JSON.parse(await fs.readFile(dataPath, "utf8"));
+    if (!Object.hasOwn(removedData, filePath)) {
+      removePersisted = true;
+      break;
+    }
+    await delay(80);
+  }
+  assert(removePersisted, "Iconize Remove icon did not persist.");
+
+  await rightClickSelector(cdp, rowSelector);
+  await waitFor(
+    cdp,
+    `[...document.querySelectorAll('#navigator-context-plugin-items button')].some((button) => button.textContent?.includes('Change icon'))`,
+    "Iconize native Change icon menu item",
+    20_000,
+  );
+  await evaluate(
+    cdp,
+    `([...document.querySelectorAll('#navigator-context-plugin-items button')].find((button) => button.textContent?.includes('Change icon'))).dataset.iconizeChangeTarget = 'true'`,
+  );
+  await clickSelector(cdp, "[data-iconize-change-target='true']");
+  const reassignmentSurface = await connectPluginSurfaceBySelector(
+    port,
+    ".modal-container .prompt-input",
+    "Iconize context-menu picker",
+  );
+  try {
+    await clickSelector(reassignmentSurface.connection, ".modal-container .prompt-input");
+    await reassignmentSurface.connection.send("Input.insertText", { text: "star" });
+    await waitFor(
+      reassignmentSurface.connection,
+      "document.querySelectorAll('.iconize-modal .suggestion-item').length > 0",
+      "Iconize context-menu star suggestions",
+      20_000,
+    );
+    await pressKey(reassignmentSurface.connection, "Enter", "Enter");
+    await waitFor(
+      reassignmentSurface.connection,
+      "!document.querySelector('.iconize-modal')",
+      "Iconize context-menu picker close",
+      20_000,
+    );
+  } finally {
+    reassignmentSurface.connection.close();
+  }
+  const reassignmentDeadline = Date.now() + 20_000;
+  let reassignedIconName = null;
+  while (Date.now() < reassignmentDeadline) {
+    const reassignedData = JSON.parse(await fs.readFile(dataPath, "utf8"));
+    if (typeof reassignedData[filePath] === "string" && reassignedData[filePath].length > 0) {
+      reassignedIconName = reassignedData[filePath];
+      break;
+    }
+    await delay(80);
+  }
+  assert(reassignedIconName, "Iconize context-menu reassignment did not persist.");
+  iconName = reassignedIconName;
+  await waitFor(
+    cdp,
+    `(async () => (await window.threadleaf.getSnapshot()).navigatorDecorations?.some((decoration) => decoration.path === ${JSON.stringify(filePath)} && decoration.text === ${JSON.stringify(iconName)}) === true)()`,
+    "Iconize context-menu reassignment",
+    20_000,
+  );
+
+  const renamedPath = "Notes/Source Iconize renamed.md";
+  const moveThroughReviewedDialog = async (targetPath) => {
+    await clickSelector(cdp, "#move-note");
+    await evaluate(
+      cdp,
+      `(() => { const input = document.querySelector('#move-note-target'); input.value = ${JSON.stringify(targetPath)}; input.dispatchEvent(new Event('input', { bubbles: true })); })()`,
+    );
+    await clickSelector(cdp, "#move-note-submit");
+    const state = await waitFor(
+      cdp,
+      `(() => { const dialog = document.querySelector('#move-note-dialog'); const submit = document.querySelector('#move-note-submit'); return dialog?.open === false ? 'committed' : submit instanceof HTMLButtonElement && !submit.disabled && submit.textContent?.includes(' and move') ? 'confirmation' : null; })()`,
+      `Iconize reviewed move plan for ${targetPath}`,
+      30_000,
+    );
+    if (state === "confirmation") await clickSelector(cdp, "#move-note-submit");
+    await waitFor(
+      cdp,
+      "document.querySelector('#move-note-dialog')?.open === false",
+      `Iconize committed move to ${targetPath}`,
+      30_000,
+    );
+  };
+  await moveThroughReviewedDialog(renamedPath);
+  await waitFor(
+    cdp,
+    `(async () => (await window.threadleaf.getSnapshot()).navigatorDecorations?.some((decoration) => decoration.path === ${JSON.stringify(renamedPath)} && decoration.text === ${JSON.stringify(iconName)}) === true)()`,
+    "Iconize native rename migration",
+    30_000,
+  );
+  await moveThroughReviewedDialog(filePath);
+  await waitFor(
+    cdp,
+    `(async () => (await window.threadleaf.getSnapshot()).navigatorDecorations?.some((decoration) => decoration.path === ${JSON.stringify(filePath)} && decoration.text === ${JSON.stringify(iconName)}) === true)()`,
+    "Iconize native rename restoration",
+    30_000,
+  );
+
+  // `runPaletteCommand` only clicks the palette row; it never awaits the command's async run().
+  // Every plugin therefore still reports its PREVIOUS `loaded` state for as long as the reload IPC
+  // is in flight, so a plugin-state gate here passes on stale state and lets the next workflow race
+  // the still-cascading unload. Blank the live status line first and wait for the renderer's own
+  // completion message, which is only written once `reloadPlugins` has actually resolved.
+  await evaluate(
+    cdp,
+    "(() => { const status = document.querySelector('#plugin-status'); if (!status) return false; status.textContent = ''; return true; })()",
+  );
+  await runPaletteCommand("plugin.reload", "reload plugin");
+  await waitFor(
+    cdp,
+    "document.querySelector('#plugin-status')?.textContent === 'Enabled community plugins reloaded.' ? 'reloaded' : null",
+    "Iconize enabled-plugin reload completion",
+    60_000,
+  );
+  await waitFor(
+    cdp,
+    `(async () => { const snapshot = await window.threadleaf.getSnapshot(); const ids = ${JSON.stringify(installedMatrixPlugins.map(({ id }) => id))}; return ids.every((id) => snapshot.plugins?.some((plugin) => plugin.id === id && plugin.state === 'loaded')) && snapshot.navigatorDecorations?.some((decoration) => decoration.path === ${JSON.stringify(filePath)} && decoration.text === ${JSON.stringify(iconName)}); })()`,
+    "Iconize explicit reload reconstruction",
+    60_000,
+  );
   return {
     pluginId: "obsidian-icon-folder",
-    workflow: "command-picker-select-persist-render",
+    workflow: "command-and-context-picker-remove-reassign-rename-reload-persist-render",
     filePath,
     iconName,
-    screenshots: navigatorShots.map(({ filePath: screenshotPath }) => screenshotPath),
+    screenshots: navigatorShots
+      .concat(contextMenuShots)
+      .map(({ filePath: screenshotPath }) => screenshotPath),
   };
 }
 
@@ -2395,20 +2744,45 @@ async function openNavigatorPluginDocument(filePath) {
     if (!expanded) await clickSelector(cdp, selector);
   }
   const selector = `#file-list [data-tree-path=${JSON.stringify(filePath)}]`;
-  await waitFor(
+  const directRow = await waitFor(
     cdp,
     `(() => { const row = document.querySelector(${JSON.stringify(selector)}); return row instanceof HTMLButtonElement && row.dataset.kind === 'file'; })()`,
     `native plugin document row ${filePath}`,
-  );
-  for (let stable = 0; stable < 5; stable += 1) {
+    5_000,
+  ).catch(() => false);
+  if (directRow) {
     await waitFor(
       cdp,
       `(() => { const row = document.querySelector(${JSON.stringify(selector)}); return row instanceof HTMLButtonElement && row.dataset.kind === 'file'; })()`,
       `stable native plugin document row ${filePath}`,
     );
-    await delay(100);
+    await clickSelector(cdp, selector);
+    return;
   }
-  await clickSelector(cdp, selector);
+
+  const parentPath = segments.slice(0, -1).join("/");
+  const parentSelector = `#file-list [data-tree-path=${JSON.stringify(parentPath)}]`;
+  const parentExpanded = await evaluate(
+    cdp,
+    `document.querySelector(${JSON.stringify(parentSelector)})?.getAttribute('aria-expanded') === 'true'`,
+  );
+  await clickSelector(cdp, parentSelector);
+  if (parentExpanded) await clickSelector(cdp, parentSelector);
+  await pressKey(cdp, "ArrowRight", "ArrowRight");
+  let focusedPath = null;
+  for (let step = 0; step < 500; step += 1) {
+    focusedPath = await evaluate(
+      cdp,
+      "document.activeElement instanceof HTMLButtonElement ? document.activeElement.dataset.treePath ?? null : null",
+    );
+    if (focusedPath === filePath) break;
+    await pressKey(cdp, "ArrowDown", "ArrowDown");
+  }
+  assert(
+    focusedPath === filePath,
+    `Keyboard tree navigation did not reach ${filePath}; focused ${focusedPath ?? "nothing"}.`,
+  );
+  await pressKey(cdp, "Enter", "Enter");
 }
 
 async function runPaletteCommand(commandId, query = commandId, paletteId = commandId) {

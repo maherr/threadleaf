@@ -315,6 +315,22 @@ export class ElectronPluginRuntime implements PluginRuntimePort {
     });
   }
 
+  queryPluginFileMenu(filePath: string): Promise<RuntimeSnapshot> {
+    return this.requestSnapshot("query-file-menu", { filePath });
+  }
+
+  selectPluginFileMenu(sessionId: string, itemId: string): Promise<RuntimeSnapshot> {
+    return this.requestSnapshot("select-file-menu", { sessionId, itemId });
+  }
+
+  dismissPluginFileMenu(sessionId: string): Promise<RuntimeSnapshot> {
+    return this.requestSnapshot("dismiss-file-menu", { sessionId });
+  }
+
+  notifyVaultRename(sourcePath: string, targetPath: string): Promise<RuntimeSnapshot> {
+    return this.requestSnapshot("notify-vault-rename", { sourcePath, targetPath });
+  }
+
   renderMarkdownProjection(
     pluginId: string,
     sourcePath: string,

@@ -12,6 +12,16 @@ export interface MenuPositionDef {
 type MenuIconResolver = (iconId: string) => string | null;
 type MenuEntry = MenuItem | MenuSeparator;
 
+export interface ProjectedMenuItem {
+  checked: boolean | null;
+  disabled: boolean;
+  icon: string | null;
+  id: string;
+  section: string;
+  title: string;
+  warning: boolean;
+}
+
 function replaceContent(element: HTMLElement, content: string | DocumentFragment): void {
   if (typeof content === "string") {
     element.textContent = content;
@@ -90,6 +100,30 @@ export class MenuItem {
     this.element.addEventListener("click", (event) => this.activate(event));
     this.renderCurrentElement();
     return this.element;
+  }
+
+  project(id: string): ProjectedMenuItem | null {
+    if (this.isLabel || typeof this.title !== "string" || this.title.trim().length === 0) {
+      return null;
+    }
+    return {
+      checked: this.checked,
+      disabled: this.disabled,
+      icon: this.icon,
+      id,
+      section: this.section,
+      title: this.title.trim().slice(0, 160),
+      warning: this.warning,
+    };
+  }
+
+  async activateProjected(): Promise<void> {
+    if (!this.isEnabledAction()) return;
+    const event =
+      typeof KeyboardEvent === "function"
+        ? new KeyboardEvent("keydown", { key: "Enter" })
+        : ({ key: "Enter" } as KeyboardEvent);
+    await this.clickCallback?.(event);
   }
 
   private isEnabledAction(): boolean {
@@ -171,6 +205,7 @@ export class Menu extends Component {
   private parentElement: HTMLElement | null = null;
   private releaseListeners: (() => void) | null = null;
   private useNativeMenu = false;
+  private projectedOpen = false;
 
   constructor(private readonly iconResolver: MenuIconResolver = () => null) {
     super();
@@ -257,17 +292,40 @@ export class Menu extends Component {
   }
 
   hide(): this {
-    if (!this.container) {
+    if (!this.container && !this.projectedOpen) {
       return this;
     }
     this.releaseListeners?.();
     this.releaseListeners = null;
-    this.container.remove();
+    this.container?.remove();
     this.container = null;
+    this.projectedOpen = false;
     for (const callback of this.hideCallbacks) {
       callback();
     }
     return this;
+  }
+
+  projectItems(sessionId: string): ProjectedMenuItem[] {
+    this.projectedOpen = true;
+    return this.entries.flatMap((entry, index) => {
+      if (!(entry instanceof MenuItem)) return [];
+      const item = entry.project(`${sessionId}:${index}`);
+      return item ? [item] : [];
+    });
+  }
+
+  async activateProjected(itemId: string): Promise<void> {
+    const index = Number(itemId.slice(itemId.lastIndexOf(":") + 1));
+    const entry = Number.isSafeInteger(index) ? this.entries[index] : undefined;
+    try {
+      if (!(entry instanceof MenuItem)) {
+        throw new Error("The projected plugin menu item is no longer available.");
+      }
+      await entry.activateProjected();
+    } finally {
+      this.hide();
+    }
   }
 
   close(): void {

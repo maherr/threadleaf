@@ -70,6 +70,10 @@ export interface PluginRuntimePort {
     itemIndex: number,
     shiftKey: boolean,
   ): Promise<RuntimeSnapshot>;
+  queryPluginFileMenu?(filePath: string): Promise<RuntimeSnapshot>;
+  selectPluginFileMenu?(sessionId: string, itemId: string): Promise<RuntimeSnapshot>;
+  dismissPluginFileMenu?(sessionId: string): Promise<RuntimeSnapshot>;
+  notifyVaultRename?(sourcePath: string, targetPath: string): Promise<RuntimeSnapshot>;
   waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot>;
   unloadAllPlugins(): Promise<RuntimeSnapshot>;
   unloadPlugin(pluginId?: string): Promise<RuntimeSnapshot>;

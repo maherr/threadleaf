@@ -1202,10 +1202,11 @@ h2 {
   position: fixed;
   z-index: 20;
   display: grid;
-  min-width: 144px;
+  min-width: 206px;
+  padding: 4px;
   overflow: hidden;
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--surface-raised);
   box-shadow: var(--shadow-large);
 }
@@ -1215,24 +1216,50 @@ h2 {
 }
 
 .navigator-context-menu button {
-  padding: 8px 10px;
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
   border: 0;
-  border-bottom: 1px solid var(--line);
+  border-radius: 5px;
   color: var(--ink-soft);
   background: transparent;
   cursor: pointer;
-  font: 700 11px / 1 var(--mono);
+  font: 560 12px / 1.2 var(--font-interface);
   text-align: left;
 }
 
-.navigator-context-menu button:last-child {
-  border-bottom: 0;
+.navigator-context-menu button[hidden] {
+  display: none;
+}
+
+#navigator-context-plugin-items:not(:empty) {
+  display: grid;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
 }
 
 .navigator-context-menu button:hover,
 .navigator-context-menu button:focus-visible {
   color: var(--ink);
   background: var(--accent-soft);
+}
+
+.navigator-context-item-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.navigator-context-menu button.is-warning {
+  color: var(--signal);
 }
 
 .file-copy {

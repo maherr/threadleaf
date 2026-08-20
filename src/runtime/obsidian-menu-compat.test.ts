@@ -112,4 +112,52 @@ describe("Obsidian menu compatibility", () => {
     expect(dom.window.document.querySelector(".threadleaf-compat-menu")).toBeNull();
     dom.window.close();
   });
+
+  it("projects bounded actionable items and awaits the selected callback before dismissal", async () => {
+    const dom = new JSDOM("<!doctype html><body></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    const selected: string[] = [];
+    const hidden = vi.fn();
+    const menu = new Menu()
+      .addItem((item) => item.setTitle("Section").setIsLabel(true))
+      .addItem((item) =>
+        item
+          .setTitle("Change icon")
+          .setIcon("hashtag")
+          .setSection("iconize")
+          .onClick(async () => {
+            await Promise.resolve();
+            selected.push("changed");
+          }),
+      )
+      .addSeparator()
+      .addItem((item) => item.setTitle("Remove icon").setIcon("trash").setWarning(true));
+    menu.onHide(hidden);
+
+    expect(menu.projectItems("menu-7")).toEqual([
+      {
+        checked: null,
+        disabled: false,
+        icon: "hashtag",
+        id: "menu-7:1",
+        section: "iconize",
+        title: "Change icon",
+        warning: false,
+      },
+      {
+        checked: null,
+        disabled: false,
+        icon: "trash",
+        id: "menu-7:3",
+        section: "",
+        title: "Remove icon",
+        warning: true,
+      },
+    ]);
+    await menu.activateProjected("menu-7:1");
+    expect(selected).toEqual(["changed"]);
+    expect(hidden).toHaveBeenCalledOnce();
+    dom.window.close();
+  });
 });

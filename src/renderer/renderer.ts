@@ -28,6 +28,7 @@ import {
   List,
   ListTree,
   LocateFixed,
+  Palette,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -36,6 +37,7 @@ import {
   Plus,
   Rows2,
   Shapes,
+  Trash2,
   X,
 } from "lucide";
 import { splitMarkdownDestinationTarget } from "../kernel/markdown-links";
@@ -322,6 +324,7 @@ const elements = {
   navigatorContextMenu: getElement("navigator-context-menu"),
   navigatorContextNewNote: getButton("navigator-context-new-note"),
   navigatorContextNewFolder: getButton("navigator-context-new-folder"),
+  navigatorContextPluginItems: getElement("navigator-context-plugin-items"),
   canvasFileCount: getElement("canvas-file-count"),
   canvasFileList: getElement("canvas-file-list"),
   canvasShelf: getElement("canvas-shelf"),
@@ -1281,6 +1284,9 @@ let navigatorExpandedPaths = new Set<string>();
 let navigatorFocusedPath: string | null = null;
 let navigatorPendingFocusIndex: number | null = null;
 let navigatorContextFolderPath: string | null | undefined;
+let navigatorContextEntryPath: string | null = null;
+let navigatorContextPluginSessionId: string | null = null;
+let navigatorContextPluginRequest = 0;
 let navigatorRevealRequest = 0;
 let navigatorTreeRevealPath: string | null = null;
 let navigatorTreeRevealLocations: NavigatorTreeEntryLocation[] = [];
@@ -13353,7 +13359,8 @@ function renderNavigatorTree(
   )) {
     void requestNavigatorTreePage(request);
   }
-  const renderKey = `${navigatorTreeRevision}:${geometry.start}:${geometry.end}:${activePath ?? ""}:${navigatorFocusedPath ?? ""}:${projection.length}`;
+  const pluginDecorationKey = JSON.stringify(currentSnapshot?.navigatorDecorations ?? []);
+  const renderKey = `${navigatorTreeRevision}:${geometry.start}:${geometry.end}:${activePath ?? ""}:${navigatorFocusedPath ?? ""}:${projection.length}:${pluginDecorationKey}`;
   if (!force && renderKey === navigatorTreeRenderKey) {
     return;
   }
@@ -13484,9 +13491,9 @@ function renderNavigatorTree(
       navigatorFocusedPath = entry.path;
     });
     button.addEventListener("contextmenu", (event) => {
-      if (entry.kind !== "folder") return;
+      if (entry.kind !== "folder" && entry.kind !== "note") return;
       event.preventDefault();
-      openNavigatorContextMenu(entry.path, event.clientX, event.clientY);
+      openNavigatorContextMenu(entry.path, entry.kind, event.clientX, event.clientY);
     });
     button.addEventListener("keydown", (event) => handleNavigatorTreeKeydown(event, entry.path));
     fragment.append(button);
@@ -13549,11 +13556,11 @@ function handleNavigatorTreeKeydown(event: KeyboardEvent, path: string): void {
   if (!projection || index === null || !row || row.kind !== "entry") return;
 
   if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
-    if (row.entry.kind === "folder") {
+    if (row.entry.kind === "folder" || row.entry.kind === "note") {
       event.preventDefault();
       const button = event.currentTarget as HTMLElement;
       const bounds = button.getBoundingClientRect();
-      openNavigatorContextMenu(row.entry.path, bounds.left, bounds.bottom);
+      openNavigatorContextMenu(row.entry.path, row.entry.kind, bounds.left, bounds.bottom);
     }
     return;
   }
@@ -13747,16 +13754,24 @@ async function revealActiveNavigatorNote(): Promise<void> {
 
 function closeNavigatorContextMenu(restoreFocus = false): void {
   if (elements.navigatorContextMenu.hidden) return;
+  navigatorContextPluginRequest += 1;
   elements.navigatorContextMenu.hidden = true;
   elements.navigatorContextMenu.style.removeProperty("left");
   elements.navigatorContextMenu.style.removeProperty("top");
-  const folderPath = navigatorContextFolderPath;
+  const entryPath = navigatorContextEntryPath;
+  const pluginSessionId = navigatorContextPluginSessionId;
   navigatorContextFolderPath = undefined;
-  if (restoreFocus && folderPath) {
+  navigatorContextEntryPath = null;
+  navigatorContextPluginSessionId = null;
+  elements.navigatorContextPluginItems.replaceChildren();
+  if (pluginSessionId) {
+    void window.threadleaf.dismissPluginFileMenu(pluginSessionId).catch(() => undefined);
+  }
+  if (restoreFocus && entryPath) {
     for (const button of elements.fileList.querySelectorAll<HTMLButtonElement>(
       ".navigator-tree-row",
     )) {
-      if (button.dataset.treePath === folderPath) {
+      if (button.dataset.treePath === entryPath) {
         button.focus();
         break;
       }
@@ -13765,17 +13780,84 @@ function closeNavigatorContextMenu(restoreFocus = false): void {
 }
 
 function openNavigatorContextMenu(
-  folderPath: string | null,
+  entryPath: string | null,
+  entryKind: WorkspaceTreeEntry["kind"],
   clientX: number,
   clientY: number,
 ): void {
-  navigatorContextFolderPath = folderPath;
+  if (!elements.navigatorContextMenu.hidden) closeNavigatorContextMenu();
+  navigatorContextFolderPath = entryKind === "folder" ? entryPath : undefined;
+  navigatorContextEntryPath = entryPath;
+  navigatorContextPluginSessionId = null;
+  elements.navigatorContextPluginItems.replaceChildren();
+  const nativeFolderActions = entryKind === "folder";
+  elements.navigatorContextMenu.ariaLabel = nativeFolderActions ? "Folder actions" : "File actions";
+  elements.navigatorContextNewNote.hidden = !nativeFolderActions;
+  elements.navigatorContextNewFolder.hidden = !nativeFolderActions;
   elements.navigatorContextMenu.hidden = false;
-  const width = 164;
-  const height = 80;
+  const width = 214;
+  const height = nativeFolderActions ? 104 : 48;
   elements.navigatorContextMenu.style.left = `${Math.max(8, Math.min(clientX, window.innerWidth - width))}px`;
   elements.navigatorContextMenu.style.top = `${Math.max(8, Math.min(clientY, window.innerHeight - height))}px`;
-  elements.navigatorContextNewNote.focus();
+  if (nativeFolderActions) elements.navigatorContextNewNote.focus();
+  if (entryPath) void loadNavigatorPluginFileMenu(entryPath);
+}
+
+function navigatorPluginMenuIcon(icon: string | null): SVGElement {
+  const iconNode = icon === "trash" ? Trash2 : icon === "palette" ? Palette : Hash;
+  return interfaceIcon(iconNode, "navigator-context-item-icon");
+}
+
+async function loadNavigatorPluginFileMenu(filePath: string): Promise<void> {
+  const request = ++navigatorContextPluginRequest;
+  try {
+    const snapshot = await window.threadleaf.queryPluginFileMenu(filePath);
+    if (
+      request !== navigatorContextPluginRequest ||
+      elements.navigatorContextMenu.hidden ||
+      navigatorContextEntryPath !== filePath
+    ) {
+      if (snapshot.fileMenu) {
+        void window.threadleaf.dismissPluginFileMenu(snapshot.fileMenu.id).catch(() => undefined);
+      }
+      return;
+    }
+    const menu = snapshot.fileMenu;
+    if (!menu && navigatorContextFolderPath === undefined) {
+      closeNavigatorContextMenu(true);
+      return;
+    }
+    navigatorContextPluginSessionId = menu?.id ?? null;
+    const fragment = document.createDocumentFragment();
+    for (const item of menu?.items ?? []) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.role = item.checked === null ? "menuitem" : "menuitemcheckbox";
+      if (item.checked !== null) button.setAttribute("aria-checked", String(item.checked));
+      button.disabled = item.disabled;
+      button.className = "navigator-context-plugin-item";
+      button.classList.toggle("is-warning", item.warning);
+      button.append(navigatorPluginMenuIcon(item.icon), document.createTextNode(item.title));
+      button.addEventListener("click", () => {
+        const sessionId = navigatorContextPluginSessionId;
+        if (!sessionId) return;
+        navigatorContextPluginSessionId = null;
+        closeNavigatorContextMenu();
+        void runAction(() => window.threadleaf.selectPluginFileMenu(sessionId, item.id));
+      });
+      fragment.append(button);
+    }
+    elements.navigatorContextPluginItems.replaceChildren(fragment);
+    const bounds = elements.navigatorContextMenu.getBoundingClientRect();
+    elements.navigatorContextMenu.style.left = `${Math.max(8, Math.min(bounds.left, window.innerWidth - bounds.width - 8))}px`;
+    elements.navigatorContextMenu.style.top = `${Math.max(8, Math.min(bounds.top, window.innerHeight - bounds.height - 8))}px`;
+    elements.navigatorContextPluginItems.querySelector<HTMLButtonElement>("button")?.focus();
+  } catch (error) {
+    if (request === navigatorContextPluginRequest) {
+      showToast(ipcErrorMessage(error));
+      closeNavigatorContextMenu(true);
+    }
+  }
 }
 
 function renderFiles(
@@ -15608,7 +15690,7 @@ elements.fileList.addEventListener("contextmenu", (event) => {
     return;
   }
   event.preventDefault();
-  openNavigatorContextMenu(null, event.clientX, event.clientY);
+  openNavigatorContextMenu(null, "folder", event.clientX, event.clientY);
 });
 document.addEventListener("pointerdown", (event) => {
   if (

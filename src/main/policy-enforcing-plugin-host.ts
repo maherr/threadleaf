@@ -72,6 +72,22 @@ export class PolicyEnforcingPluginHost implements PluginRuntimePort {
     return this.host.selectPluginEditorSuggest(editorContext, sessionId, itemIndex, shiftKey);
   }
 
+  queryPluginFileMenu(filePath: string) {
+    return this.host.queryPluginFileMenu(filePath);
+  }
+
+  selectPluginFileMenu(sessionId: string, itemId: string) {
+    return this.host.selectPluginFileMenu(sessionId, itemId);
+  }
+
+  dismissPluginFileMenu(sessionId: string) {
+    return this.host.dismissPluginFileMenu(sessionId);
+  }
+
+  notifyVaultRename(sourcePath: string, targetPath: string) {
+    return this.host.notifyVaultRename(sourcePath, targetPath);
+  }
+
   waitForPluginMutations(options?: PluginMutationWaitOptions) {
     return this.host.waitForPluginMutations(options);
   }

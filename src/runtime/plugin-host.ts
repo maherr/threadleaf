@@ -68,6 +68,7 @@ import {
   createElectronCompatibilityModule,
   ElectronCompatibilityActivity,
 } from "./obsidian-electron-compat";
+import { Menu } from "./obsidian-menu-compat";
 import { EditorSuggest, FileView, MarkdownView, WorkspaceLeaf } from "./obsidian-ui-compat";
 import type { CompatibilitySettingTab } from "./obsidian-workspace-compat";
 import type { PluginRuntimePort } from "./plugin-runtime-port";
@@ -272,8 +273,14 @@ export class PluginHost implements PluginRuntimePort {
   private editorSuggest: RuntimeSnapshot["editorSuggest"] = null;
   private activeEditorSuggestSession: ActiveEditorSuggestSession | null = null;
   private editorSuggestSequence = 0;
+  private activeFileMenu: { id: string; menu: Menu; path: string } | null = null;
+  private fileMenu: RuntimeSnapshot["fileMenu"] = null;
+  private fileMenuSequence = 0;
   private editorUpdateSequence = 0;
   private fileExplorerProjectionRoot: HTMLElement | null = null;
+  private fileExplorerProjectionObserver: MutationObserver | null = null;
+  private fileExplorerProjectionChangePending = false;
+  private readonly onSurfaceChange: (() => void) | undefined;
   private readonly fileExplorerItems: Record<
     string,
     {
@@ -311,6 +318,7 @@ export class PluginHost implements PluginRuntimePort {
     this.pluginModuleResolver = pluginModuleResolver;
     this.compatibilityEditorFields = options?.compatibilityEditorFields;
     this.onEditorExtensionsChange = options?.onEditorExtensionsChange;
+    this.onSurfaceChange = options?.onSurfaceChange;
     const commands = new CommandRegistry(actions);
     const notices = new NoticeBus((message) => this.record("notice", message));
     this.app = new App(this.vault, commands, notices);
@@ -1159,6 +1167,10 @@ export class PluginHost implements PluginRuntimePort {
   async close(): Promise<void> {
     await this.closePluginView();
     await this.unloadAllPlugins();
+    this.fileExplorerProjectionObserver?.disconnect();
+    this.fileExplorerProjectionObserver = null;
+    this.fileExplorerProjectionRoot?.remove();
+    this.fileExplorerProjectionRoot = null;
   }
 
   reloadPlugin(request?: PluginConstructionRequest): Promise<RuntimeSnapshot> {
@@ -1281,6 +1293,7 @@ export class PluginHost implements PluginRuntimePort {
       editorUpdate: this.editorUpdate ? structuredClone(this.editorUpdate) : null,
       editorEvent: this.editorEvent ? { ...this.editorEvent } : null,
       editorSuggest: this.editorSuggest ? structuredClone(this.editorSuggest) : null,
+      fileMenu: this.fileMenu ? structuredClone(this.fileMenu) : null,
       pluginSurface: mainPluginSurface ?? rightPluginSurface,
       pluginSurfaces,
     };
@@ -1288,6 +1301,65 @@ export class PluginHost implements PluginRuntimePort {
 
   seedVaultMarkdownPaths(paths: readonly string[]): Promise<void> {
     return this.vault.seedMarkdownPaths(paths).then(() => this.syncFileExplorerProjection());
+  }
+
+  async queryPluginFileMenu(filePath: string): Promise<RuntimeSnapshot> {
+    await this.vault.initialize();
+    this.dismissActiveFileMenu();
+    const normalizedPath = normalizePath(filePath);
+    const file = this.vault.getAbstractFileByPath(normalizedPath);
+    if (!file) throw new Error(`Plugin file menu requires a visible file or folder: ${filePath}`);
+    const menu = new Menu();
+    this.app.workspace.trigger("file-menu", menu, file, "file-explorer");
+    const id = `file-menu-${++this.fileMenuSequence}`;
+    const items = menu.projectItems(id);
+    if (items.length === 0) {
+      menu.hide();
+      this.fileMenu = null;
+      return this.getSnapshot();
+    }
+    this.activeFileMenu = { id, menu, path: normalizedPath };
+    this.fileMenu = { id, items, path: normalizedPath };
+    return this.getSnapshot();
+  }
+
+  async selectPluginFileMenu(sessionId: string, itemId: string): Promise<RuntimeSnapshot> {
+    const active = this.activeFileMenu;
+    if (!active || active.id !== sessionId || !itemId.startsWith(`${sessionId}:`)) {
+      throw new Error("The projected plugin file menu is stale.");
+    }
+    this.activeFileMenu = null;
+    this.fileMenu = null;
+    await active.menu.activateProjected(itemId);
+    await this.vault.waitForSettledMutations();
+    this.syncFileExplorerProjection();
+    return this.getSnapshot();
+  }
+
+  async dismissPluginFileMenu(sessionId: string): Promise<RuntimeSnapshot> {
+    if (this.activeFileMenu?.id === sessionId) this.dismissActiveFileMenu();
+    return this.getSnapshot();
+  }
+
+  async notifyVaultRename(sourcePath: string, targetPath: string): Promise<RuntimeSnapshot> {
+    const source = normalizePath(sourcePath);
+    const knownEntry = this.fileExplorerItems[source]?.file;
+    const file = await this.vault.applyExternalRename(
+      source,
+      targetPath,
+      knownEntry instanceof TFile ? knownEntry : undefined,
+    );
+    this.syncFileExplorerProjection();
+    if (file) this.vault.trigger("rename", file, source);
+    await this.vault.waitForSettledMutations();
+    this.syncFileExplorerProjection();
+    return this.getSnapshot();
+  }
+
+  private dismissActiveFileMenu(): void {
+    this.activeFileMenu?.menu.hide();
+    this.activeFileMenu = null;
+    this.fileMenu = null;
   }
 
   private syncFileExplorerProjection(): void {
@@ -1298,6 +1370,23 @@ export class PluginHost implements PluginRuntimePort {
       root.dataset.threadleafFileExplorerProjection = "true";
       document.body.append(root);
       this.fileExplorerProjectionRoot = root;
+      const ProjectionObserver = document.defaultView?.MutationObserver;
+      if (ProjectionObserver && this.onSurfaceChange) {
+        this.fileExplorerProjectionObserver = new ProjectionObserver(() => {
+          if (this.fileExplorerProjectionChangePending) return;
+          this.fileExplorerProjectionChangePending = true;
+          queueMicrotask(() => {
+            this.fileExplorerProjectionChangePending = false;
+            this.onSurfaceChange?.();
+          });
+        });
+        this.fileExplorerProjectionObserver.observe(root, {
+          attributes: true,
+          characterData: true,
+          childList: true,
+          subtree: true,
+        });
+      }
       const view = {
         fileItems: this.fileExplorerItems,
         getViewType: () => "file-explorer",

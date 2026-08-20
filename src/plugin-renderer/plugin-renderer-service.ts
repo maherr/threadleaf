@@ -313,6 +313,30 @@ export class PluginRendererService {
             requirePluginEditorSuggestShiftKey(request),
           ),
         );
+      case "query-file-menu":
+        return this.withEnvironment(
+          await this.requireHost().queryPluginFileMenu(requirePayloadString(request, "filePath")),
+        );
+      case "select-file-menu":
+        return this.withEnvironment(
+          await this.requireHost().selectPluginFileMenu(
+            requirePayloadString(request, "sessionId"),
+            requirePayloadString(request, "itemId"),
+          ),
+        );
+      case "dismiss-file-menu":
+        return this.withEnvironment(
+          await this.requireHost().dismissPluginFileMenu(
+            requirePayloadString(request, "sessionId"),
+          ),
+        );
+      case "notify-vault-rename":
+        return this.withEnvironment(
+          await this.requireHost().notifyVaultRename(
+            requirePayloadString(request, "sourcePath"),
+            requirePayloadString(request, "targetPath"),
+          ),
+        );
       case "seed-vault-markdown-paths":
         await this.requireHost().seedVaultMarkdownPaths(
           requirePayloadStringArray(request, "paths"),

@@ -1645,9 +1645,15 @@ module.exports = class NavigatorFixture extends Plugin {
         "utf8",
       );
 
-      const host = new PluginHost(vaultPath);
+      const onSurfaceChange = vi.fn();
+      const host = new PluginHost(vaultPath, undefined, undefined, undefined, undefined, {
+        onSurfaceChange,
+      });
       await loadPlugin(host, pluginPath);
+      onSurfaceChange.mockClear();
       await host.markLayoutReady();
+      await Promise.resolve();
+      expect(onSurfaceChange).toHaveBeenCalled();
       const snapshot = await host.getSnapshot();
       expect(snapshot.navigatorDecorations).toEqual([
         { path: "Decorated.md", text: "🌟", title: "star" },
@@ -1656,6 +1662,99 @@ module.exports = class NavigatorFixture extends Plugin {
         bodyClasses: ["minimal-theme"],
         variables: { "--fixture-accent": "#0072b2", "--font-text-size": "16.5px" },
       });
+      await host.close();
+    } finally {
+      if (previousWindow === undefined) Reflect.deleteProperty(globalThis, "window");
+      else globalThis.window = previousWindow;
+      if (previousDocument === undefined) Reflect.deleteProperty(globalThis, "document");
+      else globalThis.document = previousDocument;
+      dom.window.close();
+      await fs.rm(sandboxPath, { recursive: true, force: true });
+    }
+  });
+
+  it("projects plugin file-menu actions and delivers native rename events before selection", async () => {
+    const sandboxPath = await fs.mkdtemp(path.join(os.tmpdir(), "threadleaf-plugin-file-menu-"));
+    const vaultPath = path.join(sandboxPath, "vault");
+    const dom = new JSDOM("<!doctype html><body></body>", {
+      url: "https://threadleaf.invalid/",
+    });
+    const previousWindow = globalThis.window;
+    const previousDocument = globalThis.document;
+    try {
+      installObsidianDomCompatibility(dom.window);
+      Object.assign(globalThis, { window: dom.window, document: dom.window.document });
+      await fs.mkdir(vaultPath, { recursive: true });
+      await fs.writeFile(path.join(vaultPath, "Decorated.md"), "decorated", "utf8");
+      const pluginPath = path.join(vaultPath, ".obsidian", "plugins", "file-menu-fixture");
+      await fs.mkdir(pluginPath, { recursive: true });
+      await fs.writeFile(
+        path.join(pluginPath, "manifest.json"),
+        JSON.stringify({ id: "file-menu-fixture", name: "File menu fixture", version: "0.1.0" }),
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(pluginPath, "main.js"),
+        `const { Plugin } = require("obsidian");
+module.exports = class FileMenuFixture extends Plugin {
+  async onload() {
+    this.icons = new Map([["Decorated.md", "🌟"]]);
+    const decorate = (path) => {
+      const item = this.app.workspace.getLeavesOfType("file-explorer")[0]?.view?.fileItems?.[path];
+      if (!item || item.titleEl.querySelector(".iconize-icon")) return;
+      const icon = document.createElement("span");
+      icon.className = "iconize-icon";
+      icon.textContent = this.icons.get(path);
+      item.titleEl.insertBefore(icon, item.titleInnerEl);
+    };
+    this.app.workspace.onLayoutReady(() => decorate("Decorated.md"));
+    this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
+      menu.addItem((item) => item.setTitle("Remove icon").setIcon("trash").onClick(async () => {
+        await Promise.resolve();
+        this.icons.delete(file.path);
+        document.querySelector('[data-path="' + file.path + '"] .iconize-icon')?.remove();
+      }));
+    }));
+    this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      const icon = this.icons.get(oldPath);
+      if (!icon) return;
+      this.icons.delete(oldPath);
+      this.icons.set(file.path, icon);
+      decorate(file.path);
+    }));
+  }
+};
+`,
+        "utf8",
+      );
+
+      const host = new PluginHost(vaultPath);
+      await loadPlugin(host, pluginPath);
+      await host.markLayoutReady();
+      expect((await host.getSnapshot()).navigatorDecorations).toEqual([
+        { path: "Decorated.md", text: "🌟", title: null },
+      ]);
+      const queried = await host.queryPluginFileMenu("Decorated.md");
+      expect(queried.fileMenu?.items.map(({ title }) => title)).toEqual(["Remove icon"]);
+      const menu = queried.fileMenu;
+      expect(menu).toBeTruthy();
+      if (!menu) return;
+      await host.dismissPluginFileMenu(menu.id);
+
+      await fs.rename(path.join(vaultPath, "Decorated.md"), path.join(vaultPath, "Renamed.md"));
+      const renamed = await host.notifyVaultRename("Decorated.md", "Renamed.md");
+      expect(renamed.navigatorDecorations).toEqual([
+        { path: "Renamed.md", text: "🌟", title: null },
+      ]);
+      const renamedMenu = (await host.queryPluginFileMenu("Renamed.md")).fileMenu;
+      expect(renamedMenu).toBeTruthy();
+      if (!renamedMenu) return;
+      const removed = await host.selectPluginFileMenu(
+        renamedMenu.id,
+        renamedMenu.items[0]?.id ?? "missing",
+      );
+      expect(removed.fileMenu).toBeNull();
+      expect(removed.navigatorDecorations).toEqual([]);
       await host.close();
     } finally {
       if (previousWindow === undefined) Reflect.deleteProperty(globalThis, "window");

@@ -3537,6 +3537,27 @@ export class WorkspaceRuntime {
     );
   }
 
+  async queryPluginFileMenu(filePath: string): Promise<RuntimeSnapshot> {
+    if (!this.pluginHost.queryPluginFileMenu) {
+      throw new Error("The active plugin runtime does not support file menus.");
+    }
+    return this.publishSnapshot(await this.pluginHost.queryPluginFileMenu(filePath));
+  }
+
+  async selectPluginFileMenu(sessionId: string, itemId: string): Promise<RuntimeSnapshot> {
+    if (!this.pluginHost.selectPluginFileMenu) {
+      throw new Error("The active plugin runtime does not support file menus.");
+    }
+    return this.publishSnapshot(await this.pluginHost.selectPluginFileMenu(sessionId, itemId));
+  }
+
+  async dismissPluginFileMenu(sessionId: string): Promise<RuntimeSnapshot> {
+    if (!this.pluginHost.dismissPluginFileMenu) {
+      throw new Error("The active plugin runtime does not support file menus.");
+    }
+    return this.publishSnapshot(await this.pluginHost.dismissPluginFileMenu(sessionId));
+  }
+
   async waitForPluginMutations(options?: PluginMutationWaitOptions): Promise<RuntimeSnapshot> {
     return this.publishSnapshot(await this.pluginHost.waitForPluginMutations(options));
   }
@@ -4394,6 +4415,7 @@ export class WorkspaceRuntime {
           await this.persistWorkspaceStateBestEffort();
         }
       });
+      await this.notifyPluginVaultRename(result.from, result.to);
       return {
         status: "committed",
         from: result.from,
@@ -4459,7 +4481,20 @@ export class WorkspaceRuntime {
         await this.persistWorkspaceStateBestEffort();
       }
     });
+    await this.notifyPluginVaultRename(outcome.from, outcome.to);
     return outcome;
+  }
+
+  private async notifyPluginVaultRename(sourcePath: string, targetPath: string): Promise<void> {
+    if (!this.pluginHost.notifyVaultRename) return;
+    try {
+      await this.pluginHost.notifyVaultRename(sourcePath, targetPath);
+    } catch (error) {
+      console.error(
+        "Threadleaf plugin rename notification failed after the vault move committed:",
+        error,
+      );
+    }
   }
 
   private async moveAttachmentThroughKernel(
